@@ -1290,6 +1290,7 @@ class Viewer(HasTraits):
   box = Bool(False)
   surface = Bool(True)
   nuc = Bool(True)
+  lab = Bool(False)
   status = Str
   # 3D objects
   scene = Instance(MlabSceneModel, ())
@@ -1297,6 +1298,8 @@ class Viewer(HasTraits):
   node = Instance(PipelineBase)
   cube = Instance(PipelineBase)
   mol = Instance(PipelineBase)
+  counts = Instance(PipelineBase)
+  atomnames = List
   # Auxiliary
   ready = Bool(True)
   isGrid = Bool(False)
@@ -1315,7 +1318,6 @@ class Viewer(HasTraits):
   def __init__(self):
     HasTraits.__init__(self)
     self.grid_changed = False
-    self.counts = None
     self.tmpdir = mkdtemp()
     self.cache_file = None
     # Set icon for the viewer classes
@@ -1679,6 +1681,8 @@ class Viewer(HasTraits):
     self.scene.disable_render = True
     if (self.mol is not None):
       self.mol.remove()
+    for a in self.atomnames:
+      a.remove()
     xyz = np.array([c['xyz'] for c in new.centers])
     r = np.array([c['Z'] for c in new.centers])
     # Assign colors
@@ -1698,12 +1702,29 @@ class Viewer(HasTraits):
     self.mol.glyph.color_mode = 'color_by_scalar'
     self.mol.module_manager.scalar_lut_manager.lut.table = colors
     self.show_nuc(self.nuc)
+    self.atomnames = []
+    for c in new.centers:
+      self.atomnames.append(self.scene.mlab.text(c['xyz'][0], c['xyz'][1], c['name'], z=c['xyz'][2]))
+      self.atomnames[-1]._property.justification = 'centered'
+      self.atomnames[-1]._property.vertical_justification = 'centered'
+      self.atomnames[-1]._property.shadow = True
+      self.atomnames[-1]._property.color = (0,0,0)
+      self.atomnames[-1]._property.bold = True
+      self.atomnames[-1].actor.text_scale_mode = 'none'
+    self.show_lab(self.lab)
     self.scene.disable_render = False
 
   @on_trait_change('nuc')
   def show_nuc(self, new):
     if (self.mol is not None):
       self.mol.visible = new
+
+  @on_trait_change('lab')
+  def show_lab(self, new):
+    self.scene.disable_render = True
+    for a in self.atomnames:
+      a.visible = new
+    self.scene.disable_render = False
 
   @on_trait_change('xyz')
   def update_cache(self, new):
@@ -1897,6 +1918,8 @@ class Viewer(HasTraits):
     text += '\n' + '   '.join(['{0}: {1}'.format(i, ','.join(map(str, types[i]))) for i in ['F', 'I', '1', '2', '3', 'S', 'D'] if (sum(types[i]) > 0)])
     if (self.counts is None):
       self.counts = self.scene.mlab.text(0.01, 0.01, text)
+      self.counts._property.bold = True
+      self.counts._property.background_opacity = 0.2
       self.counts.actor.text_scale_mode = 'none'
     else:
       self.counts.text = text
@@ -2031,8 +2054,9 @@ class KeyHandler(Handler):
                  <b>v</b>/<b>V</b>: Decrease/increase isosurface value<br>
                  <b>o</b>: Toggle display of isosurface<br>
                  <b>n</b>: Toggle display of nodal surface<br>
-                 <b>b</b>: Toggle display of grid box<br>
                  <b>m</b>: Toggle display of nuclei<br>
+                 <b>z</b>: Toggle display of atom names<br>
+                 <b>b</b>: Toggle display of grid box<br>
                  <b>Ctrl+f</b>/<b>i</b>/<b>1</b>/<b>2</b>/<b>3</b>/<b>s</b>/<b>d</b>: Change type of current orbital<br>
                  (<i>frozen</i>/<i>inactive</i>/<i>RAS1</i>/<i>RAS2</i>/<i>RAS3</i>/<i>secondary</i>/<i>deleted</i>)<br>
                  <b>l</b>: Open orbital annotation window<br>
@@ -2097,15 +2121,20 @@ class KeyHandler(Handler):
       return
     info.object.nodes = not info.object.nodes
 
-  def toggle_box(self, info):
-    if (info.object.cube is None):
-      return
-    info.object.box = not info.object.box
-
   def toggle_nuc(self, info):
     if (info.object.mol is None):
       return
     info.object.nuc = not info.object.nuc
+
+  def toggle_lab(self, info):
+    if (info.object.mol is None):
+      return
+    info.object.lab = not info.object.lab
+
+  def toggle_box(self, info):
+    if (info.object.cube is None):
+      return
+    info.object.box = not info.object.box
 
   def make_F(self, info):
     self._change('F', info)
@@ -2228,8 +2257,9 @@ keys = KeyBindings(
   KeyBinding(binding1='a', description='Switch spin', method_name='switch_spin'),
   KeyBinding(binding1='o', description='Toggle surface', method_name='toggle_surface'),
   KeyBinding(binding1='n', description='Toggle nodes', method_name='toggle_nodes'),
-  KeyBinding(binding1='b', description='Toggle box', method_name='toggle_box'),
   KeyBinding(binding1='m', description='Toggle nuclei', method_name='toggle_nuc'),
+  KeyBinding(binding1='z', description='Toggle labels', method_name='toggle_lab'),
+  KeyBinding(binding1='b', description='Toggle box', method_name='toggle_box'),
   KeyBinding(binding1='Ctrl-f', description='Make frozen', method_name='make_F'),
   KeyBinding(binding1='Ctrl-i', description='Make inactive', method_name='make_I'),
   KeyBinding(binding1='Ctrl-1', description='Make RAS1', method_name='make_1'),
@@ -2275,6 +2305,7 @@ main_view = View(
       Item('surface', label='Surface', enabled_when='surf', tooltip='Display orbital surface'),
       Item('nodes', label='Nodes', enabled_when='node', tooltip='Display nodal surface'),
       Item('nuc', label='Nuclei', enabled_when='mol', tooltip='Display nuclei'),
+      Item('lab', label='Names', enabled_when='mol', tooltip='Display atom names'),
       Item('box', label='Box', enabled_when='cube', tooltip='Display grid box'),
       Item('edge', label='Box size', editor=CSVListEditor(auto_set=False, enter_set=True), enabled_when='ready', visible_when='not isGrid',
            tooltip='Grid box size in bohr: one or three comma-separated values'),
