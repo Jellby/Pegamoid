@@ -606,6 +606,29 @@ class Orbitals(object):
       l += 1
     return dens
 
+  # Compute the Laplacian of a field by central finite differences
+  # It assumes the grid is regular and Cartesian
+  def laplacian(self, xyz, field):
+    nx, ny, nz = xyz[0].shape
+    dx2, dy2, dz2 = [1/(np.amax(x)-np.amin(x)/n)**2 for x,n in zip(xyz, [nx, ny, nz])]
+    data = -2*field*(dx2+dy2+dz2)
+    for i in range(nx):
+      if ((i == 0) or (i == nx-1)):
+        data[i,:,:] = None
+      else:
+        data[i,:,:] += (field[i-1,:,:]+field[i+1,:,:])*dx2
+    for j in range(ny):
+      if ((j == 0) or (j == ny-1)):
+        data[:,j,:] = None
+      else:
+        data[:,j,:] += (field[:,j-1,:]+field[:,j+1,:])*dy2
+    for k in range(nz):
+      if ((k == 0) or (k == nz-1)):
+        data[:,:,k] = None
+      else:
+        data[:,:,k] += (field[:,:,k-1]+field[:,:,k+1])*dz2
+    return data
+
   # Returns binomial coefficient as a fraction
   # Easy overflow for large arguments, but we are interested in
   # relatively small arguments
@@ -1259,6 +1282,10 @@ class ComputeGrid(Thread):
     elif (orb == -1):
       mask = [o.selected for o in self.parent.notes]
       data = self.parent.orbitals.dens(x, y, z, self.cache, mask=mask, spin=True)
+    elif (orb == -2):
+      mask = [o.selected for o in self.parent.notes]
+      data = self.parent.orbitals.dens(x, y, z, self.cache, mask=mask)
+      data = self.parent.orbitals.laplacian(self.parent.xyz, data)
     else:
       data = self.parent.orbitals.mo(orb-1, x, y, z, spin, self.cache)
     GUI.invoke_later(self.parent._assign_vol, data)
@@ -1604,8 +1631,10 @@ class Viewer(HasTraits):
       self.orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO)}
       if (not self.isGrid):
         self.orblist[0] = '0000:Density'
+        # unfortunately the "label" is not sorted numerically, so it doesn't match
         if (len(self.spinlist) > 1):
-          self.orblist[-1] = '-001:Spin density'
+          self.orblist[-1] = '-999:Spin density'
+        self.orblist[-2] = '-998:Laplacian (numerical)'
       return
     n = self.symlist.index(new)
     self.orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (o['sym'] == new)}
@@ -1788,6 +1817,7 @@ class Viewer(HasTraits):
     self.scene.disable_render = True
     maxval = np.nan_to_num(new).max()
     minval = np.nan_to_num(new).min()
+    self.range = [minval < 0, maxval > 0]
     if (maxval*minval < 0):
       maxval = max(abs(minval), abs(maxval))
       minval = 0.0
@@ -1832,7 +1862,8 @@ class Viewer(HasTraits):
     else:
       self.node.mlab_source.set(scalars=new)
       self.node.contour.contours = []
-    self.node.contour.contours = [0]
+    if (all(self.range)):
+      self.node.contour.contours = [0]
     self.show_node(self.nodes)
     self.update_background()
     if (self.grid_changed):
@@ -1850,7 +1881,14 @@ class Viewer(HasTraits):
   @on_trait_change('val')
   def update_surf(self, new):
     if (self.surf is not None):
-      self.surf.contour.contours = [-new, new]
+      volmin = np.nan_to_num(self.vol).min()
+      volmax = np.nan_to_num(self.vol).max()
+      if (all(self.range)):
+        self.surf.contour.contours = [-new, new]
+      elif (self.range[0]):
+        self.surf.contour.contours = [-new]
+      elif (self.range[1]):
+        self.surf.contour.contours = [new]
 
   @on_trait_change('nodes')
   def show_node(self, new):
