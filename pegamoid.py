@@ -29,6 +29,7 @@ import os.path
 import codecs
 import struct
 import re
+import zlib
 from copy import deepcopy
 from itertools import izip_longest
 from tempfile import mkdtemp, NamedTemporaryFile
@@ -168,7 +169,7 @@ class Orbitals(object):
       # Desymmetrize the MOs
       if (len(self.N_bas) > 1):
         for orb in self.MO + self.MO_b:
-          orb['coeff'] = np.matmul(self.mat, orb['coeff'])
+          orb['coeff'] = np.dot(self.mat, orb['coeff'])
 
   # Read basis set from a Molden file
   def read_molden_basis(self):
@@ -610,7 +611,7 @@ class Orbitals(object):
   # It assumes the grid is regular and Cartesian
   def laplacian(self, xyz, field):
     nx, ny, nz = xyz[0].shape
-    dx2, dy2, dz2 = [1/(np.amax(x)-np.amin(x)/n)**2 for x,n in zip(xyz, [nx, ny, nz])]
+    dx2, dy2, dz2 = [1/(np.amax(x)-np.amin(x)/(n-1))**2 for x,n in zip(xyz, [nx, ny, nz])]
     data = -2*field*(dx2+dy2+dz2)
     for i in range(nx):
       if ((i == 0) or (i == nx-1)):
@@ -1307,6 +1308,7 @@ class Viewer(HasTraits):
   val = CFloat(0.05)
   ngrid = Range(2, 201, 30)
   edge = List(Float, value=[0.0])
+  opacity = Range(0.0, 1.0, 1.0)
   orbitals = Any
   notes = List
   notelist = Button
@@ -1348,77 +1350,94 @@ class Viewer(HasTraits):
     self.tmpdir = mkdtemp()
     self.cache_file = None
     # Set icon for the viewer classes
-    with NamedTemporaryFile(mode='w+b', suffix='.png', delete=False, dir=self.tmpdir) as f:
-      f.write(codecs.decode('''
-      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
-      ''', 'base64'))
+    with NamedTemporaryFile(mode='w+b', suffix='.ico', delete=False, dir=self.tmpdir) as f:
+      f.write(zlib.decompress(codecs.decode('''
+        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
+      ''', 'base64')))
       self.icon = ImageResource(f.name)
     main_view.icon = self.icon
     orbital_list.icon = self.icon
@@ -1890,6 +1909,11 @@ class Viewer(HasTraits):
       elif (self.range[1]):
         self.surf.contour.contours = [new]
 
+  @on_trait_change('opacity')
+  def update_op(self, new):
+    if (self.surf is not None):
+      self.surf.actor.property.opacity = new
+
   @on_trait_change('nodes')
   def show_node(self, new):
     if (self.node is not None):
@@ -1928,6 +1952,8 @@ class Viewer(HasTraits):
       text = 'Density'
     elif (self.orb == -1):
       text = 'Spin density'
+    elif (self.orb == -2):
+      text = 'Laplacian (numerical)'
     else:
       if ('label' in MO):
         text = MO['label']
@@ -1957,8 +1983,11 @@ class Viewer(HasTraits):
     if (self.counts is None):
       self.counts = self.scene.mlab.text(0.01, 0.01, text)
       self.counts._property.bold = True
-      self.counts._property.background_opacity = 0.2
       self.counts.actor.text_scale_mode = 'none'
+      try:
+        self.counts._property.background_opacity = 0.2
+      except:
+        pass
     else:
       self.counts.text = text
 
@@ -2149,6 +2178,16 @@ class KeyHandler(Handler):
       return
     info.object.val = min(info.object.val*1.01, info.object.maxval)
 
+  def dec_op(self, info):
+    if (not info.object.surface):
+      return
+    info.object.opacity = max(info.object.opacity-0.05, 0.0)
+
+  def inc_op(self, info):
+    if (not info.object.surface):
+      return
+    info.object.opacity = min(info.object.opacity+0.05, 1.0)
+
   def toggle_surface(self, info):
     if (info.object.surf is None):
       return
@@ -2275,7 +2314,8 @@ class KeyHandler(Handler):
   def close_main(self, info):
     if (info.object.shownotes):
       info.object.shownotes.owner.close()
-    self._on_close(info)
+    #self._on_close(info)
+    info.ui.dispose()
 
 #-------------------------------------------------------------------------------
 
@@ -2288,6 +2328,8 @@ keys = KeyBindings(
   KeyBinding(binding1='Ctrl-c', description='Save cube', method_name='write_cube'),
   KeyBinding(binding1='v', description='Decrease value', method_name='dec_val'),
   KeyBinding(binding1='V', description='Increase value', method_name='inc_val'),
+  KeyBinding(binding1='y', description='Decrease opacity', method_name='dec_op'),
+  KeyBinding(binding1='Y', description='Increase opacity', method_name='inc_op'),
   KeyBinding(binding1='Shift-page up', description='Previous irrep', method_name='prev_sym'),
   KeyBinding(binding1='Shift-page down', description='Next irrep', method_name='next_sym'),
   KeyBinding(binding1='Page Up', description='Previous orbital', method_name='prev_orb'),
@@ -2316,7 +2358,7 @@ main_view = View(
     Group(
       Item('load_button', label='Load file', show_label=False, tooltip='Load a file to display'),
       Item('file', style='readonly', show_label=True, springy=True, tooltip='Loaded file'),
-      Item('save_hdf5', label='Save HDF5', show_label=False, visible_when='orbitals.type == "hdf5"',
+      Item('save_hdf5', label='Save HDF5', show_label=False, visible_when='orbitals and orbitals.type == "hdf5"',
            tooltip='Save orbitals and basis in HDF5 format'),
       Item('save_orbs', label='Save orbitals', show_label=False, visible_when='haveOrb',
            tooltip='Save orbitals in InpOrb format'),
@@ -2337,11 +2379,16 @@ main_view = View(
            tooltip='Show list of orbitals with notes'),
       orientation='horizontal'
     ),
-    Item('val', label='Value', editor=RangeEditor(mode='logslider', low_name='minval', high_name='maxval', label_width=50, format='%.3g'), enabled_when='surface and surf',
-         tooltip='Value for isosurfaces'),
+    Group(
+      Item('val', label='Value', editor=RangeEditor(mode='logslider', low_name='minval', high_name='maxval', label_width=50, format='%.3g'), springy=True, enabled_when='surface and surf',
+           tooltip='Value for isosurfaces'),
+      Item('opacity', label='Opacity', editor=RangeEditor(format='%.2f'), enabled_when='surface and surf',
+           tooltip='Opacity for isosurfaces'),
+      orientation='horizontal'
+    ),
     Group(
       Item('surface', label='Surface', enabled_when='surf', tooltip='Display orbital surface'),
-      Item('nodes', label='Nodes', enabled_when='node', tooltip='Display nodal surface'),
+      Item('nodes', label='Nodes', enabled_when='node and all(range)', tooltip='Display nodal surface'),
       Item('nuc', label='Nuclei', enabled_when='mol', tooltip='Display nuclei'),
       Item('lab', label='Names', enabled_when='mol', tooltip='Display atom names'),
       Item('box', label='Box', enabled_when='cube', tooltip='Display grid box'),
@@ -2355,7 +2402,7 @@ main_view = View(
   ),
   key_bindings = keys,
   handler = KeyHandler,
-  buttons = [Action(name='Help', action='show_help', tooltip='Show help'),
+  buttons = [Action(name='Help', action='show_help', tooltip='Show help'), 'OK',
              Action(name='Close', action='close_main', tooltip='Close window')],
   title = __name__,
   statusbar = StatusItem(name='status'),
