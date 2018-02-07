@@ -1,41 +1,159 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-__name__ = 'Pegamoid'
-__author__ = 'Ignacio Fdez. Galván'
-__copyright__ = 'Copyright 2018'
-__license__ = 'GPL v3.0'
-__version__ = '1.0'
+from __future__ import division, absolute_import, print_function
+from builtins import bytes, dict, int, range, super
 
-from traits.api import HasTraits, Range, Bool, Str, Int, Float, CFloat, List, Dict, Enum, File, Button, Instance, Any, on_trait_change
-from traitsui.api import View, Item, Group, RangeEditor, EnumEditor, CSVListEditor, ButtonEditor, \
-                         TextEditor, HTMLEditor, TableEditor, ObjectColumn, StatusItem, Action, Handler
-from traitsui.extras.checkbox_column import CheckboxColumn
-from traitsui.key_bindings import KeyBinding, KeyBindings
-from traitsui.message import Message, error
-from mayavi.core.api import PipelineBase
-from mayavi.core.ui.api import MlabSceneModel, SceneEditor, MayaviScene
-from tvtk.api import tvtk
-from pyface.api import GUI, ImageResource, FileDialog, OK
+__name__ = 'Pegamoid'
+__author__ = u'Ignacio Fdez. Galván'
+__copyright__ = u'Copyright © 2018'
+__license__ = 'GPL v3.0'
+__version__ = '2.0beta'
+
+import sys
+try:
+  from PyQt5.QtCore import Qt, QObject, QThread, QEvent, pyqtSignal, PYQT_VERSION_STR
+  from PyQt5.QtWidgets import *
+  from PyQt5.QtGui import QPixmap, QIcon, QKeySequence
+except ImportError:
+  from PyQt4.QtCore import Qt, QObject, QThread, QEvent, pyqtSignal, PYQT_VERSION_STR
+  from PyQt4.QtGui import *
+import vtk
+from vtk.util import numpy_support
+from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 import h5py
 import numpy as np
 from fractions import Fraction
-from threading import Thread
 
-import sys
 import os
 import os.path
 import codecs
-import struct
 import re
-import zlib
+import struct
 from copy import deepcopy
-from itertools import izip_longest
-from tempfile import mkdtemp, NamedTemporaryFile
-from shutil import rmtree
 from socket import gethostname
 from datetime import datetime
+from tempfile import mkdtemp
+from shutil import rmtree
+from functools import partial
+try:
+  from itertools import zip_longest
+except ImportError:
+  from itertools import izip_longest as zip_longest
+try:
+  from ttfquery._scriptregistry import registry
+except ImportError:
+  pass
+
+icondata = codecs.decode(b'''
+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
+''', 'base64')
+
+boxicondata = codecs.decode(b'''
+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
+''', 'base64')
+
+# For CIELab <-> RGB conversion: http://colorizer.org/
+background_color = {
+  'F': (0.449, 0.448, 0.646), # CIELab(50,12,-27)
+  'I': (0.711, 0.704, 0.918), # CIELab(75,12,-27)   Hue ~ 240
+  '1': (0.605, 0.759, 0.682), # CIELab(75,-17,5.5)  Hue ~ 150
+  '2': (0.569, 0.775, 0.569), # CIELab(75,-27.5,21) Hue ~ 120
+  '3': (0.654, 0.757, 0.548), # CIELab(75,-18.5,24) Hue ~  90
+  'S': (0.883, 0.673, 0.670), # CIELab(75,19.5,8)   Hue ~   0
+  'D': (0.609, 0.417, 0.416), # CIELab(50,19.5,8)
+  '?': (0.466, 0.466, 0.466)  # CIELab(50,0,0)
+}
+
+surface_color = {
+  -1: (222/255, 119/255,  61/255),
+   0: (172/255, 189/255, 208/255),
+   1: (204/255, 222/255,  61/255)
+}
 
 #===============================================================================
 # Class for orbitals defined in term of basis functions, which can be computed
@@ -65,7 +183,7 @@ class Orbitals(object):
     with h5py.File(self.file, 'r') as f:
       sym = f.attrs['NSYM']
       self.N_bas = f.attrs['NBAS']
-      self.irrep = [i.strip() for i in f.attrs['IRREP_LABELS']]
+      self.irrep = [i.decode('ascii').strip() for i in f.attrs['IRREP_LABELS']]
       # First read the centers and their properties
       if (sym > 1):
         labels = f['DESYM_CENTER_LABELS'][:]
@@ -76,7 +194,7 @@ class Orbitals(object):
         labels = f['CENTER_LABELS'][:]
         charges = f['CENTER_CHARGES'][:]
         coords = f['CENTER_COORDINATES'][:]
-      self.centers = [{'name':l.strip().decode('utf8'), 'Z':int(q), 'xyz':x} for l,q,x in zip(labels, charges, coords)]
+      self.centers = [{'name':str(l.decode('ascii')).strip(), 'Z':int(q), 'xyz':x} for l,q,x in zip(labels, charges, coords)]
       self.geomcenter = (np.amin(coords, axis=0) + np.amax(coords, axis=0))/2
       # Then read the primitives and assign them to the centers
       prims = f['PRIMITIVES'][:]    # (exponent, coefficient)
@@ -87,7 +205,7 @@ class Orbitals(object):
       else:
         basis_function_ids = 'BASIS_FUNCTION_IDS'
       bf_id = np.rec.fromrecords(f[basis_function_ids][:], names='c, s, l, m') # (center, shell, l, m)
-      bf_cart = bf_id[bf_id['l'] < 0][['c','l','s']].tolist()
+      bf_cart = ([(b['c'], b['l'], b['s']) for b in bf_id if (b['l'] < 0)])
       # Maximum angular momentum in the whole basis set,
       maxl = max([p[1] for p in prids])
       for i,c in enumerate(self.centers):
@@ -133,31 +251,33 @@ class Orbitals(object):
         mo_en_b = f['MO_BETA_ENERGIES'][:]
         mo_oc_b = f['MO_BETA_OCCUPATIONS'][:]
         mo_cf_b = f['MO_BETA_VECTORS'][:]
-        try:
+        if ('MO_ALPHA_TYPEINDICES' in f):
           mo_ti = f['MO_ALPHA_TYPEINDICES'][:]
           mo_ti_b = f['MO_BETA_TYPEINDICES'][:]
-        except:
-          mo_ti = ['?' for i in mo_oc_b]
-          mo_ti_b = ['?' for i in mo_oc_b]
+        else:
+          mo_ti = [b'?' for i in mo_oc_b]
+          mo_ti_b = [b'?' for i in mo_oc_b]
       else:
         mo_en = f['MO_ENERGIES'][:]
         mo_oc = f['MO_OCCUPATIONS'][:]
         mo_cf = f['MO_VECTORS'][:]
-        try:
+        if ('MO_TYPEINDICES' in f):
           mo_ti = f['MO_TYPEINDICES'][:]
-        except:
-          mo_ti = ['?' for i in mo_oc]
+        else:
+          mo_ti = [b'?' for i in mo_oc]
         mo_en_b = []
         mo_oc_b = []
         mo_cf_b = []
         mo_ti_b = []
+      mo_ti = [str(i.decode('ascii')) for i in mo_ti]
+      mo_ti_b = [str(i.decode('ascii')) for i in mo_ti_b]
       self.MO = [{'ene':e, 'occup':o, 'type':t} for e,o,t in zip(mo_en, mo_oc, mo_ti)]
       self.MO_b = [{'ene':e, 'occup':o, 'type':t} for e,o,t in zip(mo_en_b, mo_oc_b, mo_ti_b)]
       # Read the coefficients
       ii = [sum(self.N_bas[:i]) for i in range(len(self.N_bas))]
       j = 0
       for i,b,s in zip(ii, self.N_bas, self.irrep):
-        for orb,orb_b in izip_longest(self.MO[i:i+b], self.MO_b[i:i+b]):
+        for orb,orb_b in zip_longest(self.MO[i:i+b], self.MO_b[i:i+b]):
           orb['sym'] = s
           orb['coeff'] = np.zeros(sum(self.N_bas))
           orb['coeff'][i:i+b] = mo_cf[j:j+b]
@@ -201,7 +321,7 @@ class Orbitals(object):
           self.centers = []
           for i in range(num):
             l, _, q, x, y, z = f.readline().split()
-            self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array(map(float, [x, y, z]))*unit})
+            self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array([float(x), float(y), float(z)])*unit})
           self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
         # Read tags for spherical shells
         elif re.search(r'\[5D\]', line, re.IGNORECASE):
@@ -249,7 +369,7 @@ class Orbitals(object):
                     basis[1] = []
                   basis[1].append([])
                   for i in range(nprim):
-                    e, c1, c2 = map(float, f.readline().split())
+                    e, c1, c2 = (float(i) for i in f.readline().split())
                     basis[0][-1].append([e, c1])
                     basis[1][-1].append([e, c2])
                   bf_id.append([n, len(basis[0]), 0, 0])
@@ -266,7 +386,7 @@ class Orbitals(object):
                   basis[l].append([])
                   # Read exponents and coefficients
                   for i in range(nprim):
-                    e, c = map(float, f.readline().split())
+                    e, c = (float(i) for i in f.readline().split())
                     basis[l][-1].append([e, c])
                   # Set up the basis_id
                   if (cart[l]):
@@ -300,12 +420,12 @@ class Orbitals(object):
         if (b['l'] < 0):
           b['l'] *= -1
           ly = int(np.floor((np.sqrt(8*(b['m']+b['l'])+1)-1)/2))
-          lz = b['m']+b['l']-ly*(ly+1)/2
+          lz = b['m']+b['l']-ly*(ly+1)//2
           lx = b['l']-ly
           ly -= lz
-          lx = self._binom(2*lx, lx)*np.math.factorial(lx)/2**lx
-          ly = self._binom(2*ly, ly)*np.math.factorial(ly)/2**ly
-          lz = self._binom(2*lz, lz)*np.math.factorial(lz)/2**lz
+          lx = self._binom(2*lx, lx)*np.math.factorial(lx)//2**lx
+          ly = self._binom(2*ly, ly)*np.math.factorial(ly)//2**ly
+          lz = self._binom(2*lz, lz)*np.math.factorial(lz)//2**lz
           self.fact[i] = 1.0/np.sqrt(float(lx*ly*lz))
       # And get the indices for sorting the basis functions by center, l, m, shell
       self.bf_sort = np.argsort(bf_id, order=('c', 'l', 'm', 's'))
@@ -352,6 +472,7 @@ class Orbitals(object):
       return False
     self.file = infile
     self.inporb = 0
+    fortrannums = re.compile(r'-?\d*\.\d*[EeDd][+-]\d*(?!\.)')
     with open(infile, 'r') as f:
       line = f.readline()
       # First read the header section and make sure the number
@@ -359,9 +480,9 @@ class Orbitals(object):
       while ((not line.startswith('#INFO')) and (line != '')):
         line = f.readline()
       line = f.readline()
-      uhf, nsym, _ = map(int, f.readline().split())
-      N_bas = np.array(map(int, f.readline().split()))
-      nMO = np.array(map(int, f.readline().split()))
+      uhf, nsym, _ = (int(i) for i in f.readline().split())
+      N_bas = np.array([int(i) for i in f.readline().split()])
+      nMO = np.array([int(i) for i in f.readline().split()])
       if (not np.array_equal(N_bas, self.N_bas)):
         return False
       # Decide whether or not beta orbitals will be read
@@ -382,8 +503,12 @@ class Orbitals(object):
           cff = []
           f.readline()
           while (len(cff) < b):
-            cff.extend(f.readline().split())
-          orb['coeff'][i:i+b] = map(float, cff)
+            line = f.readline()
+            if (re.search(r'\.[^ ]*\.', line)):
+              cff.extend(fortrannums.findall(line))
+            else:
+              cff.extend(line.split())
+          orb['coeff'][i:i+b] = [float(c) for c in cff]
           j += b
       if (uhf):
         while ((not line.startswith('#UORB')) and (line != '')):
@@ -397,13 +522,17 @@ class Orbitals(object):
             cff = []
             f.readline()
             while (len(cff) < b):
-              cff.extend(f.readline().split())
-            orb['coeff'][i:i+b] = map(float, cff)
+              line = f.readline()
+              if (re.search(r'\.[^ ]*\.', line)):
+                cff.extend(fortrannums.findall(line))
+              else:
+                cff.extend(line.split())
+            orb['coeff'][i:i+b] = [float(c) for c in cff]
             j += b
       # Desymmetrize the orbital coefficients
       if (len(self.N_bas) > 1):
         for orb in self.MO + self.MO_b:
-          orb['coeff'] = np.matmul(self.mat, orb['coeff'])
+          orb['coeff'] = np.dot(self.mat, orb['coeff'])
       # Read the occupations
       while ((not line.startswith('#OCC')) and (line != '')):
         line = f.readline()
@@ -411,14 +540,22 @@ class Orbitals(object):
       occ = []
       for i,b in zip(ii, self.N_bas):
         while (len(occ) < i+b):
-          occ.extend(f.readline().split())
+          line = f.readline()
+          if (re.search(r'\.[^ ]*\.', line)):
+            occ.extend(fortrannums.findall(line))
+          else:
+            occ.extend(line.split())
       if (uhf):
         while ((not line.startswith('#UOCC')) and (line != '')):
           line = f.readline()
         f.readline()
         for i,b in zip(ii, self.N_bas):
           while (len(occ) < len(self.MO)+i+b):
-            occ.extend(f.readline().split())
+            line = f.readline()
+            if (re.search(r'\.[^ ]*\.', line)):
+              occ.extend(fortrannums.findall(line))
+            else:
+              occ.extend(line.split())
       for i,o in enumerate(self.MO + self.MO_b):
         o['occup'] = float(occ[i])
       # Read the energies
@@ -428,14 +565,22 @@ class Orbitals(object):
       ene = []
       for i,b in zip(ii, self.N_bas):
         while (len(ene) < i+b):
-          ene.extend(f.readline().split())
+          line = f.readline()
+          if (re.search(r'\.[^ ]*\.', line)):
+            ene.extend(fortrannums.findall(line))
+          else:
+            ene.extend(line.split())
       if (uhf):
         while ((not line.startswith('#UONE')) and (line != '')):
           line = f.readline()
         f.readline()
         for i,b in zip(ii, self.N_bas):
           while (len(ene) < len(self.MO)+i+b):
-            ene.extend(f.readline().split())
+            line = f.readline()
+            if (re.search(r'\.[^ ]*\.', line)):
+              ene.extend(fortrannums.findall(line))
+            else:
+              ene.extend(line.split())
       for i,o in enumerate(self.MO + self.MO_b):
         o['ene'] = float(ene[i])
       # Read the orbital types (same for alpha and beta)
@@ -448,8 +593,10 @@ class Orbitals(object):
           cff += f.readline().split()[1]
       for i,o in enumerate(self.MO):
         o['type'] = cff[i].upper()
+        o.pop('newtype', None)
       for i,o in enumerate(self.MO_b):
         o['type'] = cff[i].upper()
+        o.pop('newtype', None)
     return True
 
   # Set the Cartesian coefficients for spherical harmonics
@@ -482,7 +629,7 @@ class Orbitals(object):
       # For Cartesians shells, m does not actually contain m, but:
       # m = T(ly+lz)-(lx+ly), where T(n) = n*(n+1)/2 is the nth triangular number
       ly = int(np.floor((np.sqrt(8*(m+l)+1)-1)/2))
-      lz = m+l-ly*(ly+1)/2
+      lz = m+l-ly*(ly+1)//2
       lx = l-ly
       ly -= lz
       assert (lx >= 0) and (ly >= 0) and (lz >= 0)
@@ -539,7 +686,7 @@ class Orbitals(object):
         # For each center, l and m we have different angular parts
         # (the range includes both spherical and Cartesian indices)
         #for m in range(-l, l*(l+1)+1):
-        for m in range(-l, l*(l+1)/2+1):
+        for m in range(-l, l*(l+1)//2+1):
           ao_ang = None
           cart = None
           # Now each shell is an atomic orbital (basis function)
@@ -561,10 +708,10 @@ class Orbitals(object):
             if (abs(MO[f]) > self.eps):
               # The AO contribution is either in the cache
               # or we compute it now
-              if ((cache is None) or np.isnan(cache[f,0,0,0])):
+              if ((cache is None) or np.isnan(cache[f,0])):
                 # Compute relative coordinates if not done yet
                 if (x0 is None):
-                  x0, y0, z0 = [x, y, z] - c['xyz'][:, np.newaxis, np.newaxis, np.newaxis]
+                  x0, y0, z0 = [x, y, z] - c['xyz'][:, np.newaxis]
                   r2 = x0**2 + y0**2 + z0**2
                 # Compute angular part if not done yet
                 if (ao_ang is None):
@@ -591,7 +738,7 @@ class Orbitals(object):
     dens = np.zeros_like(x)
     # Add alternated alpha and beta orbitals
     l = 0
-    for i,orb in enumerate([j for i in izip_longest(self.MO, self.MO_b) for j in i]):
+    for i,orb in enumerate([j for i in zip_longest(self.MO, self.MO_b) for j in i]):
       if (orb is None):
         continue
       f = 1.0
@@ -603,31 +750,83 @@ class Orbitals(object):
           f = -1.0
       if ((mask is None) or mask[l]):
         if (abs(orb['occup']) > self.eps):
-          dens += f*orb['occup']*self.mo(i/2, x, y, z, s, cache)**2
+          dens += f*orb['occup']*self.mo(i//2, x, y, z, s, cache)**2
       l += 1
     return dens
 
   # Compute the Laplacian of a field by central finite differences
-  # It assumes the grid is regular and Cartesian
-  def laplacian(self, xyz, field):
-    nx, ny, nz = xyz[0].shape
-    dx2, dy2, dz2 = [1/(np.amax(x)-np.amin(x)/(n-1))**2 for x,n in zip(xyz, [nx, ny, nz])]
-    data = -2*field*(dx2+dy2+dz2)
-    for i in range(nx):
-      if ((i == 0) or (i == nx-1)):
+  def laplacian(self, box, field):
+    n = field.shape
+    box[:,0] /= n[0]-1
+    box[:,1] /= n[1]-1
+    box[:,2] /= n[2]-1
+    g = np.linalg.inv(np.dot(box.T, box))
+    data = -2*field*(sum(np.diag(g)))
+    for i in range(n[0]):
+      if ((i == 0) or (i == n[0]-1)):
         data[i,:,:] = None
       else:
-        data[i,:,:] += (field[i-1,:,:]+field[i+1,:,:])*dx2
-    for j in range(ny):
-      if ((j == 0) or (j == ny-1)):
+        data[i,:,:] += (field[i-1,:,:]+field[i+1,:,:])*g[0,0]
+        if (abs(g[0,1]) > 0):
+          for j in range(1, n[1]-1):
+            data[i,j,:] += (field[i-1,j-1,:]+field[i+1,j+1,:]-field[i-1,j+1,:]-field[i+1,j-1,:])*g[0,1]/2
+        if (abs(g[0,2]) > 0):
+          for k in range(1, n[2]-1):
+            data[i,:,k] += (field[i-1,:,k-1]+field[i+1,:,k+1]-field[i-1,:,k+1]-field[i+1,:,k-1])*g[0,2]/2
+    for j in range(n[1]):
+      if ((j == 0) or (j == n[1]-1)):
         data[:,j,:] = None
       else:
-        data[:,j,:] += (field[:,j-1,:]+field[:,j+1,:])*dy2
-    for k in range(nz):
-      if ((k == 0) or (k == nz-1)):
+        data[:,j,:] += (field[:,j-1,:]+field[:,j+1,:])*g[1,1]
+        if (abs(g[1,2]) > 0):
+          for k in range(1, n[2]-1):
+            data[:,j,k] += (field[:,j-1,k-1]+field[:,j+1,k+1]-field[:,j-1,k+1]-field[:,j+1,k-1])*g[1,2]/2
+    for k in range(n[2]):
+      if ((k == 0) or (k == n[2]-1)):
         data[:,:,k] = None
       else:
-        data[:,:,k] += (field[:,:,k-1]+field[:,:,k+1])*dz2
+        data[:,:,k] += (field[:,:,k-1]+field[:,:,k+1])*g[2,2]
+    return data
+
+  def laplacian_(self, box, field):
+    n = field.shape
+    box[:,0] /= n[0]-1
+    box[:,1] /= n[1]-1
+    box[:,2] /= n[2]-1
+    print(box)
+    print(np.dot(box.T, box))
+    d0 = 1/np.dot(box[:,0], box[:,0])
+    d1 = 1/np.dot(box[:,1], box[:,1])
+    d2 = 1/np.dot(box[:,2], box[:,2])
+    print(d0, d1, d2)
+    data = -2*field*(d0+d1+d2)
+    for i in range(n[0]):
+      if ((i == 0) or (i == n[0]-1)):
+        data[i,:,:] = None
+      else:
+        data[i,:,:] += (field[i-1,:,:]+field[i+1,:,:])*d0
+    for j in range(n[1]):
+      if ((j == 0) or (j == n[1]-1)):
+        data[:,j,:] = None
+      else:
+        data[:,j,:] += (field[:,j-1,:]+field[:,j+1,:])*d1
+    for k in range(n[2]):
+      if ((k == 0) or (k == n[2]-1)):
+        data[:,:,k] = None
+      else:
+        data[:,:,k] += (field[:,:,k-1]+field[:,:,k+1])*d2
+    #if (abs(d01) > 0):
+    #  for i in range(1, n[0]-1):
+    #    for j in range(1, n[1]-1):
+    #      data[i,j,:] += (field[i-1,j-1,:]+field[i+1,j+1,:]-field[i-1,j+1,:]-field[i+1,j-1,:])*d01
+    #if (abs(d02) > 0):
+    #  for i in range(1, n[0]-1):
+    #    for k in range(1, n[2]-1):
+    #      data[i,:,k] += (field[i-1,:,k-1]+field[i+1,:,k+1]-field[i-1,:,k+1]-field[i+1,:,k-1])*d02
+    #if (abs(d12) > 0):
+    #  for j in range(1, n[1]-1):
+    #    for k in range(1, n[2]-1):
+    #      data[:,j,k] += (field[:,j-1,k-1]+field[:,j+1,k+1]-field[:,j-1,k+1]-field[:,j+1,k-1])*d12
     return data
 
   # Returns binomial coefficient as a fraction
@@ -740,8 +939,10 @@ class Orbitals(object):
 
   # Creates an InpOrb file from scratch
   def create_inporb(self, filename):
-    index = create_index(self.MO, self.MO_b, self.N_bas)
+    index, error = create_index(self.MO, self.MO_b, self.N_bas)
     if (index is None):
+      if (error is not None):
+        raise Exception(error)
       return
     uhf = len(self.MO_b) > 0
     nMO = [(sum(self.N_bas[:i]), sum(self.N_bas[:i+1])) for i in range(len(self.N_bas))]
@@ -806,7 +1007,8 @@ class Grid(object):
 
   def __init__(self, gridfile, ftype):
     self.inporb = None
-    self.transform = tvtk.Matrix4x4()
+    self.transform = np.eye(4)
+    self.transform[3,3] = 0
     self.file = gridfile
     self.type = ftype
     if (ftype == 'cube'):
@@ -819,49 +1021,49 @@ class Grid(object):
   # Read grid header from a Cube format
   def read_cube_header(self):
     self.irrep = ['z']
-    with open(self.file, 'r') as f:
+    with open(self.file, 'rb') as f:
       f.readline()
       # Read title and grid origin
-      title = f.readline().strip()
+      title = str(f.readline().decode('ascii')).strip()
       n, x, y, z = f.readline().split()
       num = int(n)
-      translate = np.array(map(float, [x, y, z]))
+      translate = np.array([float(x), float(y), float(z)])
       # Read grid sizes and transformation matrix
       n, x, y, z = f.readline().split()
       ngridx = int(n)
-      self.transform.set_element(0,0,float(x))
-      self.transform.set_element(1,0,float(y))
-      self.transform.set_element(2,0,float(z))
-      self.transform.set_element(0,3,translate[0])
+      self.transform[0,0] = float(x)
+      self.transform[1,0] = float(y)
+      self.transform[2,0] = float(z)
+      self.transform[0,3] = translate[0]
       n, x, y, z = f.readline().split()
       ngridy = int(n)
-      self.transform.set_element(0,1,float(x))
-      self.transform.set_element(1,1,float(y))
-      self.transform.set_element(2,1,float(z))
-      self.transform.set_element(1,3,translate[1])
+      self.transform[0,1] = float(x)
+      self.transform[1,1] = float(y)
+      self.transform[2,1] = float(z)
+      self.transform[1,3] = translate[1]
       n, x, y, z = f.readline().split()
       ngridz= int(n)
-      self.transform.set_element(0,2,float(x))
-      self.transform.set_element(1,2,float(y))
-      self.transform.set_element(2,2,float(z))
-      self.transform.set_element(2,3,translate[2])
+      self.transform[0,2] = float(x)
+      self.transform[1,2] = float(y)
+      self.transform[2,2] = float(z)
+      self.transform[2,3] = translate[2]
       # Read geometry
       self.centers = []
       for i in range(abs(num)):
-        q, _, x, y, z = f.readline().split()
-        self.centers.append({'name':'{0}'.format(i), 'Z':int(q), 'xyz':np.array(map(float, [x, y, z]))})
+        q, _, x, y, z = str(f.readline().decode('ascii')).split()
+        self.centers.append({'name':'{0}'.format(i), 'Z':int(q), 'xyz':np.array([float(x), float(y), float(z)])})
       # Compute full volume size
       self.ngrid = [ngridx, ngridy, ngridz]
       self.orig = np.array([0.0, 0.0, 0.0])
       self.end = np.array([float(ngridx-1), float(ngridy-1), float(ngridz-1)])
       # If the number of atoms is negative, there are several orbitals in the file, read their numbers
       if (num < 0):
-        data = f.readline().split()
+        data = str(f.readline().decode('ascii')).split()
         self.nMO = int(data[0])
         data = data[1:]
         self.MO = []
         while (len(data) < self.nMO):
-          data.extend(f.readline().split())
+          data.extend(str(f.readline().decode('ascii')).split())
         self.MO = [{'label':'{0}: {1}'.format(i, title), 'ene':0.0, 'occup':0.0, 'type':'?', 'sym':'z'} for i in data]
       else:
         self.nMO = 1
@@ -874,15 +1076,15 @@ class Grid(object):
 
   # Read grid header from a Grid format
   def read_grid_header(self):
-    with open(self.file, 'r') as f:
+    with open(self.file, 'rb') as f:
       f.readline()
       f.readline()
       # Read the geometry
       num = int(f.readline().split()[1])
       self.centers = []
       for i in range(num):
-        l, x, y, z = f.readline().split()
-        self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array(map(float, [x, y, z]))})
+        l, x, y, z = str(f.readline().decode('ascii')).split()
+        self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array([float(x), float(y), float(z)])})
       # Read number of orbitals and block size
       f.readline()
       f.readline()
@@ -895,24 +1097,23 @@ class Grid(object):
       f.readline()
       f.readline()
       # Read grid definition and transform matrix
-      self.ngrid = map(int, f.readline().split()[1:])
-      self.ngrid = [i+1 for i in self.ngrid]
-      translate = np.array(map(float, f.readline().split()[1:]))
-      x, y, z = map(float, f.readline().split()[1:])
-      self.transform.set_element(0,0,float(x))
-      self.transform.set_element(1,0,float(y))
-      self.transform.set_element(2,0,float(z))
-      self.transform.set_element(0,3,translate[0])
-      x, y, z = map(float, f.readline().split()[1:])
-      self.transform.set_element(0,1,float(x))
-      self.transform.set_element(1,1,float(y))
-      self.transform.set_element(2,1,float(z))
-      self.transform.set_element(1,3,translate[1])
-      x, y, z = map(float, f.readline().split()[1:])
-      self.transform.set_element(0,2,float(x))
-      self.transform.set_element(1,2,float(y))
-      self.transform.set_element(2,2,float(z))
-      self.transform.set_element(2,3,translate[2])
+      self.ngrid = [int(i)+1 for i in f.readline().split()[1:]]
+      translate = np.array([float(i) for i in f.readline().split()[1:]])
+      x, y, z = (float(i) for i in f.readline().split()[1:])
+      self.transform[0,0] = float(x)
+      self.transform[1,0] = float(y)
+      self.transform[2,0] = float(z)
+      self.transform[0,3] = translate[0]
+      x, y, z = (float(i) for i in f.readline().split()[1:])
+      self.transform[0,1] = float(x)
+      self.transform[1,1] = float(y)
+      self.transform[2,1] = float(z)
+      self.transform[1,3] = translate[1]
+      x, y, z = (float(i) for i in f.readline().split()[1:])
+      self.transform[0,2] = float(x)
+      self.transform[1,2] = float(y)
+      self.transform[2,2] = float(z)
+      self.transform[2,3] = translate[2]
       self.orig = np.array([0.0, 0.0, 0.0])
       self.end = np.array([1.0, 1.0, 1.0])
       # Read and parse orbital names
@@ -920,7 +1121,7 @@ class Grid(object):
       self.MO_b = []
       self.irrep = []
       for i in range(self.nMO):
-        name = f.readline()
+        name = str(f.readline().decode('ascii'))
         match = re.match(r'\s*GridName=\s+(\d+)\s+(\d+)\s+(.+)\s+\((.+)\)\s+(\w)s*', name)
         if (match):
           self.MO.append({'ene':float(match.group(3)), 'occup':float(match.group(4)), 'type':match.group(5).upper(), 'sym':match.group(1), 'num':int(match.group(2)), 'idx':i})
@@ -938,10 +1139,10 @@ class Grid(object):
       # Find inporb location
       loc = f.tell()
       line = f.readline()
-      while (line != ''):
+      while (line != b''):
         loc = f.tell()
         line = f.readline()
-        if (line.startswith('#INPORB')):
+        if (line.startswith(b'#INPORB')):
           self.inporb = loc
           break
 
@@ -956,8 +1157,8 @@ class Grid(object):
       atom = []
       self.centers = []
       for i in range(num):
-        l, x, y, z = f.readline().split()
-        self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array(map(float, [x, y, z]))/angstrom})
+        l, x, y, z = str(f.readline().decode('ascii')).split()
+        self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array([float(x), float(y), float(z)])/angstrom})
       # Read number of orbitals and block size
       f.readline()
       data = f.readline().split()
@@ -965,23 +1166,23 @@ class Grid(object):
       self.bsize = int(data[7])
       f.readline()
       # Read grid definition and transform matrix
-      self.ngrid = map(int, f.readline().split()[1:])
-      translate = np.array(map(float, f.readline().split()[1:]))
-      x, y, z = map(float, f.readline().split()[1:])
-      self.transform.set_element(0,0,float(x))
-      self.transform.set_element(1,0,float(y))
-      self.transform.set_element(2,0,float(z))
-      self.transform.set_element(0,3,translate[0])
-      x, y, z = map(float, f.readline().split()[1:])
-      self.transform.set_element(0,1,float(x))
-      self.transform.set_element(1,1,float(y))
-      self.transform.set_element(2,1,float(z))
-      self.transform.set_element(1,3,translate[1])
-      x, y, z = map(float, f.readline().split()[1:])
-      self.transform.set_element(0,2,float(x))
-      self.transform.set_element(1,2,float(y))
-      self.transform.set_element(2,2,float(z))
-      self.transform.set_element(2,3,translate[2])
+      self.ngrid = [int(i) for i in f.readline().split()[1:]]
+      translate = np.array([float(i) for i in f.readline().split()[1:]])
+      x, y, z = (float(i) for i in f.readline().split()[1:])
+      self.transform[0,0] = float(x)
+      self.transform[1,0] = float(y)
+      self.transform[2,0] = float(z)
+      self.transform[0,3] = translate[0]
+      x, y, z = (float(i) for i in f.readline().split()[1:])
+      self.transform[0,1] = float(x)
+      self.transform[1,1] = float(y)
+      self.transform[2,1] = float(z)
+      self.transform[1,3] = translate[1]
+      x, y, z = (float(i) for i in f.readline().split()[1:])
+      self.transform[0,2] = float(x)
+      self.transform[1,2] = float(y)
+      self.transform[2,2] = float(z)
+      self.transform[2,3] = translate[2]
       self.orig = np.array([0.0, 0.0, 0.0])
       self.end = np.array([1.0, 1.0, 1.0])
       self.orboff = int(f.readline().split()[2])
@@ -990,7 +1191,7 @@ class Grid(object):
       self.MO_b = []
       self.irrep = []
       for i in range(self.nMO):
-        name = f.readline()
+        name = str(f.readline().decode('ascii'))
         match = re.match(r'\s*GridName=\s*(.+)\s*sym=\s*(\d+)\s*index=\s*(\d+)\s*Energ=\s*(.+)\s*occ=\s*(.+)\s*type=\s*(\w)\s*', name)
         if (match):
           self.MO.append({'ene':float(match.group(4)), 'occup':float(match.group(5)), 'type':match.group(6).upper(), 'sym':match.group(2), 'num':int(match.group(3)), 'idx':i})
@@ -1011,7 +1212,7 @@ class Grid(object):
       line = f.readline()
       while (line != ''):
         loc = f.tell()
-        line = f.readline()
+        line = f.readline().decode('ascii', errors='replace')
         if (line.startswith('#INPORB')):
           self.inporb = loc
           break
@@ -1022,20 +1223,20 @@ class Grid(object):
       # In Cube format, the nesting is x:y:z:MO, with
       # wrapped lines and forced newlines every lrec values
       vol = np.empty(tuple(self.ngrid))
-      with open(self.file, 'r') as f:
+      with open(self.file, 'rb') as f:
         f.seek(self.head)
         for i in range(self.ngrid[0]):
           for j in range(self.ngrid[1]):
-            data = ''
+            data = b''
             for k in range(self.lrec):
               data += f.readline()
-            vol[i,j,:] = map(float, data.split()[n::self.nMO])
+            vol[i,j,:] = [float(k) for k in data.split()[n::self.nMO]]
     elif (self.type == 'grid'):
       # In Grid format, the nesting is MO:x:y:z, but divided in
       # blocks of length bsize
       data = []
       norb = self.MO[n]['idx']
-      with open(self.file, 'r') as f:
+      with open(self.file, 'rb') as f:
         f.seek(self.head)
         num = np.prod(self.ngrid)
         while (len(data) < num):
@@ -1071,7 +1272,8 @@ class Grid(object):
 # Create an index section from alpha and beta orbitals
 def create_index(MO, MO_b, nMO):
   index = []
-  orbs = list(izip_longest(MO, MO_b))
+  error = None
+  orbs = list(zip_longest(MO, MO_b))
   i = 0
   for s in nMO:
     index.append('* 1234567890')
@@ -1094,13 +1296,13 @@ def create_index(MO, MO_b, nMO):
         elif (tpa+tpb in ['is', 'si']):
           tp = '2'
         else:
-          error(message='Alpha and beta types differ', title='Error', buttons=['OK'])
-          return None
+          error = 'Alpha and beta types differ'
+          return (None, error)
       types += tp
     i += s
     for j,l in enumerate(wrap_list(types, 10, '{}')):
       index.append('{0} {1}'.format(j, l))
-  return index
+  return (index, error)
 
 #===============================================================================
 
@@ -1260,216 +1462,1360 @@ def wrap_list(data, n, f, sep=''):
     text.append(fmt.format(*data[ini:end]))
     ini = end
   return text
+def group_widgets(*args):
+  layout = QHBoxLayout()
+  layout.setContentsMargins(0, 0, 0, 0)
+  for w in args:
+    layout.addWidget(w)
+  group = QFrame()
+  group.setLayout(layout)
+  return group
 
-#===============================================================================
-# Class for computing or reading the grid data in a separate thread, so the GUI
-# is not blocked
+def get_input_type(mapper, algtype):
+  obj = mapper
+  while (not isinstance(obj, algtype)):
+    obj = obj.GetInputAlgorithm()
+  return obj
 
-class ComputeGrid(Thread):
-
-  def __init__(self, parent, cache=None, **kwargs):
-    Thread.__init__(self, **kwargs)
-    self.daemon = True
-    self.parent = parent
-    self.cache = cache
-
+class Initializer(QThread):
   def run(self):
-    orb = self.parent.orb
-    spin = 'b' if (self.parent.spin == 'beta') else 'a'
-    x, y, z = self.parent.xyz
+    self.msleep(100)
+    self.parent().vtkWidget.Initialize()
+
+class Worker(QThread):
+  def __init__(self, *args, **kwargs):
+    self.disable_list = kwargs.pop('disable_list', [])
+    super().__init__(*args, **kwargs)
+    self.qApp = QApplication.instance()
+    self.selected = None
+    self.started.connect(self.disable_widgets)
+    self.finished.connect(self.restore_widgets)
+  def disable_widgets(self):
+    self.selected = self.qApp.focusWidget()
+    self.status = [i.isEnabled() for i in self.disable_list]
+    for i in self.disable_list:
+      i.setEnabled(False)
+  def restore_widgets(self):
+    for i,s in zip(self.disable_list, self.status):
+      i.setEnabled(s)
+    if ((self.qApp.focusWidget() is None) and (self.selected is not None)):
+      self.selected.setFocus(Qt.OtherFocusReason)
+
+class FileRead(Worker):
+  def __init__(self, *args, **kwargs):
+    self.filename = kwargs.pop('filename', None)
+    self.ftype = kwargs.pop('ftype', None)
+    super().__init__(*args, **kwargs)
+    self.orbitals = None
+    self.error = None
+  def run(self):
+    if ((self.filename is None) or (self.ftype is None)):
+      return
+    if (self.ftype in ['hdf5', 'molden']):
+      try:
+        self.orbitals = Orbitals(self.filename, self.ftype)
+      except Exception as e:
+        self.error = 'Error processing {0} file {1}:\n{2}'.format(self.ftype, self.filename, e)
+    elif (self.ftype in ['inporb']):
+      if (self.parent().orbitals.read_inporb_MO(self.filename)):
+        self.orbitals = self.parent().orbitals
+      else:
+        self.error = 'Incompatible InpOrb data'
+    elif (self.ftype in ['grid', 'luscus', 'cube']):
+      try:
+        self.orbitals = Grid(self.filename, self.ftype)
+      except Exception as e:
+        self.error = 'Error processing {0} file {1}:\n{2}'.format(self.ftype, self.filename, e)
+
+class ComputeVolume(Worker):
+  def __init__(self, *args, **kwargs):
+    self.cache = kwargs.pop('cache', None)
+    super().__init__(*args, **kwargs)
+    self.data = None
+  def run(self):
+    if (self.parent() is None):
+      return
+    orb = self.parent().orbital
+    x, y, z = numpy_support.vtk_to_numpy(self.parent().xyz.GetOutput().GetPoints().GetData()).T
+    spin = 'b' if (self.parent().MO is self.parent().orbitals.MO_b) else 'a'
+    mask = [o['density'] for o in self.parent().notes]
     if (orb == 0):
-      mask = [o.selected for o in self.parent.notes]
-      data = self.parent.orbitals.dens(x, y, z, self.cache, mask=mask)
+      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask)
     elif (orb == -1):
-      mask = [o.selected for o in self.parent.notes]
-      data = self.parent.orbitals.dens(x, y, z, self.cache, mask=mask, spin=True)
+      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=True)
     elif (orb == -2):
-      mask = [o.selected for o in self.parent.notes]
-      data = self.parent.orbitals.dens(x, y, z, self.cache, mask=mask)
-      data = self.parent.orbitals.laplacian(self.parent.xyz, data)
+      ngrid = self.parent().xyz.GetInput().GetDimensions()
+      data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask).reshape(ngrid[::-1])
+      # Get the actual lengths of the possibly transformed axes
+      c0 = np.array([x[0], y[0], z[0]])
+      n = ngrid[0]-1
+      c1 = np.array([x[n], y[n], z[n]])-c0
+      n = ngrid[0]*(ngrid[1]-1)
+      c2 = np.array([x[n], y[n], z[n]])-c0
+      n = ngrid[0]*ngrid[1]*(ngrid[2]-1)
+      c3 = np.array([x[n], y[n], z[n]])-c0
+      matrix = np.vstack((c3[::-1], c2[::-1], c1[::-1])).T
+      data = self.parent().orbitals.laplacian(matrix, data).T
+      self.data = data
     else:
-      data = self.parent.orbitals.mo(orb-1, x, y, z, spin, self.cache)
-    GUI.invoke_later(self.parent._assign_vol, data)
+      self.data = self.parent().orbitals.mo(orb-1, x, y, z, spin, self.cache)
 
-#===============================================================================
+class ScrollMessageBox(QDialog):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.setWindowTitle('Keyboard shortcuts')
+    self.setSizeGripEnabled(True)
+    scroll = QTextEdit()
+    scroll.setReadOnly(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+    scroll.viewport().setAutoFillBackground(False)
+    scroll.setMinimumWidth(400)
+    scroll.setHtml('''
+                   <p>In the render window:<br>
+                   &nbsp;&nbsp;<b>Left button</b>: Rotate<br>
+                   &nbsp;&nbsp;<b>Right button</b>, <b>Ctrl+Shift+Left button</b>, <b>Wheel</b>: Zoom<br>
+                   &nbsp;&nbsp;<b>Middle button</b>, <b>Shift+Left button</b>: Translate<br>
+                   &nbsp;&nbsp;<b>Ctrl+Left button</b>: Rotate in the screen plane</p>
+                   <p><b>R</b>: Fit the view to the scene</p>
+                   <p><b>{0}</b>: Load file</p>
+                   <p><b>Ctrl+H</b>: Save HDF5 file</p>
+                   <p><b>Ctrl+I</b>: Save InpOrb file</p>
+                   <p><b>Ctrl+C</b>: Save cube file</p>
+                   <p><b>{1}</b>: Clear orbitals</p>
+                   <p><b>{2}</b>: Quit</p>
+                   <p><b>{3}</b>: Show this window</p>
+                   <p><b>PgUp</b>/<b>PgDown</b>: Switch to previous/next orbital</p>
+                   <p><b>Ctrl+PgUp</b>/<b>Ctrl+PgDown</b>: Switch to previous/next irrep</p>
+                   <p><b>A</b>/<b>B</b>: Switch to alpha/beta orbitals</p>
+                   <p><b>Ctrl+L</b>: Show/hide full list of orbitals</p>
+                   <p><b>F</b>: Change orbital type to frozen</p>
+                   <p><b>I</b>: Change orbital type to inactive</p>
+                   <p><b>1</b>: Change orbital type to RAS1 (active)</p>
+                   <p><b>2</b>: Change orbital type to RAS2 (active)</p>
+                   <p><b>3</b>: Change orbital type to RAS3 (active)</p>
+                   <p><b>S</b>: Change orbital type to secondary</p>
+                   <p><b>D</b>: Change orbital type to deleted</p>
+                   <p><b>0</b>: Restore initial orbital type</p>
+                   <p><b>+</b>/<b>-</b>, <b>Shift++</b>/<b>Shift+-</b>: Increase/decrease isosurface value in smaller or larger steps</p>
+                   <p><b>Alt+V</b>: Set focus to isosurface value</p>
+                   <p><b>O</b>/<b>T</b>, <b>Shift+O</b>/<b>Shift+T</b>: Increase/decrease opacity in smaller or larger steps</p>
+                   <p><b>Alt+O</b>: Set focus to opacity</p>
+                   <p><b>Ctrl+S</b>: Toggle isosurface display</p>
+                   <p><b>Ctrl+Shift+PgUp</b>/<b>Ctrl+Shift+PgDown</b>: Cycle through the different sign displays</p>
+                   <p><b>Ctrl+N</b>: Toggle nodal surface display</p>
+                   <p><b>Ctrl+A</b>: Toggle nuclei display</p>
+                   <p><b>Ctrl+M</b>: Toggle name labels display</p>
+                   <p><b>Ctrl+B</b>: Toggle grid box display</p>
+                   <p><b>Alt+B</b>: Set focus to box size</p>
+                   <p><b>Ctrl+T</b>: Show/hide grid box transform editor</p>
+                   <p><b>Alt+G</b>: Set focus to grid points</p>
+                   <p><b>Ctrl+G</b>: Toggle gradient lines display</p>
+                   <p><b>Ctrl+Shift+G</b>: Show/hide gradient lines options</p>
+                   <p><b>Alt+L</b>: Set focus to line density</p>
+                   <p><b>Alt+S</b>: Set focus to start radius</p>
+                   <p><b>Alt+M</b>: Set focus to max. steps</p>
+                   <p><b>Ctrl+Shift+D</b>: Set gradient lines direction to down</p>
+                   <p><b>Ctrl+Shift+B</b>: Set gradient lines direction to both (up and down)</p>
+                   <p><b>Ctrl+Shift+U</b>: Set gradient lines direction to up</p>
+                   '''.format(
+                       QKeySequence(QKeySequence.Open).toString(),
+                       QKeySequence(QKeySequence.Close).toString(),
+                       QKeySequence(QKeySequence.Quit).toString(),
+                       QKeySequence(QKeySequence.HelpContents).toString()
+                       ))
+    vbox = QVBoxLayout()
+    bbox = QDialogButtonBox(QDialogButtonBox.Ok)
+    vbox.addWidget(scroll)
+    vbox.addWidget(bbox)
+    self.setLayout(vbox)
+    bbox.accepted.connect(self.accept)
 
-class OrbInList(HasTraits):
-  name = Str
-  selected = Bool(True)
-  note = Str
+class SimpleVTK(QVTKRenderWindowInteractor):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+  def keyPressEvent(self, event):
+    pass
+  def keyReleaseEvent(self, event):
+    pass
 
-class Viewer(HasTraits):
-  # UI controls
-  file = File
-  load_button = Button
-  save_hdf5 = Button
-  save_orbs = Button
-  save_cube = Button
-  val = CFloat(0.05)
-  ngrid = Range(2, 201, 30)
-  edge = List(Float, value=[0.0])
-  opacity = Range(0.0, 1.0, 1.0)
-  orbitals = Any
-  notes = List
-  notelist = Button
-  sym = Str
-  spin = Str
-  orb = Int(-10)
-  nodes = Bool(False)
-  box = Bool(False)
-  surface = Bool(True)
-  nuc = Bool(True)
-  lab = Bool(False)
-  status = Str
-  # 3D objects
-  scene = Instance(MlabSceneModel, ())
-  surf = Instance(PipelineBase)
-  node = Instance(PipelineBase)
-  cube = Instance(PipelineBase)
-  mol = Instance(PipelineBase)
-  counts = Instance(PipelineBase)
-  atomnames = List
-  # Auxiliary
-  ready = Bool(True)
-  isGrid = Bool(False)
-  haveOrb = Bool(False)
-  shownotes = Any
-  nosym = Bool(True)
-  symlist = List
-  spinlist = List
-  orblist = Dict
-  xyz = List
-  bxyz = List
-  vol = Any(0.0)
-  minval = CFloat(1.0e-6)
-  maxval = CFloat(1.0)
+class MainWindow(QMainWindow):
 
-  def __init__(self):
-    HasTraits.__init__(self)
-    self.grid_changed = False
-    self.tmpdir = mkdtemp()
-    self.cache_file = None
-    # Set icon for the viewer classes
-    with NamedTemporaryFile(mode='w+b', suffix='.ico', delete=False, dir=self.tmpdir) as f:
-      f.write(zlib.decompress(codecs.decode('''
-        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
-      ''', 'base64')))
-      self.icon = ImageResource(f.name)
-    main_view.icon = self.icon
-    orbital_list.icon = self.icon
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.init_UI()
+    self.init_properties()
+    self.init_VTK()
+
+    screen = QApplication.desktop().screenNumber(QApplication.desktop().cursor().pos())
+    self.setGeometry(QStyle.alignedRect(Qt.LeftToRight, Qt.AlignCenter, self.size(), QApplication.desktop().availableGeometry(screen)))
+
+    self.vtkWidget.setFocus()
+    self.show()
 
   # Clean up when exiting
   def __del__(self):
+    self.deltmp()
+  def closeEvent(self, event):
     try:
-      if (self.cache_file is not None):
-        del self.cache_file
-      rmtree(self.tmpdir)
+      self.message.close()
+    except:
+      pass
+    self.deltmp()
+    event.accept()
+
+  def init_properties(self):
+    self._ready = False
+    self._filename = None
+    self._orbitals = None
+    self._MO = None
+    self._orbital = None
+    self._notes = None
+    self._xyz = None
+    self._surface_actor = None
+    self._nodes_actor = None
+    self._mol_actor = None
+    self._names_actor = None
+    self._box_actor = None
+    self._axes_actor = None
+    self._gradient_actor = None
+    self._panel_actor = None
+    self._irrep = None
+    self._irreplist = None
+    self._spin = None
+    self._spinlist = None
+    self._haveBasis = None
+    self._haveInpOrb = None
+    self._isovalue = None
+    self._opacity = None
+    self._boxSize = None
+    self._transform = None
+    self._gridPoints = None
+    self._lineDensity = None
+    self._startRadius = None
+    self._maxSteps = None
+
+    self._fileReadThread = None
+    self._computeVolumeThread = None
+    self._newgrid = True
+    self._tainted = True
+    self._minval = 1e-10
+    self._maxval = 0.1
+    self._tmpdir = mkdtemp()
+    self._cache_file = None
+
+    self.orbitals = None
+    self.orbital = None
+    self.MO = None
+    self.notes = None
+    self.surface = None
+    self.nodes = None
+    self.mol = None
+    self.names = None
+    self.box = None
+    self.axes = None
+    self.gradient = None
+    self.haveBasis = False
+    self.haveInpOrb = False
+    self.transform = np.eye(4).flatten().tolist()
+    self.gridPoints = 30
+    self.lineDensity = 10
+    self.startRadius = 1.5
+    self.maxSteps = 50
+
+    self.isovalueBox.setText('0.05')
+    self.isovalueBox.editingFinished.emit()
+    self.opacityBox.setText('1.0')
+    self.opacityBox.editingFinished.emit()
+
+    self.type_setEnabled(False)
+    self.surfaceBox.setChecked(True)
+    self.surfaceBox.setEnabled(False)
+    self.nodesBox.setChecked(False)
+    self.nodesBox.setEnabled(False)
+    self.nucleiBox.setChecked(True)
+    self.namesBox.setChecked(False)
+    self.boxBox.setChecked(False)
+    self.bothButton.setChecked(True)
+
+  def init_UI(self):
+    self.icon = QPixmap()
+    self.icon.loadFromData(icondata)
+    self.icon = QIcon(self.icon)
+    self.qApp = QApplication.instance()
+    self.qApp.setWindowIcon(self.icon)
+
+    self.setWindowTitle('Pegamoid')
+    self.setWindowIcon(self.icon)
+    self.setWindowFlags(self.windowFlags() | Qt.WindowContextHelpButtonHint)
+
+    self.mainMenu = self.menuBar()
+    self.fileMenu = self.mainMenu.addMenu('&File')
+    self.loadAction = self.fileMenu.addAction('&Load file...')
+    self.fileMenu.addSeparator()
+    self.saveMenu = self.fileMenu.addMenu('&Save')
+    self.saveHDF5Action = self.saveMenu.addAction('Save &HDF5...')
+    self.saveInpOrbAction = self.saveMenu.addAction('Save &InpOrb...')
+    self.saveCubeAction = self.saveMenu.addAction('Save &cube...')
+    self.fileMenu.addSeparator()
+    self.clearAction = self.fileMenu.addAction('&Clear')
+    self.quitAction = self.fileMenu.addAction('&Quit')
+    self.helpMenu = self.mainMenu.addMenu('&Help')
+    self.keysAction = self.helpMenu.addAction('&Keys')
+    self.aboutAction = self.helpMenu.addAction('&About')
+
+    # widgets
+    self.fileLabel = QLabel('File:')
+    self.filenameLabel = QLabel('')
+    self.fitViewButton = QPushButton('Fit View')
+    self.irrepLabel = QLabel('Irrep:')
+    self.irrepButton = QComboBox()
+    self.orbitalLabel = QLabel('Orbital:')
+    self.orbitalButton = QComboBox()
+    self.spinButton = QComboBox()
+    self.listButton = QPushButton('List')
+    self.typeLabel = QLabel('Type:')
+    self.typeButtonGroup = QButtonGroup()
+    activeFrame = QFrame()
+    self.frozenButton = QRadioButton('F')
+    self.inactiveButton = QRadioButton('I')
+    self.RAS1Button = QRadioButton('1')
+    self.RAS2Button = QRadioButton('2')
+    self.RAS3Button = QRadioButton('3')
+    self.secondaryButton = QRadioButton('S')
+    self.deletedButton = QRadioButton('D')
+    self.resetButton = QPushButton('Reset')
+    self.isovalueLabel = QLabel('&Value:')
+    self.isovalueSlider = QSlider(Qt.Horizontal)
+    self.isovalueBox = QLineEdit()
+    self.isovalueLabel.setBuddy(self.isovalueBox)
+    self.opacityLabel = QLabel('&Opacity:')
+    self.opacitySlider = QSlider(Qt.Horizontal)
+    self.opacityBox = QLineEdit()
+    self.opacityLabel.setBuddy(self.opacityBox)
+    self.surfaceBox = QCheckBox('Surface:')
+    self.signButton = QComboBox()
+    self.nodesBox = QCheckBox('&Nodes:')
+    self.nucleiBox = QCheckBox('Nuclei:')
+    self.namesBox = QCheckBox('Names:')
+    self.boxBox = QCheckBox('Box:')
+    self.boxSizeLabel = QLabel('&Box size:')
+    self.boxSizeBox = QLineEdit()
+    self.boxSizeLabel.setBuddy(self.boxSizeBox)
+    self.transformButton = QPushButton()
+    self.gridPointsLabel = QLabel('&Grid points:')
+    self.gridPointsBox = QLineEdit()
+    self.gridPointsLabel.setBuddy(self.gridPointsBox)
+    self.gradientBox = QCheckBox('Gradient:')
+    self.showGradientButton = QToolButton()
+    self.gradientGroup = QFrame()
+    self.lineDensityLabel = QLabel('&Line density:')
+    self.lineDensityBox = QLineEdit()
+    self.lineDensityLabel.setBuddy(self.lineDensityBox)
+    self.startRadiusLabel = QLabel('&Start radius:')
+    self.startRadiusBox = QLineEdit()
+    self.startRadiusLabel.setBuddy(self.startRadiusBox)
+    self.maxStepsLabel = QLabel('&Max. steps:')
+    self.maxStepsBox = QLineEdit()
+    self.maxStepsLabel.setBuddy(self.maxStepsBox)
+    self.directionButtonGroup = QButtonGroup()
+    self.upButton = QRadioButton(u'Up')
+    self.bothButton = QRadioButton(u'Both')
+    self.downButton = QRadioButton(u'Down')
+    self.statusLabel = QLabel()
+
+    self.boxicon = QPixmap()
+    self.boxicon.loadFromData(boxicondata)
+    self.boxicon = QIcon(self.boxicon)
+    self.transformButton.setIcon(self.boxicon)
+
+    self.frame = QFrame()
+
+    # display properties
+    self.mainMenu.setNativeMenuBar(False)
+    self.frame.setFrameStyle(QFrame.Panel | QFrame.Sunken)
+    self.filenameLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    self.listButton.setCheckable(True)
+    self.orbitalButton.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+    activeFrame.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
+    self.frozenButton.setLayoutDirection(Qt.RightToLeft)
+    self.inactiveButton.setLayoutDirection(Qt.RightToLeft)
+    self.RAS1Button.setLayoutDirection(Qt.RightToLeft)
+    self.RAS2Button.setLayoutDirection(Qt.RightToLeft)
+    self.RAS3Button.setLayoutDirection(Qt.RightToLeft)
+    self.secondaryButton.setLayoutDirection(Qt.RightToLeft)
+    self.deletedButton.setLayoutDirection(Qt.RightToLeft)
+    self.isovalueBox.setFixedWidth(80)
+    self.opacityBox.setFixedWidth(60)
+    self.surfaceBox.setLayoutDirection(Qt.RightToLeft)
+    self.signButton.addItem(u'+', [True, False])
+    self.signButton.addItem(u'−', [False, True])
+    self.signButton.addItem(u'+ & −', [True, True])
+    self.signButton.setCurrentIndex(2)
+    self.nodesBox.setLayoutDirection(Qt.RightToLeft)
+    self.nucleiBox.setLayoutDirection(Qt.RightToLeft)
+    self.namesBox.setLayoutDirection(Qt.RightToLeft)
+    self.boxBox.setLayoutDirection(Qt.RightToLeft)
+    self.boxSizeBox.setFixedWidth(120)
+    self.transformButton.setCheckable(True)
+    self.gridPointsBox.setFixedWidth(50)
+    self.gradientBox.setLayoutDirection(Qt.RightToLeft)
+    self.gradientGroup.hide()
+    self.showGradientButton.setArrowType(Qt.RightArrow)
+    self.showGradientButton.setAutoRaise(True)
+    self.lineDensityBox.setFixedWidth(50)
+    self.startRadiusBox.setFixedWidth(50)
+    self.maxStepsBox.setFixedWidth(50)
+    self.downButton.setLayoutDirection(Qt.RightToLeft)
+    self.bothButton.setLayoutDirection(Qt.RightToLeft)
+    self.upButton.setLayoutDirection(Qt.RightToLeft)
+
+    # tooltips
+    self.filenameLabel.setToolTip('Currently loaded filename')
+    self.fitViewButton.setToolTip('Fit view to the scene')
+    self.fitViewButton.setWhatsThis('Zoom and translate to fit the view to the currently visible objects.<br>Keys: <b>R</b>')
+    self.irrepButton.setToolTip('Select irrep for the orbital list')
+    self.irrepButton.setWhatsThis('This list shows the irreps available in the file, by name or number. Selecting one irrep restricts the orbitals available in the button on the right to the selected irrep. Select "All" for no restriction.<br>Keys: <b>Ctrl+PgUp</b>, <b>Ctrl+PgDown</b>')
+    self.orbitalButton.setToolTip('Select orbital to display')
+    self.orbitalButton.setWhatsThis('This shows all the orbitals available in the file, belonging to the selected irrep and spin if applicable. If no irrep is selected ("All") and if the file is not a precomputed grid, the electron density, the spin density and the Laplacian of the electron density may also be available. Selecting an orbital displays it in the 3D view above.<br>Keys: <b>PgUp</b>, <b>PgDown</b>')
+    self.spinButton.setToolTip('Select spin for the orbital list')
+    self.spinButton.setWhatsThis('Select alpha or beta orbitals. This list is only visible if the file contains spin-orbitals.<br>Keys: <b>A</b>, <b>B</b>')
+    self.listButton.setToolTip('Show/hide full list of orbitals')
+    self.listButton.setWhatsThis('Open or close a window showing the list of all orbitals (no restrictions), where custom notes can be added.<br>Key: <b>Shift+L</b>')
+    activeFrame.setWhatsThis('RAS1, RAS2 and RAS3 orbitals count as "active"')
+    self.frozenButton.setToolTip('Set orbital as frozen')
+    self.frozenButton.setWhatsThis('Set the type of the current orbital to "Frozen". This type will be saved in HDF5 or InpOrb files.<br>Key: <b>F</b>')
+    self.inactiveButton.setToolTip('Set orbital as inactive')
+    self.inactiveButton.setWhatsThis('Set the type of the current orbital to "Inactive". This type will be saved in HDF5 or InpOrb files.<br>Key: <b>I</b>')
+    self.RAS1Button.setToolTip('Set orbital as RAS1 (active)')
+    self.RAS1Button.setWhatsThis('Set the type of the current orbital to "RAS1" (active). This type will be saved in HDF5 or InpOrb files.<br>Key: <b>1</b>')
+    self.RAS2Button.setToolTip('Set orbital as RAS2 (active)')
+    self.RAS2Button.setWhatsThis('Set the type of the current orbital to "RAS2" (active). This type will be saved in HDF5 or InpOrb files.<br>Key: <b>2</b>')
+    self.RAS3Button.setToolTip('Set orbital as RAS3 (active)')
+    self.RAS3Button.setWhatsThis('Set the type of the current orbital to "RAS3" (active). This type will be saved in HDF5 or InpOrb files.<br>Key: <b>3</b>')
+    self.secondaryButton.setToolTip('Set orbital as secondary')
+    self.secondaryButton.setWhatsThis('Set the type of the current orbital to "Secondary". This type will be saved in HDF5 or InpOrb files.<br>Key: <b>S</b>')
+    self.deletedButton.setToolTip('Set orbital as deleted')
+    self.deletedButton.setWhatsThis('Set the type of the current orbital to "Deleted". This type will be saved in HDF5 or InpOrb files.<br>Key: <b>D</b>')
+    self.resetButton.setToolTip('Reset orbital to its initial type')
+    self.resetButton.setWhatsThis('Discard changes to the current orbital type and restore the type (if any) specified in the file.<br>Key: <b>0</b> (zero)')
+    self.isovalueSlider.setToolTip('Set value for the isosurfaces (inverse log scale)')
+    self.isovalueSlider.setWhatsThis('Change the value for which the isosurfaces are computed. The scale of the slider is inverse logarithmic, moving it to the right makes the value smaller and the surfaces typically "larger". Both positive and negative surfaces are controlled with the slider. To show the isosurface for a value of 0 enable "Nodes" below.<br>Keys: <b>(Shift+)+</b>, <b>(Shift+)-</b>')
+    self.isovalueBox.setToolTip('Set value for the isosurfaces')
+    self.isovalueBox.setWhatsThis('Value for which the isosurfaces are computed. Lower values make the surfaces typically "larger". Both positive and negative surfaces are affected by this value. To show the isosurface for a value of 0 enable "Nodes" below.')
+    self.opacitySlider.setToolTip('Set opacity of the isosurfaces')
+    self.opacitySlider.setWhatsThis('Change the opacity of the isosurfaces. Lower opacity makes the surface more transparent.<br>Keys: <b>(Shift+)O</b> (oh), <b>(Shift+)T</b>')
+    self.opacityBox.setToolTip('Set opacity of the isosurfaces')
+    self.opacityBox.setWhatsThis('Opacity of the isosurfaces. Lower opacity makes the surface more transparent.')
+    self.surfaceBox.setToolTip('Show/hide the isosurfaces')
+    self.surfaceBox.setWhatsThis('If checked, the isosurfaces of the current orbital or density are displayed.<br>Key: <b>Ctrl+S</b>')
+    self.signButton.setToolTip('Set which parts of the isosurfaces are displayed')
+    self.signButton.setWhatsThis('Controls whether the positive, negative or both parts of the isosurface are displayed.<br>Key: <b>Ctrl+Shift+PgUp</b>, <b>Ctrl+Shift+PgDown</b></b>')
+    self.nodesBox.setToolTip('Show/hide the nodal surfaces')
+    self.nodesBox.setWhatsThis('If checked, the nodal surfaces (value=0) of the current orbital or density are displayed.<br>Key: <b>Ctrl+N</b>')
+    self.nucleiBox.setToolTip('Show/hide the nuclei')
+    self.nucleiBox.setWhatsThis('If checked, the nuclei or centers are displayed as balls.<br>Key: <b>Ctrl+A</b>')
+    self.namesBox.setToolTip('Show/hide the atom names')
+    self.namesBox.setWhatsThis('If checked, text labels with the available names are shown at the nucleus or center positions.<br>Key: <b>Ctrl+M</b>')
+    self.boxBox.setToolTip('Show/hide the grid box')
+    self.boxBox.setWhatsThis('If checked, the outline of the current grid box is displayed.<br>Key: <b>Ctrl+B</b>')
+    self.boxSizeBox.setToolTip('Set the box size in x, y, z (in bohr)')
+    self.boxSizeBox.setWhatsThis('Dimension of the grid box along the x, y and z axes, in bohr. Values can be separated by commas or spaces. Only available if the file is not a precomputed grid.')
+    self.transformButton.setToolTip('Show/hide the transformation matrix for the box')
+    self.transformButton.setWhatsThis('Open or close a window where a translation and transformation matrix can be specified for the grid box.<br>Key: <b>Ctrl+T</b>')
+    self.gridPointsBox.setToolTip('Set the number of grid points in the largest dimension')
+    self.gridPointsBox.setWhatsThis('Number of grid points along the largest dimension, the number in the other dimensions is adjusted to keep the grid approximately cubic. Only available if the file is not a precomputed grid.')
+    self.gradientBox.setToolTip('Show/hide the gradient stream lines (slow)')
+    self.gradientBox.setWhatsThis('If checked, stream lines representing the gradient field of the current orbital or density are displayed. Note that this may be slow.<br>Key: <b>Ctrl+G</b>')
+    self.showGradientButton.setToolTip('Show/hide advanced options for gradient lines')
+    self.showGradientButton.setWhatsThis('Show or hide additional options for the representation of the gradient stream lines.<br>Key: <b>Ctrl+Shift+G</b>')
+    self.lineDensityBox.setToolTip('Set the density of gradient lines')
+    self.lineDensityBox.setWhatsThis('Controls the number of lines generated. The number of starting points is the square of this number for each nucleus or center.')
+    self.startRadiusBox.setToolTip('Set the starting radius for the gradient lines')
+    self.startRadiusBox.setWhatsThis('The lines start on a sphere of this radius (in bohr) around each nucleus or center.')
+    self.maxStepsBox.setToolTip('Set the maximum number of steps for the gradient lines')
+    self.maxStepsBox.setWhatsThis('Maximum number of steps in the integration of the gradient stream lines. Reduce to speed up.')
+    self.downButton.setToolTip('Show only lines towards lower values')
+    self.downButton.setWhatsThis('Integrate the gradient stream lines only towards lower values from the starting points (outwards for the electron density).<br>Key: <b>Ctrl+Shift+D</b>')
+    self.bothButton.setToolTip('Show lines in both directions')
+    self.downButton.setWhatsThis('Integrate the gradient stream lines in both directions.<br>Key: <b>Ctrl+Shift+B</b>')
+    self.upButton.setToolTip('Show only lines towards higher values')
+    self.upButton.setWhatsThis('Integrate the gradient stream lines only towards higher values from the starting points (inwards for the electron density).<br>Key: <b>Ctrl+Shift+U</b>')
+
+    # value properties
+    self.isovalueSlider.setRange(0, 1000)
+    self.opacitySlider.setRange(0, 100)
+    self.typeButtonGroup.addButton(self.frozenButton, 1)
+    self.typeButtonGroup.addButton(self.inactiveButton, 2)
+    self.typeButtonGroup.addButton(self.RAS1Button, 3)
+    self.typeButtonGroup.addButton(self.RAS2Button, 4)
+    self.typeButtonGroup.addButton(self.RAS3Button, 5)
+    self.typeButtonGroup.addButton(self.secondaryButton, 6)
+    self.typeButtonGroup.addButton(self.deletedButton, 7)
+    self.directionButtonGroup.addButton(self.downButton, vtk.vtkStreamTracer.BACKWARD)
+    self.directionButtonGroup.addButton(self.bothButton, vtk.vtkStreamTracer.BOTH)
+    self.directionButtonGroup.addButton(self.upButton, vtk.vtkStreamTracer.FORWARD)
+
+    # layout
+    hbox1 = QHBoxLayout()
+    hbox1.addWidget(self.fileLabel)
+    hbox1.addWidget(self.filenameLabel, stretch=1)
+    hbox1.addWidget(self.fitViewButton)
+
+    hbox2 = QHBoxLayout()
+    hbox2.setSpacing(10)
+    self.irrepGroup = group_widgets(self.irrepLabel, self.irrepButton)
+    hbox2.addWidget(self.irrepGroup)
+    self.orbitalGroup = group_widgets(self.orbitalLabel, self.orbitalButton, self.spinButton)
+    hbox2.addWidget(self.orbitalGroup)
+    hbox2.addSpacing(10)
+    hbox2.addWidget(self.listButton)
+    hbox2.addStretch(1)
+
+    hbox3 = QHBoxLayout()
+    hbox3.addWidget(self.typeLabel)
+    hbox3.addSpacing(10)
+    activeLayout = QHBoxLayout()
+    activeLayout.addWidget(group_widgets(self.RAS1Button, self.RAS2Button, self.RAS3Button))
+    activeFrame.setLayout(activeLayout)
+    self.typeGroup = group_widgets(self.frozenButton, self.inactiveButton, activeFrame, self.secondaryButton, self.deletedButton)
+    hbox3.addWidget(self.typeGroup)
+    hbox3.addSpacing(10)
+    hbox3.addWidget(self.resetButton)
+    hbox3.addStretch(1)
+
+    hbox4 = QHBoxLayout()
+    hbox4.setSpacing(10)
+    self.isovalueGroup = group_widgets(self.isovalueLabel, self.isovalueSlider, self.isovalueBox)
+    hbox4.addWidget(self.isovalueGroup, stretch=2)
+    self.opacityGroup = group_widgets(self.opacityLabel, self.opacitySlider, self.opacityBox)
+    hbox4.addWidget(self.opacityGroup, stretch=1)
+
+    hbox5 = QHBoxLayout()
+    hbox5.setSpacing(10)
+    hbox5.addWidget(self.surfaceBox)
+    hbox5.addWidget(self.signButton)
+    hbox5.addWidget(self.nodesBox)
+    hbox5.addWidget(self.nucleiBox)
+    hbox5.addWidget(self.namesBox)
+    hbox5.addWidget(self.boxBox)
+    self.boxSizeGroup = group_widgets(self.boxSizeLabel, self.boxSizeBox)
+    hbox5.addWidget(self.boxSizeGroup)
+    hbox5.addWidget(self.transformButton)
+    self.gridPointsGroup = group_widgets(self.gridPointsLabel, self.gridPointsBox)
+    hbox5.addWidget(self.gridPointsGroup)
+    hbox5.addStretch(1)
+
+    hbox6 = QHBoxLayout()
+    hbox6.addWidget(self.gradientBox)
+    gradientLayout = QHBoxLayout()
+    gradientLayout.setContentsMargins(0, 0, 0, 0)
+    self.lineDensityGroup = group_widgets(self.lineDensityLabel, self.lineDensityBox)
+    gradientLayout.addWidget(self.lineDensityGroup)
+    self.startRadiusGroup = group_widgets(self.startRadiusLabel, self.startRadiusBox)
+    gradientLayout.addWidget(self.startRadiusGroup)
+    self.maxStepsGroup = group_widgets(self.maxStepsLabel, self.maxStepsBox)
+    gradientLayout.addWidget(self.maxStepsGroup)
+    gradientLayout.addWidget(self.downButton)
+    gradientLayout.addWidget(self.bothButton)
+    gradientLayout.addWidget(self.upButton)
+    self.gradientGroup.setLayout(gradientLayout)
+    hbox6.addWidget(self.gradientGroup)
+    hbox6.addWidget(self.showGradientButton)
+    hbox6.addStretch(1)
+
+    line = QFrame()
+    line.setFrameShape(QFrame.HLine | QFrame.Sunken)
+
+    vbox = QVBoxLayout()
+    vbox.setSpacing(10)
+    vbox.addWidget(self.frame, stretch=1)
+    vbox.addLayout(hbox1)
+    vbox.addWidget(line)
+    vbox.addLayout(hbox2)
+    vbox.addLayout(hbox3)
+    vbox.addLayout(hbox4)
+    vbox.addLayout(hbox5)
+    vbox.addLayout(hbox6)
+
+    _widget = QWidget()
+    _widget.setLayout(vbox)
+
+    self.listDock = ListDock(self)
+    self.listDock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+    self.addDockWidget(Qt.RightDockWidgetArea, self.listDock)
+    self.listDock.hide()
+    self.listDock.setWhatsThis('This is a detachable window that shows all orbitals in the file. For each orbital you can add a custom note and specify whether it should be included in the electron and spin density. This information is not saved.<br>Key: <b>Ctrl+L</b>')
+
+    self.transformDock = TransformDock(self)
+    self.addDockWidget(Qt.RightDockWidgetArea, self.transformDock)
+    self.transformDock.hide()
+    self.transformDock.setWhatsThis('This is a detachable window that allows setting a transformation (rotation, scaling, shearing, translation) for the grid box. This is only possible if the current file is not a precomputed grid. The transformation affects the display and any grid saved in the cube format.')
+
+    self.keymess = None
+
+    self.setCentralWidget(_widget)
+    self.statusBar().addWidget(self.statusLabel)
+    self.statusBar().setStyleSheet('QStatusBar::item{border:0};')
+    self.statusLabel.setText('Ready.')
+    self.resize(800,800)
+
+    # shortcuts
+    self.loadAction.setShortcut(QKeySequence(QKeySequence.Open)) # Ctrl+O
+    self.saveHDF5Action.setShortcut('Ctrl+H')
+    self.saveInpOrbAction.setShortcut('Ctrl+I')
+    self.saveCubeAction.setShortcut('Ctrl+C')
+    self.clearAction.setShortcut(QKeySequence(QKeySequence.Close)) # Ctrl+W
+    self.quitAction.setShortcut(QKeySequence(QKeySequence.Quit)) # Ctrl+Q
+    self.keysAction.setShortcut(QKeySequence(QKeySequence.HelpContents)) # F1
+    self.fitViewButton.setShortcut(QKeySequence('R'))
+    self.listButton.setShortcut('Ctrl+L')
+    self.prevIrrepShortcut = QShortcut(QKeySequence('Ctrl+PgUp'), self)
+    self.prevIrrepShortcut.activated.connect(self.prev_irrep)
+    self.nextIrrepShortcut = QShortcut(QKeySequence('Ctrl+PgDown'), self)
+    self.nextIrrepShortcut.activated.connect(self.next_irrep)
+    self.prevOrbitalShortcut = QShortcut(QKeySequence('PgUp'), self)
+    self.prevOrbitalShortcut.activated.connect(self.prev_orbital)
+    self.nextOrbitalShortcut = QShortcut(QKeySequence('PgDown'), self)
+    self.nextOrbitalShortcut.activated.connect(self.next_orbital)
+    self.alphaShortcut = QShortcut(QKeySequence('A'), self)
+    self.alphaShortcut.activated.connect(self.select_alpha)
+    self.betaShortcut = QShortcut(QKeySequence('B'), self)
+    self.betaShortcut.activated.connect(self.select_beta)
+    self.frozenButton.setShortcut('F')
+    self.inactiveButton.setShortcut('I')
+    self.RAS1Button.setShortcut('1')
+    self.RAS2Button.setShortcut('2')
+    self.RAS3Button.setShortcut('3')
+    self.secondaryButton.setShortcut('S')
+    self.deletedButton.setShortcut('D')
+    self.resetButton.setShortcut('0')
+    self.increaseIsovalueShortcut = QShortcut(QKeySequence('+'), self)
+    self.increaseIsovalueShortcut.activated.connect(self.increase_isovalue)
+    self.decreaseIsovalueShortcut = QShortcut(QKeySequence('-'), self)
+    self.decreaseIsovalueShortcut.activated.connect(self.decrease_isovalue)
+    self.increaseMoreIsovalueShortcut = QShortcut(QKeySequence('Shift++'), self)
+    self.increaseMoreIsovalueShortcut.activated.connect(partial(self.increase_isovalue, True))
+    self.decreaseMoreIsovalueShortcut = QShortcut(QKeySequence('Shift+-'), self)
+    self.decreaseMoreIsovalueShortcut.activated.connect(partial(self.decrease_isovalue, True))
+    self.increaseOpacityShortcut = QShortcut(QKeySequence('O'), self)
+    self.increaseOpacityShortcut.activated.connect(self.increase_opacity)
+    self.decreaseOpacityShortcut = QShortcut(QKeySequence('T'), self)
+    self.decreaseOpacityShortcut.activated.connect(self.decrease_opacity)
+    self.increaseMoreOpacityShortcut = QShortcut(QKeySequence('Shift+O'), self)
+    self.increaseMoreOpacityShortcut.activated.connect(partial(self.increase_opacity, True))
+    self.decreaseMoreOpacityShortcut = QShortcut(QKeySequence('Shift+T'), self)
+    self.decreaseMoreOpacityShortcut.activated.connect(partial(self.decrease_opacity, True))
+    self.surfaceBox.setShortcut('Ctrl+S')
+    self.prevSignShortcut = QShortcut(QKeySequence('Ctrl+Shift+PgUp'), self)
+    self.prevSignShortcut.activated.connect(self.prev_sign)
+    self.nextSignShortcut = QShortcut(QKeySequence('Ctrl+Shift+PgDown'), self)
+    self.nextSignShortcut.activated.connect(self.next_sign)
+    self.nodesBox.setShortcut('Ctrl+N')
+    self.nucleiBox.setShortcut('Ctrl+A')
+    self.namesBox.setShortcut('Ctrl+M')
+    self.boxBox.setShortcut('Ctrl+B')
+    self.transformButton.setShortcut('Ctrl+T')
+    self.gradientBox.setShortcut('Ctrl+G')
+    self.showGradientButton.setShortcut('Ctrl+Shift+G')
+    self.downButton.setShortcut('Ctrl+Shift+D')
+    self.bothButton.setShortcut('Ctrl+Shift+B')
+    self.upButton.setShortcut('Ctrl+Shift+U')
+
+    # signals
+    self.qApp.aboutToQuit.connect(self.deltmp)
+    self.loadAction.triggered.connect(self.load_file)
+    self.saveHDF5Action.triggered.connect(self.write_hdf5)
+    self.saveInpOrbAction.triggered.connect(self.write_inporb)
+    self.saveCubeAction.triggered.connect(self.write_cube)
+    self.clearAction.triggered.connect(self.clear)
+    self.quitAction.triggered.connect(self.close)
+    self.keysAction.triggered.connect(self.show_keys)
+    self.aboutAction.triggered.connect(self.show_about)
+    self.fitViewButton.clicked.connect(self.reset_camera)
+    self.irrepButton.currentIndexChanged.connect(self.irrepButton_changed)
+    self.orbitalButton.currentIndexChanged.connect(self.orbitalButton_changed)
+    self.spinButton.currentIndexChanged.connect(self.spinButton_changed)
+    self.listButton.clicked.connect(self.show_list)
+    self.typeButtonGroup.buttonClicked.connect(self.typeButtonGroup_changed)
+    self.resetButton.clicked.connect(self.reset_type)
+    self.isovalueSlider.valueChanged.connect(self.isovalueSlider_changed)
+    self.isovalueBox.editingFinished.connect(self.isovalueBox_changed)
+    self.opacitySlider.valueChanged.connect(self.opacitySlider_changed)
+    self.opacityBox.editingFinished.connect(self.opacityBox_changed)
+    self.surfaceBox.stateChanged.connect(self.toggle_surface)
+    self.signButton.currentIndexChanged.connect(self.sign_changed)
+    self.nodesBox.stateChanged.connect(self.toggle_nodes)
+    self.nucleiBox.stateChanged.connect(self.toggle_nuclei)
+    self.namesBox.stateChanged.connect(self.toggle_names)
+    self.boxBox.stateChanged.connect(self.toggle_box)
+    self.boxSizeBox.editingFinished.connect(self.boxSizeBox_changed)
+    self.transformButton.clicked.connect(self.edit_transform)
+    self.gridPointsBox.editingFinished.connect(self.gridPointsBox_changed)
+    self.gradientBox.stateChanged.connect(self.toggle_gradient)
+    self.showGradientButton.clicked.connect(self.toggle_gradient_options)
+    self.lineDensityBox.editingFinished.connect(self.lineDensityBox_changed)
+    self.startRadiusBox.editingFinished.connect(self.startRadiusBox_changed)
+    self.maxStepsBox.editingFinished.connect(self.maxStepsBox_changed)
+    self.directionButtonGroup.buttonClicked.connect(self.directionButtonGroup_changed)
+
+  def init_VTK(self):
+    framelayout = QVBoxLayout()
+    try:
+      self.vtkWidget = SimpleVTK(self.frame, stereo=1)
+    except:
+      self.vtkWidget = SimpleVTK(self.frame, Qt.WindowFlags(), stereo=1)
+    self.vtkWidget.setWhatsThis('Render window where the orbitals are displayed. Click and drag with the primary (left) mouse button to rotate; use the secondary (right) button, the wheel, or Ctrl+Shift+primary to zoom; the tertiary (middle) button or Shift+primary to translate; Ctrl+primary to rotate in the screen plane.')
+    framelayout.addWidget(self.vtkWidget)
+    framelayout.setContentsMargins(0, 0, 0, 0)
+    self.frame.setLayout(framelayout)
+
+    self.ren = vtk.vtkRenderer()
+    self.ren.UseDepthPeelingOn()
+    self.ren.SetMaximumNumberOfPeels(20)
+    self.vtkWidget.GetRenderWindow().AddRenderer(self.ren)
+    self.iren = self.vtkWidget.GetRenderWindow().GetInteractor()
+    self.iren.SetInteractorStyle(vtk.vtkInteractorStyleTrackballCamera())
+    #self.iren.Initialize()
+    t = Initializer(self)
+    t.start()
+
+    self.lut = vtk.vtkLookupTable()
+    self.lut.SetNumberOfTableValues(3)
+    self.lut.SetTableValue(0, *surface_color[-1])
+    self.lut.SetTableValue(1, *surface_color[ 0])
+    self.lut.SetTableValue(2, *surface_color[ 1])
+    self.lut.SetTableRange(-np.finfo(np.float).eps, np.finfo(np.float).eps)
+    self.lut.SetNanColor(1, 1, 1, 1)
+
+    # lighting
+    light1 = vtk.vtkLight()
+    light1.SetColor(1.0, 1.0, 1.0)
+    light2 = vtk.vtkLight()
+    light1.DeepCopy(light2)
+    light3 = vtk.vtkLight()
+    light1.DeepCopy(light3)
+    light1.SetIntensity(1.0)
+    light1.SetPosition(self.light_pos(45, 45))
+    light1.SetLightTypeToCameraLight()
+    light2.SetIntensity(0.6)
+    light2.SetPosition(self.light_pos(-30, -60))
+    light2.SetLightTypeToCameraLight()
+    light3.SetIntensity(0.5)
+    light3.SetPosition(self.light_pos(-30, 60))
+    light3.SetLightTypeToCameraLight()
+    self.ren.AutomaticLightCreationOff()
+    self.ren.RemoveAllLights()
+    self.ren.AddLight(light1)
+    self.ren.AddLight(light2)
+    self.ren.AddLight(light3)
+
+    self.ren.SetBackground(*background_color['?'])
+
+    # fonts
+    try:
+      self.sansFont = registry.fontFile('Droid Sans')
+    except (NameError, KeyError):
+      self.sansFont = None
+    try:
+      self.sansBoldFont = registry.fontFile('Droid Sans Bold')
+    except (NameError, KeyError):
+      self.sansBoldFont = None
+    try:
+      self.monoFont = registry.fontFile('Droid Sans Mono')
+    except (NameError, KeyError):
+      self.monoFont = None
+
+    self.ready = True
+
+  def deltmp(self):
+    try:
+      if (self._cache_file is not None):
+        del self._cache_file
+      rmtree(self._tmpdir)
     except:
       pass
 
-  # Return a string with orbital information for the drop-down list
-  def orb_to_list(self, n, orb):
-    if ('label' in orb):
-      return '{0:04}:{1}'.format(n, orb['label'])
+  #========= properties
+
+  @property
+  def ready(self):
+    return self._ready
+
+  @ready.setter
+  def ready(self, value):
+    self._ready = value
+
+  @property
+  def filename(self):
+    return self._filename
+
+  @filename.setter
+  def filename(self, value):
+    old = self._filename
+    self._filename = value
+    self._filename_changed(value, old)
+
+  def _filename_changed(self, new, old):
+    if (new is None):
+      self.filenameLabel.setText('')
+      return
+    ftype = self.detect_format(new)
+    if (ftype is None):
+      error = 'File {0} not found'.format(new)
+      self.show_error(error)
+      return
+    elif (ftype == 'unknown'):
+      error = 'Format of {0} not recognized'.format(new)
+      self.show_error(error)
+      return
+    elif (ftype in ['inporb']):
+      try:
+        assert (self.orbitals.type == 'hdf5')
+      except (AssertionError, AttributeError):
+        error = 'The InpOrb format does not contain basis set information, it must be loaded after an HDF5 file (*.h5)'
+        self.show_error(error)
+        return
+    self.statusLabel.setText('Reading...')
+    if (self._fileReadThread is not None):
+      self._fileReadThread.wait()
+    self._fileReadThread = FileRead(self, filename=new, ftype=ftype)
+    self._fileReadThread.disable_list = [self.loadAction, self.saveMenu, self.clearAction]
+    self._fileReadThread.finished.connect(self.file_read)
+    self._fileReadThread.start()
+
+  @property
+  def isGrid(self):
+    return isinstance(self.orbitals, Grid)
+
+  @property
+  def orbitals(self):
+    return self._orbitals
+
+  @orbitals.setter
+  def orbitals(self, value):
+    self._orbitals = value
+    self._orbitals_changed(value)
+
+  def _orbitals_changed(self, new):
+    enabled = new is not None
+    self.orbitalGroup.setEnabled(enabled)
+    self.saveHDF5Action.setEnabled(enabled and (new.type == 'hdf5'))
+    self.MO = None
+    self.xyz = None
+    if (not enabled):
+      self.orbital = None
+      self.haveBasis = False
+      self.haveInpOrb = False
+      self.irreplist = []
+      self.spinlist = ['']
+      self.type_setEnabled(False)
+      self.set_typeButtonGroup()
+      return
+    self.haveBasis = isinstance(new, Orbitals)
+    self.haveInpOrb = new.inporb is not None
+    # Select initial orbital
+    self.initial_orbital()
+    # Generate list of irreps
+    irreplist = []
+    for o in new.MO + new.MO_b:
+      s = o['sym']
+      if (s not in irreplist):
+        irreplist.append(s)
+    if ('z' in irreplist):
+      irreplist.remove('z')
+    self.irreplist = irreplist
+    # Generate list of spins
+    if (len(new.MO_b) > 0):
+      spinlist = ['alpha', 'beta']
     else:
-      # Build irrep and local numbering
-      if (self.nosym):
-        numsym = ''
+      spinlist = [u'']
+    self.spinlist = spinlist
+    # Create the list of orbitals for notes
+    self.build_notes()
+    self.ready = False
+    # Create molecule (nuclei)
+    self.new_mol()
+    # Create the box
+    self.surface = None
+    self.nodes = None
+    self.gradient = None
+    self.new_box()
+    self.toggle_nuclei()
+    self.toggle_names()
+    if (self.box is not None):
+      v = self.box.GetVisibility()
+      self.box.VisibilityOn()
+      self.ren.ResetCamera()
+      self.box.SetVisibility(v)
+    else:
+      self.ren.ResetCamera()
+    self.ready = True
+    self.vtk_update()
+
+  @property
+  def orbital(self):
+    return self._orbital
+
+  @orbital.setter
+  def orbital(self, value):
+    old = self._orbital
+    self._orbital = value
+    self._orbital_changed(value, old)
+
+  def _orbital_changed(self, new, old):
+    if (new == old):
+      if ((new is not None) and ((new <= 0) or (not self._tainted))):
+        return
+    self.signButton.setEnabled(new != 0)
+    self.build_surface()
+
+  @property
+  def MO(self):
+    return self._MO
+
+  @MO.setter
+  def MO(self, value):
+    self._MO = value
+    self._tainted = True
+    self.populate_orbitals()
+    self._tainted = False
+
+  @property
+  def notes(self):
+    return self._notes
+
+  @notes.setter
+  def notes(self, value):
+    self._notes = value
+    self._notes_changed(value)
+
+  def _notes_changed(self, new):
+    enabled = new is not None
+    self.listDock.set_list()
+
+  @property
+  def xyz(self):
+    return self._xyz
+
+  @xyz.setter
+  def xyz(self, value):
+    self._xyz = value
+    self._newgrid = True
+
+  @property
+  def surface(self):
+    return self._surface_actor
+
+  @surface.setter
+  def surface(self, value):
+    if (self._surface_actor is not None):
+      self.ren.RemoveActor(self._surface_actor)
+    self._surface_actor = value
+    if (self._surface_actor is not None):
+      self.ren.AddActor(self._surface_actor)
+    self._surface_changed(value)
+
+  def _surface_changed(self, new):
+    enabled = new is not None
+    self.isovalueGroup.setEnabled(enabled)
+    self.opacityGroup.setEnabled(enabled)
+    self.surfaceBox.setEnabled(enabled)
+    self.signButton.setEnabled(enabled)
+    self.saveCubeAction.setEnabled(enabled)
+
+  @property
+  def nodes(self):
+    return self._nodes_actor
+
+  @nodes.setter
+  def nodes(self, value):
+    if (self._nodes_actor is not None):
+      self.ren.RemoveActor(self._nodes_actor)
+    self._nodes_actor = value
+    if (self._nodes_actor is not None):
+      self.ren.AddActor(self._nodes_actor)
+    self._nodes_changed(value)
+
+  def _nodes_changed(self, new):
+    enabled = new is not None
+    self.nodesBox.setEnabled(enabled)
+
+  @property
+  def mol(self):
+    return self._mol_actor
+
+  @mol.setter
+  def mol(self, value):
+    if (self._mol_actor is not None):
+      self.ren.RemoveActor(self._mol_actor)
+    self._mol_actor = value
+    if (self._mol_actor is not None):
+      self.ren.AddActor(self._mol_actor)
+    self._mol_changed(value)
+
+  def _mol_changed(self, new):
+    enabled = new is not None
+    self.nucleiBox.setEnabled(enabled)
+
+  @property
+  def names(self):
+    return self._names_actor
+
+  @names.setter
+  def names(self, value):
+    if (self._names_actor is not None):
+      self.ren.RemoveActor(self._names_actor)
+    self._names_actor = value
+    if (self._names_actor is not None):
+      self.ren.AddActor(self._names_actor)
+    self._names_changed(value)
+
+  def _names_changed(self, new):
+    enabled = new is not None
+    self.namesBox.setEnabled(enabled)
+
+  @property
+  def box(self):
+    return self._box_actor
+
+  @box.setter
+  def box(self, value):
+    if (self._box_actor is not None):
+      self.ren.RemoveActor(self._box_actor)
+    self._box_actor = value
+    if (self._box_actor is not None):
+      self.ren.AddActor(self._box_actor)
+    self._box_changed(value)
+
+  def _box_changed(self, new):
+    enabled = new is not None
+    self.boxBox.setEnabled(enabled)
+
+  @property
+  def axes(self):
+    return self._axes_actor
+
+  @axes.setter
+  def axes(self, value):
+    if (self._axes_actor is not None):
+      self.ren.RemoveActor(self._axes_actor)
+    self._axes_actor = value
+    if (self._axes_actor is not None):
+      self.ren.AddActor(self._axes_actor)
+
+  @property
+  def gradient(self):
+    return self._gradient_actor
+
+  @gradient.setter
+  def gradient(self, value):
+    if (self._gradient_actor is not None):
+      self.ren.RemoveActor(self._gradient_actor)
+    self._gradient_actor = value
+    if (self._gradient_actor is not None):
+      self.ren.AddActor(self._gradient_actor)
+    self._gradient_changed(value)
+
+  def _gradient_changed(self, new):
+    enabled = new is not None
+    self.gradientBox.setEnabled(enabled)
+    if (not enabled):
+      self.gradientBox.setChecked(False)
+
+  @property
+  def panel(self):
+    return self._panel_actor
+
+  @panel.setter
+  def panel(self, value):
+    if (self._panel_actor is not None):
+      self.ren.RemoveActor2D(self._panel_actor)
+    self._panel_actor = value
+    if (self._panel_actor is not None):
+      self.ren.AddActor2D(self._panel_actor)
+    self._panel_changed(value)
+
+  def _panel_changed(self, new):
+    enabled = new is not None
+
+  @property
+  def haveBasis(self):
+    return self._haveBasis
+
+  @haveBasis.setter
+  def haveBasis(self, value):
+    self._haveBasis = value
+    self.boxSizeGroup.setEnabled(value)
+    self.transformDock.set_enabled(value)
+    self.gridPointsGroup.setEnabled(value)
+    if (self.orbitals is None):
+      self.gridPointsGroup.setEnabled(True)
+
+  @property
+  def haveInpOrb(self):
+    return self._haveInpOrb
+
+  @haveInpOrb.setter
+  def haveInpOrb(self, value):
+    self._haveInpOrb = value
+    self.saveInpOrbAction.setEnabled(value)
+
+  @property
+  def irrep(self):
+    return self._irrep
+
+  @irrep.setter
+  def irrep(self, value):
+    old = self._irrep
+    self._irrep = value
+    if (value != old):
+      self.populate_orbitals()
+
+  @property
+  def irreplist(self):
+    return self._irreplist
+
+  @irreplist.setter
+  def irreplist(self, value):
+    self._irreplist = value
+    self.irrepButton.clear()
+    self.irrepButton.addItem('All')
+    enabled = len(value) > 1
+    if (enabled):
+      for i in value:
+        self.irrepButton.addItem(i)
+    self.irrepGroup.setEnabled(enabled)
+
+  @property
+  def nosym(self):
+    return len(self.irreplist) <= 1
+
+  @property
+  def spin(self):
+    return self._spin
+
+  @spin.setter
+  def spin(self, value):
+    self._spin = value
+    self._spin_changed(value)
+
+  def _spin_changed(self, new):
+    if (self.orbitals is None):
+      return
+    if (new == 'beta'):
+      self.MO = self.orbitals.MO_b
+    else:
+      self.MO = self.orbitals.MO
+
+  @property
+  def spinlist(self):
+    return self._spinlist
+
+  @spinlist.setter
+  def spinlist(self, value):
+    self._spinlist = value
+    self.spinButton.clear()
+    for i in value:
+      self.spinButton.addItem(i)
+    enabled = len(value) > 1
+    self.spinButton.setEnabled(enabled)
+    if (len(value) > 1):
+      self.spinButton.show()
+    else:
+      self.spinButton.hide()
+
+  @property
+  def isovalue(self):
+    return self._isovalue
+
+  @isovalue.setter
+  def isovalue(self, value):
+    old = self._isovalue
+    self._isovalue = value
+    self._isovalue_changed(value, old)
+
+  def _isovalue_changed(self, new, old):
+    logrange = np.log(self._maxval/self._minval)
+    reldist = np.log(new/self._minval)/logrange
+    slider_value = round(self.isovalueSlider.maximum() - reldist * (self.isovalueSlider.maximum() + self.isovalueSlider.minimum()))
+    self.isovalueSlider.blockSignals(True)
+    self.isovalueSlider.setValue(slider_value)
+    self.isovalueSlider.blockSignals(False)
+    if (self.surface is not None):
+      contour = get_input_type(self.surface.GetMapper(), vtk.vtkContourFilter)
+      if (self.orbital == 0):
+        val = [True, False]
       else:
-        if (self.sym == 'All'):
-          numsym = ' [{0}]'.format(orb['sym'])
-        else:
-          m = [o['sym'] for o in self.MO[:n]].count(orb['sym'])
-          numsym = ' [{0}, {1}]'.format(orb['sym'], m)
-      # Add new type if it has been modified
-      tp = orb['type']
-      if (('newtype' in orb) and (orb['newtype'] != tp)):
-        tp += '->' + orb['newtype']
-      return '{0:04}:{0}{1}: {2:.4f} ({3:.4f}) {4}'.format(n, numsym, orb['ene'], orb['occup'], tp)
+        try:
+          val = [i.toBool() for i in self.signButton.currentData().toList()]
+        except AttributeError:
+          try:
+            val = [i.toBool() for i in self.signButton.itemData(self.signButton.currentIndex()).toList()]
+          except AttributeError:
+            val = self.signButton.itemData(self.signButton.currentIndex())
+      contour.SetNumberOfContours(np.count_nonzero(val))
+      i = 0
+      if (val[0]):
+        contour.SetValue(i, new)
+        i += 1
+      if (val[1]):
+        contour.SetValue(i, -new)
+      self.vtk_update()
+
+  @property
+  def opacity(self):
+    return self._opacity
+
+  @opacity.setter
+  def opacity(self, value):
+    old = self._opacity
+    self._opacity = value
+    self._opacity_changed(value, old)
+
+  def _opacity_changed(self, new, old):
+    if (new == old):
+      return
+    slider_value = round(self.opacitySlider.minimum() + new * (self.opacitySlider.maximum() + self.opacitySlider.minimum()))
+    self.opacitySlider.blockSignals(True)
+    self.opacitySlider.setValue(slider_value)
+    self.opacitySlider.blockSignals(False)
+    if (self.surface is None):
+      return
+    self.surface.GetProperty().SetOpacity(new)
+    self.vtk_update()
+
+  @property
+  def boxSize(self):
+    return self._boxSize
+
+  @boxSize.setter
+  def boxSize(self, value):
+    old = self._boxSize
+    self._boxSize = value
+    self._boxSize_changed(value, old)
+
+  def _boxSize_changed(self, new, old):
+    if (new == old):
+      return
+    self.boxSizeBox.setText('def')
+    self.boxSizeBox.editingFinished.emit()
+    if (self.boxSize is not None):
+      self.build_grid()
+
+  @property
+  def transform(self):
+    return self._transform
+
+  @transform.setter
+  def transform(self, value):
+    old = self._transform
+    self._transform = value
+    self._transform_changed(value, old)
+
+  def _transform_changed(self, new, old):
+    if (new == old):
+      return
+    self.transformDock.set_boxes(new)
+    if (self.transform is not None):
+      self.build_grid()
+
+  @property
+  def gridPoints(self):
+    return self._gridPoints
+
+  @gridPoints.setter
+  def gridPoints(self, value):
+    old = self._gridPoints
+    self._gridPoints = value
+    self._gridPoints_changed(value, old)
+
+  def _gridPoints_changed(self, new, old):
+    if ((new == old) or (new is None)):
+      return
+    self.gridPointsBox.setText('def')
+    self.gridPointsBox.editingFinished.emit()
+    self.build_grid()
+
+  @property
+  def lineDensity(self):
+    return self._lineDensity
+
+  @lineDensity.setter
+  def lineDensity(self, value):
+    old = self._lineDensity
+    self._lineDensity = value
+    self._lineDensity_changed(value, old)
+
+  def _lineDensity_changed(self, new, old):
+    if ((new == old) or (new is None)):
+      return
+    self.lineDensityBox.setText('def')
+    self.lineDensityBox.editingFinished.emit()
+    self.set_gradient_source()
+
+  @property
+  def startRadius(self):
+    return self._startRadius
+
+  @startRadius.setter
+  def startRadius(self, value):
+    old = self._startRadius
+    self._startRadius = value
+    self._startRadius_changed(value, old)
+
+  def _startRadius_changed(self, new, old):
+    if ((new == old) or (new is None)):
+      return
+    self.startRadiusBox.setText('def')
+    self.startRadiusBox.editingFinished.emit()
+    self.set_gradient_source()
+
+  @property
+  def maxSteps(self):
+    return self._maxSteps
+
+  @maxSteps.setter
+  def maxSteps(self, value):
+    old = self._maxSteps
+    self._maxSteps = value
+    self._maxSteps_changed(value, old)
+
+  def _maxSteps_changed(self, new, old):
+    if ((new == old) or (new is None)):
+      return
+    self.maxStepsBox.setText('def')
+    self.maxStepsBox.editingFinished.emit()
+    self.set_gradient_source()
+
+  #=========
+
+  def light_pos(self, elevation, azimuth):
+    e = np.deg2rad(elevation)
+    a = np.deg2rad(azimuth)
+    return [np.cos(e)*np.sin(a), np.sin(e), np.cos(e)*np.cos(a)]
+
+  def clear(self):
+    self.filename = None
+    self.orbitals = None
+    self.MO = None
+    self.notes = None
+    self.surface = None
+    self.nodes = None
+    self.mol = None
+    self.names = None
+    self.box = None
+    self.axes = None
+    self.gradient = None
+    self.vtk_update()
+
+  def load_file(self):
+    result = QFileDialog.getOpenFileName(self, 'Load file')
+    try:
+      filename, _ = result
+    except ValueError:
+      filename = result
+    if (filename):
+      self.filename = str(filename)
 
   # Detect the format of an input file
   def detect_format(self, infile):
@@ -1478,9 +2824,9 @@ class Viewer(HasTraits):
     try:
       with h5py.File(infile, 'r') as f:
         return 'hdf5'
-    except IOError:
-      with open(infile, 'r') as f:
-        line = f.readline()
+    except (OSError, IOError):
+      with open(infile, 'rb') as f:
+        line = f.readline().decode('ascii', errors='replace')
         if (re.search(r'\[MOLDEN FORMAT\]', line, re.IGNORECASE)):
           return 'molden'
         elif (line.startswith('#INPORB')):
@@ -1490,581 +2836,913 @@ class Viewer(HasTraits):
             N = int(line)
             line = f.readline()
             for i in range(N):
-              line = f.readline()
-            assert (f.readline().strip() == '<GRID>')
+              line = f.readline().decode('ascii', errors='replace')
+            line = f.readline().decode('ascii', errors='replace')
+            assert (line.strip() == '<GRID>')
             return 'luscus'
           except:
             f.seek(0)
             line = f.readline()
             line = f.readline()
-            line = f.readline()
+            line = f.readline().decode('ascii', errors='replace')
             if (line.startswith('Natom=')):
               return 'grid'
             else:
               try:
                 data = line.split()
                 N = int(data[0])
-                o = map(float, data[1:])
+                o = (float(i) for i in data[1:])
                 return 'cube'
               except:
                 pass
     return 'unknown'
 
-  @on_trait_change('load_button')
-  def set_file(self, *args):
-    dlg = FileDialog(title='Load file', action='open')
-    if (dlg.open() == OK):
-      self.file = dlg.path
+  def file_read(self):
+    self.statusLabel.setText('Ready.')
+    if (self._fileReadThread.error is None):
+      self.filenameLabel.setText(self.filename)
+    else:
+      self.show_error(self._fileReadThread.error)
+      return
+    self._fileReadThread.quit()
+    self._fileReadThread.wait()
+    self.orbitals = self._fileReadThread.orbitals
 
-  # When a new file is selected, detect the format and load the file:
-  # assign an instance of the appropriate class to self.orbitals
-  @on_trait_change('file')
-  def load_file(self, new):
-    ftype = self.detect_format(new)
-    if (ftype is None):
-      error(message='File {0} not found'.format(new), title='Error', buttons=['OK'])
-    elif (ftype == 'unknown'):
-      error(message='Format of {0} not recognized'.format(new), title='Error', buttons=['OK'])
-    # If a format with basis set, use Orbitals
-    elif (ftype in ['hdf5', 'molden']):
-      try:
-        self.orbitals = Orbitals(new, ftype)
-      except:
-        raise
-        error(message='Error processing {0} file {1}'.format(ftype, new), title='Error', buttons=['OK'])
-    # If InpOrb, it must be loaded after an HDF5
-    elif (ftype in ['inporb']):
-      try:
-        assert (self.orbitals.type == 'hdf5')
-      except:
-        error(message='The InpOrb format does not contain basis set information, it must be loaded after an HDF5 file (*.h5)', title='Error', buttons=['OK'])
-      # self.orbitals has not changed, but the new data has to be processed
-      if (self.orbitals.read_inporb_MO(new)):
-        self.new_orbitals(self.orbitals)
+  # Return a string with orbital information for the drop-down list
+  def orb_to_list(self, n, orb):
+    if ('label' in orb):
+      return '{0}'.format(orb['label'])
+    else:
+      # Build irrep and local numbering
+      if (self.nosym):
+        numsym = ''
       else:
-        error(message='Incompatible InpOrb data', title='Error', buttons=['OK'])
-    # If a precomputed grid format, use Grid
-    elif (ftype in ['grid', 'luscus', 'cube']):
-      try:
-        self.orbitals = Grid(new, ftype)
-      except:
-        error(message='Error processing {0} file {1}'.format(ftype, new), title='Error', buttons=['OK'])
-        raise
+        if (self.irrep == 'All'):
+          numsym = ' [{0}]'.format(orb['sym'])
+        else:
+          m = [o['sym'] for o in self.MO[:n]].count(orb['sym'])
+          numsym = ' [{0}, {1}]'.format(orb['sym'], m)
+      # Add new type if it has been modified
+      tp = orb['type']
+      if (('newtype' in orb) and (orb['newtype'] != tp)):
+        tp += '->' + orb['newtype']
+      return '{0}{1}: {2:.4f} ({3:.4f}) {4}'.format(n, numsym, orb['ene'], orb['occup'], tp)
 
-  # When new data has been loaded, most things have to be changed:
-  # graphical (3D) objects and dynamic UI elements
-  @on_trait_change('orbitals')
-  def new_orbitals(self, new):
-    if (isinstance(self.orbitals, Grid)):
-      self.isGrid = True
+  def populate_orbitals(self):
+    prev = self.orbital
+    self.orbitalButton.blockSignals(True)
+    self.orbitalButton.clear()
+    if (self.MO is None):
+      return
+    if (self.irrep == 'All'):
+      orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO)}
+      if (not self.isGrid):
+        orblist[0] = 'Density'
+        if (len(self.spinlist) > 1):
+          orblist[-1] = 'Spin density'
+        orblist[-2] = 'Laplacian (numerical)'
     else:
-      self.isGrid = False
-    self.haveOrb = new.inporb is not None
-    if (self.surf is not None):
-      self.surf.remove()
-      self.surf = None
-    if (self.node is not None):
-      self.node.remove()
-      self.node = None
-    if (self.cube is not None):
-      self.cube.remove()
-      self.cube = None
-    # Create the molecule and box
-    self.ready = False
-    self.orb = -10
-    self._new_box(new)
-    self._new_mol(new)
-    # Generate list of spins
-    self.spin = 'alpha'
-    self.spinlist = ['alpha']
-    maxocc = 2.0
-    if (len(new.MO_b) > 0):
-      self.spinlist.append('beta')
-      maxocc = 1.0
-    self.new_spin(self.spin)
-    self.ready = True
-    # Generate list of irreps
-    # Remove irrep if there's only one and always add an item "All"
-    self.sym = ''
-    self.symlist = []
-    for o in new.MO + new.MO_b:
-      if (o['sym'] not in self.symlist):
-        self.symlist.append(o['sym'])
-    if ('z' in self.symlist):
-      self.symlist.remove('z')
-    if (len(self.symlist) > 1):
-      self.nosym = False
-    else:
-      self.nosym = True
-      if (len(self.symlist) == 1):
-        del self.symlist[0]
-    self.symlist.insert(0, 'All')
-    self.sym = 'All'
-    # Generate list of orbitals (for notes)
-    self.notes = []
-    for i,orb in enumerate([j for i in izip_longest(new.MO, new.MO_b) for j in i]):
+      orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (o['sym'] == self.irrep)}
+    for k in sorted(orblist.keys()):
+      self.orbitalButton.addItem(orblist[k], k)
+    new = self.orbitalButton.findData(prev)
+    if (new < 0):
+      new = 0
+    self.orbitalButton.setCurrentIndex(new)
+    self.orbitalButton.blockSignals(False)
+    self.orbitalButton.currentIndexChanged.emit(new)
+
+  def build_notes(self):
+    notes = []
+    for i,orb in enumerate([j for i in zip_longest(self.orbitals.MO, self.orbitals.MO_b) for j in i]):
       if (orb is None):
         continue
+      note = {}
       if ('label' in orb):
-        self.notes.append(OrbInList(name=orb['label']))
+        note['name'] = orb['label']
       else:
         if (i%2 == 0):
-          num = '{0}'.format(i/2+1)
+          num = '{0}'.format(i//2+1)
         else:
-          num = '{0}b'.format(i/2+1)
+          num = '{0}b'.format(i//2+1)
         if (self.nosym):
-          self.notes.append(OrbInList(name='#{0} {1:.4f} {2}'.format(num, orb['ene'], orb['type'])))
+          note['name'] = '#{0} {1:.4f} {2}'.format(num, orb['ene'], orb['type'])
         else:
-          self.notes.append(OrbInList(name='#{0} [{1}] {2:.4f} {3}'.format(num, orb['sym'], orb['ene'], orb['type'])))
-    # Select initial orbital
+          note['name'] = '#{0} [{1}] {2:.4f} {3}'.format(num, orb['sym'], orb['ene'], orb['type'])
+      note['occup'] = orb['occup']
+      note['density'] = orb['occup'] != 0
+      note['note'] = ''
+      notes.append(note)
+    self.notes = notes
+
+  def initial_orbital(self):
+    if (len(self.spinlist) == 1):
+      maxocc = 2.0
+    else:
+      maxocc = 1.0
     minene = -np.inf
     orb = -10
-    for i,o in enumerate(self.MO):
+    if (self.MO is None):
+      MO = self.orbitals.MO
+    else:
+      MO = self.MO
+    for i,o in enumerate(MO):
       if ((o['occup'] >= maxocc/2) and (o['ene'] >= minene)):
         orb = i+1
         minene = o['ene']
     if (orb < 0):
       orb = 1
-    self.orb = orb
+    self.orbital = orb
 
-  # When changing the selected spin, switch the set of visible MOs
-  @on_trait_change('spin')
-  def new_spin(self, new):
-    if (new == 'alpha'):
-      self.MO = self.orbitals.MO
-    elif (new == 'beta'):
-      self.MO = self.orbitals.MO_b
-    # Make sure the list is updated and the orbital redrawn
-    r = self.ready
-    self.ready = False
-    self.new_sym(self.sym)
-    self.ready = r
-    self.update_grid()
+  def new_mol(self):
+    Z = np.array([c['Z'] for c in self.orbitals.centers])
+    # Assign radii
+    try:
+      r = np.cbrt(Z)
+    except AttributeError:
+      r = np.power(Z, 1.0/3)
+    r[r<0.5] = 0.5
 
-  @on_trait_change('sym')
-  def new_sym(self, new):
-    if (new == ''):
-      return
-    # Generate list of orbitals to select from
-    if (new == 'All'):
-      self.orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO)}
-      if (not self.isGrid):
-        self.orblist[0] = '0000:Density'
-        # unfortunately the "label" is not sorted numerically, so it doesn't match
-        if (len(self.spinlist) > 1):
-          self.orblist[-1] = '-999:Spin density'
-        self.orblist[-2] = '-998:Laplacian (numerical)'
-      return
-    n = self.symlist.index(new)
-    self.orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (o['sym'] == new)}
-    # Select new orbital if out of range
-    s = self.MO[self.orb-1]['sym']
-    if (s != new):
-      ls = [o['sym'] for o in self.MO]
-      lo = ls[:self.orb].count(s)
-      c = 0
-      for i,o in enumerate(self.MO):
-        if (o['sym'] == new):
-          c += 1
-          if (c == lo):
-            self.orb = i+1
-            return
-      self.orb = ls.index(new)+1
+    # Create VTK objects
+    vtks = numpy_support.numpy_to_vtk(np.arange(len(Z)), 1, vtk.VTK_INT)
+    vtks.SetName('index')
+    vtkr = numpy_support.numpy_to_vtk(np.ascontiguousarray(np.vstack((r, np.zeros((2, r.shape[0])))).T), 1, vtk.VTK_DOUBLE)
+    vtkr.SetName('radii')
+    vtkl = vtk.vtkStringArray()
+    for c in self.orbitals.centers:
+      vtkl.InsertNextValue(c['name'])
+    vtkl.SetName('labels')
+    pts = vtk.vtkPoints()
+    for c in self.orbitals.centers:
+      pts.InsertNextPoint(*c['xyz'])
+    pd = vtk.vtkPolyData()
+    pd.SetPoints(pts)
+    pd.GetPointData().SetVectors(vtkr)
+    pd.GetPointData().SetScalars(vtks)
+    pd.GetPointData().AddArray(vtkl)
+    lut = vtk.vtkLookupTable()
+    lut.SetNumberOfTableValues(len(Z))
+    for i,c in enumerate(Z):
+      lut.SetTableValue(i, *[x/255 for x in cpk(c)])
+    lut.SetTableRange(0, len(Z)-1)
+    ss = vtk.vtkSphereSource()
+    ss.SetThetaResolution(20)
+    ss.SetPhiResolution(20)
+    g3 = vtk.vtkGlyph3D()
+    g3.SetColorModeToColorByScalar()
+    g3.SetSourceConnection(ss.GetOutputPort())
+    try:
+      g3.SetInputData(pd)
+    except AttributeError:
+      g3.SetInput(pd)
+    g3.SetScaleModeToScaleByVector()
+    g3.ScalingOn()
+    g3.ClampingOff()
+    g3.SetScaleFactor(0.2)
+    m = vtk.vtkPolyDataMapper()
+    m.SetInputConnection(g3.GetOutputPort())
+    m.SetLookupTable(lut)
+    m.UseLookupTableScalarRangeOn()
+    # Add actor for nuclei
+    self.mol = vtk.vtkActor()
+    self.mol.SetMapper(m)
+    # Add actor for names
+    l = vtk.vtkLabeledDataMapper()
+    try:
+      l.SetInputData(pd)
+    except AttributeError:
+      l.SetInput(pd)
+    l.SetLabelModeToLabelFieldData()
+    l.SetFieldDataName('labels')
+    l.GetLabelTextProperty().SetColor(0, 0, 0)
+    if (self.sansBoldFont is not None):
+      l.GetLabelTextProperty().SetFontFamily(vtk.VTK_FONT_FILE)
+      l.GetLabelTextProperty().SetFontFile(self.sansBoldFont)
+    else:
+      l.GetLabelTextProperty().ItalicOff()
+      l.GetLabelTextProperty().BoldOn()
+    l.GetLabelTextProperty().ShadowOn()
+    l.GetLabelTextProperty().SetJustificationToCentered()
+    l.GetLabelTextProperty().SetVerticalJustificationToCentered()
+    self.names = vtk.vtkActor2D()
+    self.names.SetMapper(l)
 
-  def _new_box(self, orbitals):
+  def new_box(self):
     # Center molecule and compute max/min extent (with clearance)
     clearance = 4.0
-    xyz = np.array([c['xyz'] for c in orbitals.centers])
+    xyz = np.array([c['xyz'] for c in self.orbitals.centers])
     extent = np.array([np.amin(xyz, axis=0), np.amax(xyz, axis=0)])
-    self.edge = np.ceil(extent[1]-extent[0]+2*clearance).tolist()
-    # Force updating even if edge didn't change
-    self.rebuild_grid()
+    self.boxSize = None
+    self.boxSize = np.ceil(extent[1]-extent[0]+2*clearance).tolist()
 
-  @on_trait_change('edge, ngrid')
-  def rebuild_grid(self):
+  def build_grid(self):
     if (self.isGrid):
       # For precomputed grids, just take the defined grid
       lims = np.array([self.orbitals.orig, self.orbitals.end])
-      ngrid = [i*1j for i in self.orbitals.ngrid]
+      ngrid = self.orbitals.ngrid
+      boxSize = lims[1,:]-lims[0,:]
+      matrix = self.orbitals.transform.flatten()
     else:
-      # Parse the edge value to a 3-item list
-      edge = self.edge[:]
-      if (len(edge) == 0):
-        edge.append(5.0)
-      while (len(edge) < 3):
-        edge.append(edge[-1])
-      edge = edge[0:3]
-      lims = np.array([[-0.5*x for x in edge], [0.5*x for x in edge]])
-      lims += self.orbitals.geomcenter
+      if (self.boxSize is None):
+        return
+      boxSize = self.boxSize
+      lims = np.array([[-0.5*x for x in self.boxSize], [0.5*x for x in self.boxSize]])
       # Get the actual number of points according to the maximum set on the UI
       dim = [abs(x-y) for x,y in zip(lims[1], lims[0])]
-      size = max(dim)/(self.ngrid-1)
+      size = max(dim)/(self.gridPoints-1)
       if (size == 0.0):
         size = 1.0
-      ngrid = [min(int(np.ceil(x/size))+1,self.ngrid)*1j for x in dim]
-    self.bxyz = [i for i in np.mgrid[lims[0,0]:lims[1,0]:2j, lims[0,1]:lims[1,1]:2j, lims[0,2]:lims[1,2]:2j]]
-    self.xyz = [i for i in np.mgrid[lims[0,0]:lims[1,0]:ngrid[0], lims[0,1]:lims[1,1]:ngrid[1], lims[0,2]:lims[1,2]:ngrid[2]]]
-
-  @on_trait_change('bxyz')
-  def update_box(self, new):
-    self.scene.disable_render = True
-    x, y, z = (new[0].ravel(), new[1].ravel(), new[2].ravel())
-    if (self.cube is None):
-      corners = self.scene.mlab.pipeline.scalar_scatter(x, y, z, np.zeros_like(x))
-      corners.mlab_source.dataset.lines = [[0, 1, 3, 2, 0], [4, 5, 7, 6, 4], [0, 4], [1, 5], [2, 6], [3, 7]]
-      self.cube = self.scene.mlab.pipeline.surface(corners, line_width=1, color=(1, 1, 1), opacity=0.3, reset_zoom=False)
-      if (self.isGrid):
-        self.cube.actor.actor.poke_matrix(self.orbitals.transform)
-        self.cube.update_pipeline()
-    self.show_box(self.box)
-    self.cube.mlab_source.points = np.vstack([x, y, z]).T
-    self.scene.disable_render = False
-
-  @on_trait_change('box')
-  def show_box(self, new):
-    if (self.cube is not None):
-      self.cube.visible = new
-
-  def _new_mol(self, new):
-    self.scene.disable_render = True
-    if (self.mol is not None):
-      self.mol.remove()
-    for a in self.atomnames:
-      a.remove()
-    xyz = np.array([c['xyz'] for c in new.centers])
-    r = np.array([c['Z'] for c in new.centers])
-    # Assign colors
-    s = np.arange(len(r))
-    colors = [cpk(c) for c in r]
-    # Assign radii
+      ngrid = [min(int(np.ceil(x/size))+1,self.gridPoints) for x in dim]
+      matrix = self.transform[:]
+      matrix[3]  += self.orbitals.geomcenter[0]
+      matrix[7]  += self.orbitals.geomcenter[1]
+      matrix[11] += self.orbitals.geomcenter[2]
+    self.update_cache(ngrid)
+    grid = vtk.vtkImageData()
+    grid.SetOrigin(lims[0,:])
+    grid.SetSpacing([b/(n-1) for b,n in zip(boxSize, ngrid)])
+    grid.SetDimensions(ngrid)
+    transform = vtk.vtkTransform()
+    transform.SetMatrix(matrix)
+    self.xyz = vtk.vtkTransformFilter()
+    self.xyz.SetTransform(transform)
     try:
-      r = np.cbrt(r)
-    except:
-      r = np.power(r, 1.0/3)
-    r[r<0.5] = 0.5
-    while (len(colors) < 2):
-      colors.append(cpk(0))
-    self.mol = self.scene.mlab.quiver3d(xyz[:,0], xyz[:,1], xyz[:,2], r, r, r, scalars=s, mode='sphere', resolution=20, scale_factor=0.2)
-    self.mol.glyph.glyph.clamping = False
-    self.mol.glyph.glyph_source.glyph_source.center = [0, 0, 0,]
-    self.mol.glyph.color_mode = 'color_by_scalar'
-    self.mol.module_manager.scalar_lut_manager.lut.table = colors
-    self.show_nuc(self.nuc)
-    self.atomnames = []
-    for c in new.centers:
-      self.atomnames.append(self.scene.mlab.text(c['xyz'][0], c['xyz'][1], c['name'], z=c['xyz'][2]))
-      self.atomnames[-1]._property.justification = 'centered'
-      self.atomnames[-1]._property.vertical_justification = 'centered'
-      self.atomnames[-1]._property.shadow = True
-      self.atomnames[-1]._property.color = (0,0,0)
-      self.atomnames[-1]._property.bold = True
-      self.atomnames[-1].actor.text_scale_mode = 'none'
-    self.show_lab(self.lab)
-    self.scene.disable_render = False
+      self.xyz.SetInputData(grid)
+    except AttributeError:
+      self.xyz.SetInput(grid)
+    self.xyz.Update()
+    o = vtk.vtkStructuredGridOutlineFilter()
+    o.SetInputConnection(self.xyz.GetOutputPort())
+    m = vtk.vtkPolyDataMapper()
+    m.SetInputConnection(o.GetOutputPort())
+    self.box = vtk.vtkActor()
+    self.box.SetMapper(m)
+    self.box.GetProperty().SetColor(1,1,1)
+    self.box.GetProperty().SetOpacity(0.5)
+    self.build_axes()
+    self.toggle_box()
+    self.build_surface()
 
-  @on_trait_change('nuc')
-  def show_nuc(self, new):
-    if (self.mol is not None):
-      self.mol.visible = new
+  def build_axes(self):
+    bounds = self.box.GetBounds()
+    grid = self.xyz.GetOutput()
+    ngrid = grid.GetDimensions()
+    o = np.zeros(3)
+    ox = np.zeros(3)
+    oy = np.zeros(3)
+    oz = np.zeros(3)
+    grid.GetPoint(0,0,0,o)
+    grid.GetPoint(ngrid[0]-1,0,0,ox)
+    grid.GetPoint(0,ngrid[1]-1,0,oy)
+    grid.GetPoint(0,0,ngrid[2]-1,oz)
+    nx = (ox-o)/(ngrid[0]-1)
+    ny = (oy-o)/(ngrid[1]-1)
+    nz = (oz-o)/(ngrid[2]-1)
+    axisX = vtk.vtkAxisActor()
+    axisZ = vtk.vtkAxisActor()
+    axisX.SetAxisBaseForX(nx)
+    axisX.SetAxisBaseForY(ny)
+    axisX.SetAxisBaseForZ(nz)
+    axisX.GetAxisMainLineProperty().SetOpacity(0)
+    axisX.SetMajorTickSize(0.5)
+    axisX.MinorTicksVisibleOff()
+    axisX.SetBounds(bounds)
+    axisX.SetPoint1(o)
+    axisX.SetPoint2(ox)
+    axisX.SetAxisTypeToX()
+    axisX.GetAxisMajorTicksProperty().SetColor(1,0.8,0.8)
+    axisX.SetRange(0,ngrid[0]-1)
+    axisY = vtk.vtkAxisActor()
+    axisY.SetAxisBaseForX(nx)
+    axisY.SetAxisBaseForY(ny)
+    axisY.SetAxisBaseForZ(nz)
+    axisY.GetAxisMainLineProperty().SetOpacity(0)
+    axisY.SetMajorTickSize(0.5)
+    axisY.MinorTicksVisibleOff()
+    axisY.SetBounds(bounds)
+    axisY.SetPoint1(o)
+    axisY.SetPoint2(oy)
+    axisY.SetAxisTypeToY()
+    axisY.GetAxisMajorTicksProperty().SetColor(0.8,1,0.8)
+    axisY.SetRange(0,ngrid[1]-1)
+    axisZ = vtk.vtkAxisActor()
+    axisZ.SetAxisBaseForX(nx)
+    axisZ.SetAxisBaseForY(ny)
+    axisZ.SetAxisBaseForZ(nz)
+    axisZ.GetAxisMainLineProperty().SetOpacity(0)
+    axisZ.SetMajorTickSize(0.5)
+    axisZ.MinorTicksVisibleOff()
+    axisZ.SetBounds(bounds)
+    axisZ.SetPoint1(o)
+    axisZ.SetPoint2(oz)
+    axisZ.SetAxisTypeToZ()
+    axisZ.GetAxisMajorTicksProperty().SetColor(0.8,0.8,1)
+    axisZ.SetRange(0,ngrid[2]-1)
+    self.axes = vtk.vtkAssembly()
+    self.axes.AddPart(axisX)
+    self.axes.AddPart(axisY)
+    self.axes.AddPart(axisZ)
 
-  @on_trait_change('lab')
-  def show_lab(self, new):
-    self.scene.disable_render = True
-    for a in self.atomnames:
-      a.visible = new
-    self.scene.disable_render = False
-
-  @on_trait_change('xyz')
-  def update_cache(self, new):
+  def update_cache(self, ngrid):
     if (self.orbitals is None):
       return
-    if (self.cache_file is not None):
-      del self.cache_file
-    ngrid = new[0].shape
+    if (self._cache_file is not None):
+      del self._cache_file
     if (self.isGrid):
-      self.cache_file = None
+      self._cache_file = None
     else:
-      self.cache_file = np.memmap(os.path.join(self.tmpdir, '{0}.cache'.format(__name__.lower())), dtype='float32', mode='w+', shape=(sum(self.orbitals.N_bas), ngrid[0], ngrid[1], ngrid[2]))
-      self.cache_file[:,0,0,0] = np.nan
-    self.grid_changed = True
-    self.update_grid()
+      self._cache_file = np.memmap(os.path.join(self._tmpdir, '{0}.cache'.format(__name__.lower())), dtype='float32', mode='w+', shape=(sum(self.orbitals.N_bas), np.prod(ngrid)))
+      self._cache_file[:,0] = np.nan
 
-  @on_trait_change('orb')
-  def update_grid(self):
-    if (not self.ready):
+  def build_surface(self):
+    if (self.xyz is None):
       return
     if (self.isGrid):
-      self.status = 'Reading...'
+      self.statusLabel.setText('Reading...')
     else:
-      self.status = 'Computing...'
-    self.ready = False
-    ComputeGrid(self, cache=self.cache_file).start()
+      self.statusLabel.setText('Computing...')
+    if (self._computeVolumeThread is not None):
+      self._computeVolumeThread.wait()
+    self._computeVolumeThread = ComputeVolume(self, cache=self._cache_file)
+    self._computeVolumeThread.disable_list = [self.irrepGroup, self.orbitalGroup, self.boxSizeGroup, self.gridPointsGroup, self.gradientBox, self.gradientGroup]
+    self._computeVolumeThread.finished.connect(self.volume_computed)
+    self._computeVolumeThread.start()
 
-  @on_trait_change('notes:selected')
-  def update_density(self):
-    if (self.orb < 1):
-      self.update_grid()
+  def volume_computed(self):
+    points = self.xyz.GetInput()
+    try:
+      vtkmo = numpy_support.numpy_to_vtk(self._computeVolumeThread.data.flatten('F'), 1, vtk.VTK_DOUBLE)
+    except AttributeError:
+      if (type(self._computeVolumeThread.data) is str):
+        self.show_error(self._computeVolumeThread.data)
+      vtkmo = numpy_support.numpy_to_vtk(1e-6*(np.random.rand(points.GetNumberOfPoints())-0.5), 1, vtk.VTK_DOUBLE)
+    vtkmo.SetName('Values')
+    self._computeVolumeThread.quit()
+    self._computeVolumeThread.wait()
+    points.GetPointData().SetScalars(vtkmo)
+    if (self._newgrid):
+      self.ready = False
+      self._newgrid = False
+      transform = self.xyz.GetTransform()
+      # Create the isosurface
+      c = vtk.vtkContourFilter()
+      try:
+        c.SetInputData(points)
+      except AttributeError:
+        c.SetInput(points)
+      t = vtk.vtkTransformPolyDataFilter()
+      t.SetTransform(transform)
+      t.SetInputConnection(c.GetOutputPort())
+      rv = vtk.vtkReverseSense()
+      rv.SetInputConnection(t.GetOutputPort())
+      rv.SetReverseCells(transform.GetMatrix().Determinant() < 0)
+      m = vtk.vtkPolyDataMapper()
+      m.SetInputConnection(rv.GetOutputPort())
+      m.UseLookupTableScalarRangeOn()
+      m.SetLookupTable(self.lut)
+      self.surface = vtk.vtkActor()
+      self.surface.SetMapper(m)
+      self.surface.GetProperty().SetColor(surface_color[0])
+      self.surface.GetProperty().SetOpacity(self.opacity)
+      # Create the nodal surface
+      cn = vtk.vtkContourFilter()
+      try:
+        cn.SetInputData(points)
+      except AttributeError:
+        cn.SetInput(points)
+      cn.SetNumberOfContours(1)
+      cn.SetValue(0, 0.0)
+      tn = vtk.vtkTransformPolyDataFilter()
+      tn.SetTransform(transform)
+      tn.SetInputConnection(cn.GetOutputPort())
+      rvn = vtk.vtkReverseSense()
+      rvn.SetInputConnection(tn.GetOutputPort())
+      rvn.SetReverseCells(transform.GetMatrix().Determinant() < 0)
+      mn = vtk.vtkPolyDataMapper()
+      mn.SetInputConnection(rvn.GetOutputPort())
+      mn.ScalarVisibilityOff()
+      self.nodes = vtk.vtkActor()
+      self.nodes.SetMapper(mn)
+      self.nodes.GetProperty().SetColor(1, 1, 1)
+      self.nodes.GetProperty().SetOpacity(0.5)
+      # Streamlines
+      g = vtk.vtkGradientFilter()
+      g.SetInputConnection(self.xyz.GetOutputPort())
+      a = vtk.vtkAssignAttribute()
+      a.SetInputConnection(g.GetOutputPort())
+      a.Assign('Gradients', 'VECTORS', 'POINT_DATA')
+      b = vtk.vtkArrayCalculator()
+      b.SetInputConnection(a.GetOutputPort())
+      b.AddScalarArrayName('Values')
+      b.SetFunction('abs(Values)')
+      b.SetResultArrayName('Values')
+      sl = vtk.vtkStreamTracer()
+      sl.SetInputConnection(b.GetOutputPort())
+      sl.SetIntegratorTypeToRungeKutta45()
+      sl.SetInitialIntegrationStep(0.1)
+      sl.SetMinimumIntegrationStep(1e-6) # make it small enough to be able to converge to converge (see below)
+      sl.SetTerminalSpeed(1e-8)          # affects tails, but also convergence to stationary points
+      sl.SetMaximumNumberOfSteps(100)
+      sl.SetMaximumPropagation(100)
+      sl.SetIntegrationDirection(self.directionButtonGroup.checkedId())
+      sl.SetComputeVorticity(False)
+      lut = vtk.vtkLookupTable()
+      lut.SetAlphaRange(0.2, 0.8)
+      lut.SetHueRange(0.75, 0)
+      lut.SetScaleToLog10()
+      lut.Build()
+      sss = vtk.vtkSphereSource()
+      slm = vtk.vtkPolyDataMapper()
+      slm.SetInputConnection(sl.GetOutputPort())
+      slm.InterpolateScalarsBeforeMappingOn()
+      slm.SetLookupTable(lut)
+      slm.SetScalarRange(1e-5, 2)
+      self.gradient = vtk.vtkActor()
+      self.gradient.SetMapper(slm)
+      self.gradient.GetProperty().SetOpacity(0.1)
+      self.gradient.GetProperty().SetLineWidth(3)
+    if (self.orbital == -2):
+      # Remove outer points from Laplacian
+      e = vtk.vtkExtractVOI()
+      try:
+        e.SetInputData(points)
+      except AttributeError:
+        e.SetInput(points)
+      subgrid = list(points.GetExtent())
+      subgrid[0] += 1
+      subgrid[2] += 1
+      subgrid[4] += 1
+      subgrid[1] -= 1
+      subgrid[3] -= 1
+      subgrid[5] -= 1
+      e.SetVOI(subgrid)
+      c = get_input_type(self.surface.GetMapper(), vtk.vtkContourFilter)
+      c.SetInputConnection(e.GetOutputPort())
+      cn = get_input_type(self.nodes.GetMapper(), vtk.vtkContourFilter)
+      cn.SetInputConnection(e.GetOutputPort())
+    else:
+      c = get_input_type(self.surface.GetMapper(), vtk.vtkContourFilter)
+      e = c.GetInputAlgorithm()
+      if (isinstance(e, vtk.vtkExtractVOI)):
+        try:
+          c.SetInputData(e.GetInput())
+        except AttributeError:
+          c.SetInput(e.GetInput())
+        cn = get_input_type(self.nodes.GetMapper(), vtk.vtkContourFilter)
+        try:
+          cn.SetInputData(e.GetInput())
+        except AttributeError:
+          cn.SetInput(e.GetInput())
+    self.set_gradient_source()
+    b = get_input_type(self.gradient.GetMapper(), vtk.vtkArrayCalculator)
+    b.Update()
+    self.gradient.GetMapper().SetScalarRange(b.GetOutput().GetScalarRange())
+    self.surface.GetMapper().SetScalarVisibility(self.orbital != 0)
+    self.update_range()
+    self.toggle_surface()
+    self.toggle_nodes()
+    self.toggle_gradient()
+    self.ready = True
+    enabled = (self.orbital is not None) and (self.orbital > 0)
+    self.type_setEnabled(enabled)
+    self.set_typeButtonGroup()
+    self.set_panel()
+    self.statusLabel.setText('Ready.')
 
-  def _format_num(self, n, t):
-    s = '{0:.1e}'.format(n)
-    num, exp = s.split('e')
-    num = float(num)
-    exp = int(exp)
-    if (t == 'down'):
-      if (float(s) > n):
-        num -= 0.1
-    elif (t == 'up'):
-      if (float(s) < n):
-        num += 0.1
-    if (abs(num) < 1.0):
-      exp -= 1
-      num *= 10.0
-    elif (abs(num) >= 10.0):
-      exp += 1
-      num /= 10.0
-    num = '{0:.1f}'.format(num)
-    s = num
-    if (exp != 0):
-      s += 'e{0}'.format(exp)
-    return s
+  def set_gradient_source(self):
+    if (self.gradient is None):
+      return
+    seeds = vtk.vtkAppendPolyData()
+    for i in self.orbitals.centers:
+      s = vtk.vtkSphereSource()
+      s.SetCenter(i['xyz'])
+      s.SetThetaResolution(self.lineDensity)
+      s.SetPhiResolution(self.lineDensity)
+      s.SetRadius(self.startRadius)
+      seeds.AddInputConnection(s.GetOutputPort())
+    sl = get_input_type(self.gradient.GetMapper(), vtk.vtkStreamTracer)
+    sl.SetSourceConnection(seeds.GetOutputPort())
+    sl.SetMaximumNumberOfSteps(self.maxSteps)
+    self.vtk_update()
 
-  def _assign_vol(self, data):
-    self.vol = data
-
-  @on_trait_change('vol')
-  def update_vol(self, new):
-    self.scene.disable_render = True
-    maxval = np.nan_to_num(new).max()
-    minval = np.nan_to_num(new).min()
-    self.range = [minval < 0, maxval > 0]
+  def update_range(self):
+    minval, maxval = self.xyz.GetInput().GetScalarRange()
     if (maxval*minval < 0):
       maxval = max(abs(minval), abs(maxval))
       minval = 0.0
     else:
       minval, maxval = (min(abs(minval), abs(maxval)), max(abs(minval), abs(maxval)))
+    if (maxval == 0):
+      maxval = 1.0
+    if (minval < 100):
+      maxval = min(maxval, 100)
+    if (maxval == minval):
+      maxval *= 1.1
     if (minval == 0):
-      minval = 1e-5*maxval
-    if (abs(maxval)+abs(minval) > 0):
-      minval = self._format_num(minval, 'down')
-      maxval = self._format_num(maxval, 'up')
-      self.minval, self.maxval = (minval, maxval)
-    # Using this instead of "reset" to avoid error messages from vtk
-    if (self.grid_changed):
-      if (self.surf is not None):
-        self.surf.remove()
-        self.surf = None
-      if (self.node is not None):
-        self.node.remove()
-        self.node = None
-    eps = np.finfo(np.float).eps
-    # Create orbital isosurface
-    if (self.surf is None):
-      field = self.scene.mlab.pipeline.scalar_field(self.xyz[0], self.xyz[1], self.xyz[2], new)
-      self.surf = self.scene.mlab.pipeline.iso_surface(field, contours=[], color=(0.675, 0.741, 0.816), vmin=-eps, vmax=eps)
-      self.surf.module_manager.scalar_lut_manager.lut.table = [[222, 119, 61, 255], [255, 255, 255, 255], [204, 222, 61, 255]]
-      if (self.isGrid):
-        self.surf.actor.actor.poke_matrix(self.orbitals.transform)
-        self.surf.update_pipeline()
+      minval = np.nanmin(abs(numpy_support.vtk_to_numpy(self.xyz.GetInput().GetPointData().GetScalars())))
+      minval = max(minval, 1e-6*maxval)
+    self._minval, self._maxval = (minval, maxval)
+    self.isovalue = self.isovalue
+
+  def irrepButton_changed(self, value):
+    if (value >= 0):
+      self.irrep = self.irrepButton.currentText()
+
+  def orbitalButton_changed(self, value):
+    if (value < 0):
+      return
+    try:
+      self.orbital = self.orbitalButton.currentData()
+    except AttributeError:
+      index = self.orbitalButton.currentIndex()
+      if (index < 0):
+        self.orbital = None
+      else:
+        try:
+          self.orbital, _ = self.orbitalButton.itemData(index).toInt()
+        except AttributeError:
+          self.orbital = self.orbitalButton.itemData(index)
+
+  def spinButton_changed(self, value):
+    if (value >= 0):
+      self.spin = self.spinButton.currentText()
+
+  def isovalueSlider_changed(self, value):
+    logrange = np.log(self._maxval/self._minval)
+    reldist = (value - self.isovalueSlider.minimum())/(self.isovalueSlider.maximum() - self.isovalueSlider.minimum())
+    new = self._maxval * np.exp(-reldist*logrange)
+    self.isovalueBox.setText('{:.4g}'.format(new))
+    self.isovalue = new
+
+  def isovalueBox_changed(self):
+    try:
+      value = float(self.isovalueBox.text())
+      assert 0.0 < value
+      self.isovalue = value
+    except:
+      self.isovalueBox.setText('{:.4g}'.format(self.isovalue))
+
+  def opacitySlider_changed(self, value):
+    new = (value - self.opacitySlider.minimum())/(self.opacitySlider.maximum() - self.opacitySlider.minimum())
+    self.opacityBox.setText('{:.2f}'.format(new))
+    self.opacity = new
+
+  def opacityBox_changed(self):
+    try:
+      value = float(self.opacityBox.text())
+      assert 0.0 <= value <= 1.0
+      self.opacity = value
+    except:
+      self.opacityBox.setText('{:.2f}'.format(self.opacity))
+
+  def show_list(self):
+    if (self.listButton.isChecked()):
+      self.listDock.show()
     else:
-      self.surf.mlab_source.set(scalars=new)
-      self.surf.contour.contours = []
-    self.surf.actor.mapper.scalar_visibility = (self.orb != 0)
-    self.update_surf(self.val)
-    self.show_surf(self.surface)
-    # Create nodal surface. Reset contours to force redraw
-    if (self.node is None):
-      field = self.scene.mlab.pipeline.scalar_field(self.xyz[0], self.xyz[1], self.xyz[2], new)
-      self.node = self.scene.mlab.pipeline.iso_surface(field, contours=[], color=(1.0, 1.0, 1.0), opacity=0.5, vmin=eps, vmax=eps)
-      if (self.isGrid):
-        self.node.actor.actor.poke_matrix(self.orbitals.transform)
-        self.node.update_pipeline()
+      self.listDock.hide()
+
+  def toggle_surface(self):
+    if (self.surface is None):
+      return
+    if (self.surfaceBox.isChecked()):
+      self.surface.VisibilityOn()
     else:
-      self.node.mlab_source.set(scalars=new)
-      self.node.contour.contours = []
-    if (all(self.range)):
-      self.node.contour.contours = [0]
-    self.show_node(self.nodes)
-    self.update_background()
-    if (self.grid_changed):
-      self.scene.reset_zoom()
-      self.grid_changed = False
-    self.scene.disable_render = False
-    self.ready = True
-    self.status = 'Done'
+      self.surface.VisibilityOff()
+    self.vtk_update()
 
-  @on_trait_change('surface')
-  def show_surf(self, new):
-    if (self.surf is not None):
-      self.surf.visible = new
+  def sign_changed(self):
+    self.isovalue += 0
 
-  @on_trait_change('val')
-  def update_surf(self, new):
-    if (self.surf is not None):
-      volmin = np.nan_to_num(self.vol).min()
-      volmax = np.nan_to_num(self.vol).max()
-      if (all(self.range)):
-        self.surf.contour.contours = [-new, new]
-      elif (self.range[0]):
-        self.surf.contour.contours = [-new]
-      elif (self.range[1]):
-        self.surf.contour.contours = [new]
-
-  @on_trait_change('opacity')
-  def update_op(self, new):
-    if (self.surf is not None):
-      self.surf.actor.property.opacity = new
-
-  @on_trait_change('nodes')
-  def show_node(self, new):
-    if (self.node is not None):
-      self.node.visible = new
-
-  def update_background(self):
-    MO = self.MO[self.orb-1]
-    if (self.orb < 1):
-      tp = ''
+  def toggle_nodes(self):
+    if (self.nodes is None):
+      return
+    if (self.nodesBox.isChecked()):
+      self.nodes.VisibilityOn()
     else:
-      try:
-        if ('newtype' in MO):
-          tp = MO['newtype']
-        else:
-          tp = MO['type']
-      except:
+      self.nodes.VisibilityOff()
+    self.vtk_update()
+
+  def toggle_nuclei(self):
+    if (self.mol is None):
+      return
+    if (self.nucleiBox.isChecked()):
+      self.mol.VisibilityOn()
+    else:
+      self.mol.VisibilityOff()
+    self.vtk_update()
+
+  def toggle_names(self):
+    if (self.names is None):
+      return
+    if (self.namesBox.isChecked()):
+      self.names.VisibilityOn()
+    else:
+      self.names.VisibilityOff()
+    self.vtk_update()
+
+  def toggle_box(self):
+    if (self.box is None):
+      return
+    if (self.boxBox.isChecked()):
+      self.box.VisibilityOn()
+      if (self.axes is not None):
+        self.axes.VisibilityOn()
+    else:
+      self.box.VisibilityOff()
+      if (self.axes is not None):
+        self.axes.VisibilityOff()
+    self.vtk_update()
+
+  def toggle_gradient(self):
+    if (self.gradient is None):
+      return
+    if (self.gradientBox.isChecked()):
+      self.gradient.VisibilityOn()
+    else:
+      self.gradient.VisibilityOff()
+    self.vtk_update()
+
+  def reset_type(self):
+    orb = self.MO[self.orbital-1]
+    orb.pop('newtype', None)
+    self.set_typeButtonGroup()
+
+  def type_setEnabled(self, enabled):
+    self.typeLabel.setEnabled(enabled)
+    self.typeGroup.setEnabled(enabled)
+    self.resetButton.setEnabled(enabled)
+
+  def typeButtonGroup_changed(self):
+    try:
+      tp = str(self.typeButtonGroup.checkedButton().text())
+    except AttributeError:
+      tp = '?'
+    self.ren.SetBackground(*background_color[tp])
+    self.vtk_update()
+    if ((self.orbital is None) or (self.MO is None)):
+      return
+    orb = self.MO[self.orbital-1]
+    item = self.orbitalButton.findData(self.orbital)
+    if (self.orbital > 0):
+      orb['newtype'] = tp
+      self.orbitalButton.setItemText(item, self.orb_to_list(self.orbital, orb))
+    self.set_panel()
+
+  def set_typeButtonGroup(self):
+    init = self.typeButtonGroup.checkedId()
+    if ((self.orbital is None) or (self.MO is None)):
+      tp = '?'
+    else:
+      orb = self.MO[self.orbital-1]
+      if (self.orbital < 1):
         tp = ''
+      else:
+        try:
+          tp = orb.get('newtype', orb['type'])
+        except:
+          tp = ''
     if (tp == 'F'):
-      self.scene.background = (0.449, 0.448, 0.646) # CIELab(50,12,-27)
+      self.frozenButton.setChecked(True)
     elif (tp == 'I'):
-      self.scene.background = (0.711, 0.704, 0.918) # CIELab(75,12,-27)
+      self.inactiveButton.setChecked(True)
     elif (tp == '1'):
-      self.scene.background = (0.605, 0.759, 0.682) # CIELab(75,-17,5.5)
+      self.RAS1Button.setChecked(True)
     elif (tp == '2'):
-      self.scene.background = (0.569, 0.775, 0.569) # CIELab(75,-27.5,21)
+      self.RAS2Button.setChecked(True)
     elif (tp == '3'):
-      self.scene.background = (0.735, 0.737, 0.532) # CIELab(75,-8.5,26.5)
+      self.RAS3Button.setChecked(True)
     elif (tp == 'S'):
-      self.scene.background = (0.883, 0.673, 0.670) # CIELab(75,19.5,8)
+      self.secondaryButton.setChecked(True)
     elif (tp == 'D'):
-      self.scene.background = (0.609, 0.417, 0.416) # CIELab(50,19.5,8)
+      self.deletedButton.setChecked(True)
     else:
-      self.scene.background = (0.466, 0.466, 0.466) # CIELab(50,0,0)
+      self.typeButtonGroup.setExclusive(False)
+      for b in self.typeButtonGroup.buttons():
+        b.setChecked(False)
+      self.typeButtonGroup.setExclusive(True)
+    if (self.typeButtonGroup.checkedId() != init):
+      self.typeButtonGroup_changed()
+
+  def set_panel(self):
     # Update the description text
-    if (self.orb == 0):
-      text = 'Density'
-    elif (self.orb == -1):
-      text = 'Spin density'
-    elif (self.orb == -2):
-      text = 'Laplacian (numerical)'
-    else:
-      if ('label' in MO):
-        text = MO['label']
+    try:
+      text = {0:'Density', -1:'Spin density', -2:'Laplacian (numerical)'}[self.orbital]
+    except KeyError:
+      orb = self.MO[self.orbital-1]
+      tp = orb.get('newtype', orb['type'])
+      if ('label' in orb):
+        text = orb['label']
       else:
         if (self.nosym):
           sym = ''
         else:
-          m = [o['sym'] for o in self.MO[:self.orb]].count(MO['sym'])
-          sym = ' [{0}, {1}]'.format(MO['sym'], m)
-        text = '#{0}{1}   E: {2:.6f}   occ: {3:.4f}   {4}'.format(self.orb, sym, MO['ene'], MO['occup'], tp)
+          m = [o['sym'] for o in self.MO[:self.orbital]].count(orb['sym'])
+          sym = ' [{0}, {1}]'.format(orb['sym'], m)
+        text = '#{0}{1}   E: {2:.6f}   occ: {3:.4f}   {4}'.format(self.orbital, sym, orb['ene'], orb['occup'], tp)
     # Update the counts
     irrep = [i for i in self.orbitals.irrep if (i != 'z')]
     nsym = len(irrep)
-    types = {'F':[0]*nsym, 'I':[0]*nsym, '1':[0]*nsym, '2':[0]*nsym, '3':[0]*nsym, 'S':[0]*nsym, 'D':[0]*nsym}
+    types = {k:[0]*nsym for k in ['F', 'I', '1', '2', '3', 'S', 'D']}
     for o in self.MO:
       try:
         sym = irrep.index(o['sym'])
-        if ('newtype' in o):
-          tp = o['newtype']
-        else:
-          tp = o['type']
+        tp = o.get('newtype', o['type'])
         if (tp in types):
           types[tp][sym] += 1
       except:
         pass
     text += '\n' + '   '.join(['{0}: {1}'.format(i, ','.join(map(str, types[i]))) for i in ['F', 'I', '1', '2', '3', 'S', 'D'] if (sum(types[i]) > 0)])
-    if (self.counts is None):
-      self.counts = self.scene.mlab.text(0.01, 0.01, text)
-      self.counts._property.bold = True
-      self.counts.actor.text_scale_mode = 'none'
-      try:
-        self.counts._property.background_opacity = 0.2
-      except:
-        pass
+    if (self.panel is None):
+      self.panel = vtk.vtkTextActor()
+      if (self.monoFont is not None):
+        self.panel.GetTextProperty().SetFontFamily(vtk.VTK_FONT_FILE)
+        self.panel.GetTextProperty().SetFontFile('/usr/share/fonts/truetype/droid/DroidSansMono.ttf')
+      self.panel.GetTextProperty().SetFontSize(12)
+      self.panel.GetTextProperty().SetBackgroundOpacity(0.1)
+      self.panel.SetPosition(5, 5)
+      self.panel.SetWidth(300)
+      self.panel.SetHeight(300)
+    self.panel.SetInput(text)
+    self.vtk_update()
+
+  def boxSizeBox_changed(self):
+    try:
+      value = [float(i) for i in re.split(r'[ ,]*', str(self.boxSizeBox.text()).strip())]
+      assert (len(value) == 3) and all([i > 0 for i in value])
+      self.boxSize = value
+      self.boxSizeBox.blockSignals(True)
+      self.boxSizeBox.setText('{0}, {1}, {2}'.format(*self.boxSize))
+      self.boxSizeBox.blockSignals(False)
+    except Exception as e:
+      self.boxSizeBox.blockSignals(True)
+      if (self.boxSize is None):
+        self.boxSizeBox.setText('')
+      else:
+        self.boxSizeBox.setText('{0}, {1}, {2}'.format(*self.boxSize))
+      self.boxSizeBox.blockSignals(False)
+
+  def edit_transform(self):
+    if (self.transformButton.isChecked()):
+      self.transformDock.show()
     else:
-      self.counts.text = text
+      self.transformDock.hide()
 
-  @on_trait_change('notelist')
-  def list_orbitals(self, new):
-    if (self.shownotes is None):
-      self.shownotes = self.edit_traits(view=orbital_list)
+  def gridPointsBox_changed(self):
+    try:
+      value = int(self.gridPointsBox.text())
+      assert 2 <= value <= 200
+      self.gridPoints = value
+    except:
+      self.gridPointsBox.blockSignals(True)
+      if (self.gridPoints is None):
+        self.gridPointsBox.setText('')
+      else:
+        self.gridPointsBox.setText('{0}'.format(self.gridPoints))
+      self.gridPointsBox.blockSignals(False)
 
-  # Write the current orbital in cube format
-  @on_trait_change('save_cube')
-  def write_cube(self, *args):
-    if (self.vol is None):
-      return
-    dlg = FileDialog(title='Save cube', action='save as')
-    if (dlg.open() == OK):
-      ngrid = self.vol.shape
-      grid = [(x[-1,-1,-1]-x[0,0,0])/(n-1) for x,n in zip(self.xyz, ngrid)]
-      with open(dlg.path, 'w') as f:
-        f.write('File generated by {0} from {1}\n'.format(__name__, self.file))
-        f.write('{0}\n'.format(self.orblist[self.orb].split(':', 1)[1]))
-        orig = [x[0,0,0] for x in self.xyz]
-        if (self.isGrid):
-          orig.append(1.0)
-          orig = self.orbitals.transform.multiply_point(orig)[0:3]
-        f.write('{0:5d} {1:11.6f} {2:11.6f} {3:11.6f}\n'.format(len(self.orbitals.centers), *orig))
-        axis = [grid[0], 0, 0]
-        if (self.isGrid):
-          axis.append(0.0)
-          axis = self.orbitals.transform.multiply_point(axis)[0:3]
-        f.write('{0:5d} {1:11.6f} {2:11.6f} {3:11.6f}\n'.format(ngrid[0], *axis))
-        axis = [0, grid[1], 0]
-        if (self.isGrid):
-          axis.append(0.0)
-          axis = self.orbitals.transform.multiply_point(axis)[0:3]
-        f.write('{0:5d} {1:11.6f} {2:11.6f} {3:11.6f}\n'.format(ngrid[1], *axis))
-        axis = [0, 0, grid[2]]
-        if (self.isGrid):
-          axis.append(0.0)
-          axis = self.orbitals.transform.multiply_point(axis)[0:3]
-        f.write('{0:5d} {1:11.6f} {2:11.6f} {3:11.6f}\n'.format(ngrid[2], *axis))
-        for c in self.orbitals.centers:
-          f.write('{0:5d} {0:11.6f} {1:11.6f} {2:11.6f} {3:11.6f}\n'.format(c['Z'], *c['xyz']))
-        for x in self.vol:
-          for y in x:
-            f.write('\n'.join(wrap_list(y, 6, '{:13.5E}')))
-            f.write('\n')
+  def toggle_gradient_options(self):
+    if (self.gradientGroup.isVisible()):
+       self.gradientGroup.hide()
+       self.showGradientButton.setArrowType(Qt.RightArrow)
+    else:
+       self.gradientGroup.show()
+       self.showGradientButton.setArrowType(Qt.LeftArrow)
 
-  @on_trait_change('save_hdf5')
+  def lineDensityBox_changed(self):
+    try:
+      value = int(self.lineDensityBox.text())
+      assert 2 <= value <= 50
+      self.lineDensity = value
+    except:
+      self.lineDensityBox.blockSignals(True)
+      if (self.lineDensity is None):
+        self.lineDensityBox.setText('')
+      else:
+        self.lineDensityBox.setText('{0}'.format(self.lineDensity))
+      self.lineDensityBox.blockSignals(False)
+
+  def startRadiusBox_changed(self):
+    try:
+      value = float(self.startRadiusBox.text())
+      assert 0 <= value
+      self.startRadius = value
+    except:
+      self.startRadiusBox.blockSignals(True)
+      if (self.startRadius is None):
+        self.startRadiusBox.setText('')
+      else:
+        self.startRadiusBox.setText('{0}'.format(self.startRadius))
+      self.startRadiusBox.blockSignals(False)
+
+  def maxStepsBox_changed(self):
+    try:
+      value = int(self.maxStepsBox.text())
+      assert 0 <= value
+      self.maxSteps = value
+    except:
+      self.maxStepsBox.blockSignals(True)
+      if (self.maxSteps is None):
+        self.maxStepsBox.setText('')
+      else:
+        self.maxStepsBox.setText('{0}'.format(self.maxSteps))
+      self.maxStepsBox.blockSignals(False)
+
+  def directionButtonGroup_changed(self):
+    sl = get_input_type(self.gradient.GetMapper(), vtk.vtkStreamTracer)
+    sl.SetIntegrationDirection(self.directionButtonGroup.checkedId())
+    self.vtk_update()
+
   def write_hdf5(self, *args):
     if (self.orbitals.type != 'hdf5'):
       return
-    dlg = FileDialog(title='Save HDF5', action='save as')
-    if (dlg.open() == OK):
-      self.orbitals.write_hdf5(dlg.path)
-
-  @on_trait_change('save_orbs')
-  def write_inporb(self, *args):
-    if (not self.haveOrb):
+    result = QFileDialog.getSaveFileName(self, 'Save HDF5')
+    if (not result):
       return
-    dlg = FileDialog(title='Save InpOrb', action='save as')
-    if (dlg.open() == OK):
+    try:
+      filename, _ = result
+    except ValueError:
+      filename = result
+    try:
+      self.orbitals.write_hdf5(str(filename))
+    except Exception as e:
+      error = 'Error writing hdf5 file {0}:\n{1}'.format(filename, e)
+      self.show_error(error)
+
+  def write_inporb(self, *args):
+    if (not self.haveInpOrb):
+      return
+    result = QFileDialog.getSaveFileName(self, 'Save InpOrb')
+    if (not result):
+      return
+    try:
+      filename, _ = result
+    except ValueError:
+      filename = result
+      return
+    try:
       if (self.orbitals.inporb == 'gen'):
-        self.orbitals.create_inporb(dlg.path)
+        self.orbitals.create_inporb(filename)
       else:
-        self.patch_inporb(dlg.path)
+        self.patch_inporb(filename)
+    except Exception as e:
+      error = 'Error writing inporb file {0}:\n{1}'.format(filename, e)
+      self.show_error(error)
+
+  def write_cube(self, *args):
+    if (self.surface is None):
+      return
+    result = QFileDialog.getSaveFileName(self, 'Save cube')
+    if (not result):
+      return
+    try:
+      filename, _ = result
+    except ValueError:
+      filename = result
+    try:
+      data = self.xyz.GetInput()
+      ngrid = data.GetDimensions()
+      grid = data.GetSpacing()
+      orig = list(data.GetOrigin())
+      transform = self.xyz.GetTransform().GetMatrix()
+      try:
+        note = ' {0}'.format(self.notes[self.orbital-1]['note'])
+      except:
+        note = ''
+      with open(filename, 'w') as f:
+        f.write('File generated by {0} from {1}\n'.format(__name__, self.filename))
+        f.write('{0} {1}\n'.format(self.orbitalButton.currentText(), note))
+        orig.append(1.0)
+        transform.MultiplyPoint(orig, orig)
+        f.write('{0:5d} {1:11.6f} {2:11.6f} {3:11.6f}\n'.format(len(self.orbitals.centers), *orig))
+        for i in range(3):
+          axis = [0, 0, 0, 0]
+          axis[i] = grid[i]
+          axis = transform.MultiplyPoint(axis)
+          f.write('{0:5d} {1:11.6f} {2:11.6f} {3:11.6f}\n'.format(ngrid[i], *axis))
+        for c in self.orbitals.centers:
+          f.write('{0:5d} {0:11.6f} {1:11.6f} {2:11.6f} {3:11.6f}\n'.format(c['Z'], *c['xyz']))
+        vol = numpy_support.vtk_to_numpy(data.GetPointData().GetScalars()).reshape(ngrid[::-1]).T
+        for x in vol:
+          for y in x:
+            f.write('\n'.join(wrap_list(y, 6, '{:13.5E}')))
+            f.write('\n')
+    except Exception as e:
+      error = 'Error writing cube file {0}:\n{1}'.format(filename, e)
+      self.show_error(error)
 
   # Copy an InpOrb file, changing header and index section
   def patch_inporb(self, outfile):
-    nMO = [0 for i in self.symlist if (i not in  ['All', 'z'])]
+    nMO = [0 for i in self.irreplist if (i not in  ['All', 'z'])]
     for o in self.orbitals.MO:
       try:
-        nMO[self.symlist.index(o['sym'])-1] += 1
+        nMO[self.irreplist.index(o['sym'])-1] += 1
       except:
         pass
-    index = create_index(self.orbitals.MO, self.orbitals.MO_b, nMO)
+    index, error = create_index(self.orbitals.MO, self.orbitals.MO_b, nMO)
     if (index is None):
-      return
+      if (error is not None):
+        self.show_error(error)
+        return
     with open(self.orbitals.file, 'r') as f:
       f.seek(self.orbitals.inporb)
       with open(outfile, 'w') as fo:
@@ -2076,7 +3754,8 @@ class Viewer(HasTraits):
           if (line.startswith('#INFO')):
             fo.write(line)
             line = f.readline()
-            fo.write('* File generated by {0} from {1}\n'.format(__name__, self.file))
+            fo.write('* File generated by {0} from {1}\n'.format(__name__, self.filename))
+            line = f.readline()
             line = f.readline()
             fo.write(line)
             line = f.readline()
@@ -2084,7 +3763,7 @@ class Viewer(HasTraits):
             line = f.readline()
             fo.write(line)
             if (map(int, line.split()) != nMO):
-              error(message='Wrong number of orbitals', title='Error', buttons=['OK'])
+              self.show_error('Wrong number of orbitals')
               return
             line = f.readline()
             fo.write(line)
@@ -2097,344 +3776,477 @@ class Viewer(HasTraits):
         fo.write('\n'.join(index))
         fo.write('\n')
 
-#-------------------------------------------------------------------------------
-
-class KeyHandler(Handler):
-
-  def show_help(self, *args):
-    message = '''<p>
-                 <b>{0}</b> is an orbital viewer ideal for OpenMolcas. {0} can open files in HDF5, Molden, Luscus, grid (ascii) and cube (formatted) formats;
-                 after loading an HDF5 file, it can also read files in InpOrb (2.0 or later) format. It can modify orbital types and save the
-                 result in HDF5 and InpOrb format, or save the volume data in cube format.
-                 </p>
-                 <p>
-                 <u><i>Hotkeys</i></u><br>
-                 <b>F1</b>: Show this help<br>
-                 <b>q</b>: Quit<br>
-                 <b>Ctrl+l</b>: Load a file<br>
-                 <b>Ctrl+h</b>: Save orbitals and basis in HDF5 format<br>
-                 <b>Ctrl+o</b>: Save orbitals in InpOrb format<br>
-                 <b>Ctrl+c</b>: Save current orbital in cube format<br>
-                 <b>Shift+Page up</b>/<b>down</b>: Change selected irrep<br>
-                 <b>Page up</b>/<b>down</b>: Change selected orbital<br>
-                 <b>a</b>: Switch spin<br>
-                 <b>v</b>/<b>V</b>: Decrease/increase isosurface value<br>
-                 <b>o</b>: Toggle display of isosurface<br>
-                 <b>n</b>: Toggle display of nodal surface<br>
-                 <b>m</b>: Toggle display of nuclei<br>
-                 <b>z</b>: Toggle display of atom names<br>
-                 <b>b</b>: Toggle display of grid box<br>
-                 <b>Ctrl+f</b>/<b>i</b>/<b>1</b>/<b>2</b>/<b>3</b>/<b>s</b>/<b>d</b>: Change type of current orbital<br>
-                 (<i>frozen</i>/<i>inactive</i>/<i>RAS1</i>/<i>RAS2</i>/<i>RAS3</i>/<i>secondary</i>/<i>deleted</i>)<br>
-                 <b>l</b>: Open orbital annotation window<br>
-                 </p>
-
-                 <p>Other keys interpreted by Mayavi:<br>
-                 <a href="http://docs.enthought.com/mayavi/mayavi/application.html#keyboard-interaction">docs.enthought.com/mayavi/mayavi/application.html</a></p>'''.format(__name__)
-    msg = Message(message=message)
-    msg.edit_traits(view=View([Item('message', editor=HTMLEditor(), height=400, width=600, show_label=False)],
-                              title='Hotkeys', buttons=['OK'], kind='nonmodal', icon=app_icon))
-
-  def prev_sym(self, info):
-    if (info.object.orbitals is None):
+  def prev_irrep(self):
+    if (not self.irrepButton.isEnabled()):
       return
-    syms = info.object.symlist
-    idx = info.object.symlist.index(info.object.sym)
-    info.object.sym = syms[max(idx-1, 0)]
+    index = self.irrepButton.currentIndex()
+    if (index > 0):
+      self.irrepButton.setCurrentIndex(index-1)
 
-  def next_sym(self, info):
-    if (info.object.orbitals is None):
+  def next_irrep(self):
+    if (not self.irrepButton.isEnabled()):
       return
-    syms = info.object.symlist
-    idx = syms.index(info.object.sym)
-    info.object.sym = syms[min(idx+1, len(syms)-1)]
+    index = self.irrepButton.currentIndex()
+    if (index < self.irrepButton.count()-1):
+      self.irrepButton.setCurrentIndex(index+1)
 
-  def prev_orb(self, info):
-    if (info.object.orbitals is None):
+  def prev_orbital(self):
+    if (not self.orbitalButton.isEnabled()):
       return
-    orbs = sorted(info.object.orblist.keys())
-    idx = orbs.index(info.object.orb)
-    info.object.orb = orbs[max(idx-1, 0)]
+    index = self.orbitalButton.currentIndex()
+    if (index > 0):
+      self.orbitalButton.setCurrentIndex(index-1)
 
-  def next_orb(self, info):
-    if (info.object.orbitals is None):
+  def next_orbital(self):
+    if (not self.orbitalButton.isEnabled()):
       return
-    orbs = sorted(info.object.orblist.keys())
-    idx = orbs.index(info.object.orb)
-    info.object.orb = orbs[min(idx+1, len(orbs)-1)]
+    index = self.orbitalButton.currentIndex()
+    if (index < self.orbitalButton.count()-1):
+      self.orbitalButton.setCurrentIndex(index+1)
 
-  def switch_spin(self, info):
-    if (info.object.orbitals is None):
+  def select_alpha(self):
+    if (not self.spinButton.isEnabled()):
       return
-    info.object.spin = info.object.spinlist[info.object.spinlist.index(info.object.spin)-1]
+    index = self.spinButton.findText('alpha')
+    if (index >= 0):
+      self.spinButton.setCurrentIndex(index)
 
-  def dec_val(self, info):
-    if (not info.object.surface):
+  def select_beta(self):
+    if (not self.spinButton.isEnabled()):
       return
-    info.object.val = max(info.object.val/1.01, info.object.minval)
+    index = self.spinButton.findText('beta')
+    if (index >= 0):
+      self.spinButton.setCurrentIndex(index)
 
-  def inc_val(self, info):
-    if (not info.object.surface):
+  def increase_isovalue(self, more=False):
+    if (not self.isovalueSlider.isEnabled()):
       return
-    info.object.val = min(info.object.val*1.01, info.object.maxval)
+    value = self.isovalueSlider.value()
+    if (more):
+      step = self.isovalueSlider.pageStep()
+    else:
+      step = self.isovalueSlider.singleStep()
+    self.isovalueSlider.setValue(value-step)
 
-  def dec_op(self, info):
-    if (not info.object.surface):
+  def decrease_isovalue(self, more=False):
+    if (not self.isovalueSlider.isEnabled()):
       return
-    info.object.opacity = max(info.object.opacity-0.05, 0.0)
+    value = self.isovalueSlider.value()
+    if (more):
+      step = self.isovalueSlider.pageStep()
+    else:
+      step = self.isovalueSlider.singleStep()
+    self.isovalueSlider.setValue(value+step)
 
-  def inc_op(self, info):
-    if (not info.object.surface):
+  def increase_opacity(self, more=False):
+    if (not self.opacitySlider.isEnabled()):
       return
-    info.object.opacity = min(info.object.opacity+0.05, 1.0)
+    value = self.opacitySlider.value()
+    if (more):
+      step = self.opacitySlider.pageStep()
+    else:
+      step = self.opacitySlider.singleStep()
+    self.opacitySlider.setValue(value+step)
 
-  def toggle_surface(self, info):
-    if (info.object.surf is None):
+  def decrease_opacity(self, more=False):
+    if (not self.opacitySlider.isEnabled()):
       return
-    info.object.surface = not info.object.surface
+    value = self.opacitySlider.value()
+    if (more):
+      step = self.opacitySlider.pageStep()
+    else:
+      step = self.opacitySlider.singleStep()
+    self.opacitySlider.setValue(value-step)
 
-  def toggle_nodes(self, info):
-    if (info.object.node is None):
+  def prev_sign(self):
+    if (not self.signButton.isEnabled()):
       return
-    info.object.nodes = not info.object.nodes
+    index = self.signButton.currentIndex()
+    index = (index+1) % self.signButton.count()
+    self.signButton.setCurrentIndex(index)
 
-  def toggle_nuc(self, info):
-    if (info.object.mol is None):
+  def next_sign(self):
+    if (not self.signButton.isEnabled()):
       return
-    info.object.nuc = not info.object.nuc
+    index = self.signButton.currentIndex()
+    index = (index-1) % self.signButton.count()
+    self.signButton.setCurrentIndex(index)
 
-  def toggle_lab(self, info):
-    if (info.object.mol is None):
-      return
-    info.object.lab = not info.object.lab
+  def show_keys(self):
+    if (self.keymess is None):
+      self.keymess = ScrollMessageBox(self)
+    self.keymess.show()
+    self.keymess.activateWindow()
 
-  def toggle_box(self, info):
-    if (info.object.cube is None):
-      return
-    info.object.box = not info.object.box
+  def show_about(self):
+    python_version = sys.version
+    pyqt_version = PYQT_VERSION_STR
+    vtk_version = vtk.vtkVersion.GetVTKVersion()
+    QMessageBox.about(self, 'About {0}'.format(__name__),
+                      u'''<h2>{0} v{1}</h2>
+                      <p>An orbital viewer ideal for OpenMolcas.<br>
+                      {2}, {3}</p>
+                      <p>{0} can open files in <i>HDF5</i>, <i>Molden</i>, <i>Luscus</i>, <i>grid</i> (ascii) and <i>cube</i> (formatted) formats;
+                      after loading an HDF5 file, it can also read files in <i>InpOrb</i> format.<br>
+                      It can modify orbital types and save the result in <i>HDF5</i> and <i>InpOrb</i> formats, or save the volume data in <i>cube</i> format.</p>
+                      <p><b>python</b>: {4}<br>
+                      <b>PyQt</b>: {5}<br>
+                      <b>VTK</b>: {6}</p>
+                      '''.format(__name__, __version__, __copyright__, __author__, python_version, pyqt_version, vtk_version)
+                      )
 
-  def make_F(self, info):
-    self._change('F', info)
+  def show_error(self, error):
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Critical)
+    msg.setText(error)
+    msg.setWindowTitle('Error')
+    msg.setStandardButtons(QMessageBox.Ok)
+    msg.exec_()
+    del msg
 
-  def make_I(self, info):
-    self._change('I', info)
+  def reset_camera(self):
+    self.ren.ResetCamera()
+    self.vtk_update()
 
-  def make_1(self, info):
-    self._change('1', info)
+  def vtk_update(self):
+    if (self.ready):
+      self.vtkWidget.GetRenderWindow().Render()
 
-  def make_2(self, info):
-    self._change('2', info)
+class ListDock(QDockWidget):
 
-  def make_3(self, info):
-    self._change('3', info)
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.parent = self.parent()
+    self.init_UI()
 
-  def make_S(self, info):
-    self._change('S', info)
+  def init_UI(self):
+    self.ready = True
+    self.modified = False
+    self.orbLabels = []
+    self.orbCheckBoxes = []
+    self.orbNotes = []
+    self.allButton = QPushButton('All')
+    self.activeButton = QPushButton('Active')
+    self.noneButton = QPushButton('None')
 
-  def make_D(self, info):
-    self._change('D', info)
+    self.allButton.setToolTip('Include all occupied orbitals in the densities')
+    self.allButton.setWhatsThis('Select all occupied orbitals when computing the electron and spin density.')
+    self.activeButton.setToolTip('Include only active orbitals in the densities')
+    self.activeButton.setWhatsThis('Select only occupied active orbitals when computing the electron and spin density.')
+    self.noneButton.setToolTip('Exclude all orbitals from the densities')
+    self.noneButton.setWhatsThis('Deselect all orbitals for computing the electron and spin density.')
 
-  def _change(self, tp, info):
-    i = info.object.orb
+    self.grid = QGridLayout()
+    head1 = QLabel('Orbital')
+    head1.setAlignment(Qt.AlignCenter)
+    head2 = QLabel('Density')
+    head2.setAlignment(Qt.AlignCenter)
+    head3 = QLabel('Notes')
+    head3.setAlignment(Qt.AlignCenter)
+    self.grid.addWidget(head1, 0, 0)
+    self.grid.addWidget(head2, 0, 1)
+    self.grid.addWidget(head3, 0, 2)
+    self.spacer = QWidget()
+    self.spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+    self.grid.setColumnStretch(2, 1)
+    _list = QWidget()
+    _list.setLayout(self.grid)
+    scroll = QScrollArea()
+    scroll.setWidget(_list)
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+
+    hbox = QHBoxLayout()
+    hbox.addWidget(self.allButton)
+    hbox.addWidget(self.activeButton)
+    hbox.addWidget(self.noneButton)
+    hbox.addSpacing(20)
+    hbox.addStretch(1)
+
+    vbox = QVBoxLayout()
+    vbox.setAlignment(Qt.AlignTop)
+    vbox.addWidget(scroll)
+    vbox.addLayout(hbox)
+
+    _widget = QWidget()
+    _widget.setLayout(vbox)
+
+    self.setWidget(_widget)
+
+    self.setMinimumWidth(300)
+
+    self.allButton.clicked.connect(self.select_all)
+    self.activeButton.clicked.connect(self.select_active)
+    self.noneButton.clicked.connect(self.select_none)
+
+  def set_list(self):
+    for i in self.orbLabels + self.orbCheckBoxes + self.orbNotes:
+      i.hide()
+      del i
+    self.grid.removeWidget(self.spacer)
+    self.orbLabels = []
+    self.orbCheckBoxes = []
+    self.orbNotes = []
+    if (self.parent.notes is not None):
+      for i,orb in enumerate(self.parent.notes):
+        l = QLabel(orb['name'])
+        self.orbLabels.append(l)
+        c = QCheckBox()
+        c.setChecked(orb['density'])
+        c.stateChanged.connect(partial(self.density, i))
+        c.setEnabled(orb['occup'] != 0)
+        if (c.isEnabled()):
+          c.setToolTip('Include the orbital in density calculations?')
+          c.setWhatsThis('If checked, this orbital is included when computing the electron and spin density.')
+        else:
+          c.setToolTip('Unoccupied orbital')
+          c.setWhatsThis('This orbital is not included when computing the electron and spin density because it is empty.')
+        self.orbCheckBoxes.append(c)
+        e = QLineEdit()
+        e.setText(orb['note'])
+        e.editingFinished.connect(partial(self.note, i))
+        e.setToolTip('Add free custom note to the orbital')
+        e.setWhatsThis('You can write any text as an annotation for the orbital, but this will not be saved.')
+        self.orbNotes.append(e)
+    for i,(l,c,n) in enumerate(zip(self.orbLabels, self.orbCheckBoxes, self.orbNotes)):
+      self.grid.addWidget(l, i+1, 0)
+      self.grid.addWidget(c, i+1, 1, Qt.AlignCenter)
+      self.grid.addWidget(n, i+1, 2)
+    self.grid.addWidget(self.spacer, len(self.orbLabels)+1, 0)
+
+  def density(self, num, new):
+    self.parent.notes[num]['density'] = bool(new)
+    self.modified = True
+    if (self.ready):
+      self.redraw()
+
+  def note(self, num):
+    self.parent.notes[num]['note'] = str(self.orbNotes[num].text())
+
+  def select_all(self):
+    self.modified = False
+    self.ready = False
+    for i in self.orbCheckBoxes:
+      if (i.isEnabled()):
+        i.setChecked(True)
+    self.ready = True
+    if (self.modified):
+      self.redraw()
+
+  def select_active(self):
+    self.modified = False
+    self.ready = False
+    for i,o in zip(self.orbCheckBoxes, [j for i in zip_longest(self.parent.orbitals.MO, self.parent.orbitals.MO_b) for j in i if (j is not None)]):
+      if (i.isEnabled()):
+        tp = o['type']
+        if ('newtype' in o):
+          tp = o['newtype']
+        if (tp in ['1', '2', '3']):
+          i.setChecked(True)
+        else:
+          i.setChecked(False)
+    self.ready = True
+    if (self.modified):
+      self.redraw()
+
+  def select_none(self):
+    self.modified = False
+    self.ready = False
+    for i in self.orbCheckBoxes:
+      if (i.isEnabled()):
+        i.setChecked(False)
+    self.ready = True
+    if (self.modified):
+      self.redraw()
+
+  def redraw(self):
+    if (self.parent.orbital < 1):
+      self.parent.build_surface()
+    self.modified = False
+
+  def closeEvent(self, *args):
+    self.parent.listButton.setChecked(False)
+    super().closeEvent(*args)
+
+class TransformDock(QDockWidget):
+
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.parent = self.parent()
+    self.init_UI()
+
+  def init_UI(self):
+    self.rotLabel = QLabel('Transformation matrix:')
+    self.rotXXBox = QLineEdit()
+    self.rotXYBox = QLineEdit()
+    self.rotXZBox = QLineEdit()
+    self.rotYXBox = QLineEdit()
+    self.rotYYBox = QLineEdit()
+    self.rotYZBox = QLineEdit()
+    self.rotZXBox = QLineEdit()
+    self.rotZYBox = QLineEdit()
+    self.rotZZBox = QLineEdit()
+    self.transLabel = QLabel('Translation:')
+    self.transXBox = QLineEdit()
+    self.transYBox = QLineEdit()
+    self.transZBox = QLineEdit()
+    self.applyButton = QPushButton('Apply')
+    self.resetButton = QPushButton('Reset')
+    self.cancelButton = QPushButton('Cancel')
+
+    rotText = 'These elements define the 3×3 transformation matrix applied to the grid box.'
+    self.rotXXBox.setToolTip('Element 1,1 of the rotation matrix')
+    self.rotXXBox.setWhatsThis(rotText)
+    self.rotXYBox.setToolTip('Element 1,2 of the rotation matrix')
+    self.rotXYBox.setWhatsThis(rotText)
+    self.rotXZBox.setToolTip('Element 1,3 of the rotation matrix')
+    self.rotXZBox.setWhatsThis(rotText)
+    self.rotYXBox.setToolTip('Element 2,1 of the rotation matrix')
+    self.rotYXBox.setWhatsThis(rotText)
+    self.rotYYBox.setToolTip('Element 2,2 of the rotation matrix')
+    self.rotYYBox.setWhatsThis(rotText)
+    self.rotYZBox.setToolTip('Element 2,3 of the rotation matrix')
+    self.rotYZBox.setWhatsThis(rotText)
+    self.rotZXBox.setToolTip('Element 3,1 of the rotation matrix')
+    self.rotZXBox.setWhatsThis(rotText)
+    self.rotZYBox.setToolTip('Element 3,2 of the rotation matrix')
+    self.rotZYBox.setWhatsThis(rotText)
+    self.rotZZBox.setToolTip('Element 3,3 of the rotation matrix')
+    self.rotZZBox.setWhatsThis(rotText)
+    transText = 'These elements define the translation vector applied to the grid box.'
+    self.transXBox.setToolTip('Element 1 of the translation vector')
+    self.transXBox.setWhatsThis(transText)
+    self.transYBox.setToolTip('Element 2 of translation vectortrix')
+    self.transYBox.setWhatsThis(transText)
+    self.transZBox.setToolTip('Element 3 of translation vectortrix')
+    self.transZBox.setWhatsThis(transText)
+    self.applyButton.setToolTip('Apply transformation matrix to the box')
+    self.applyButton.setWhatsThis('By clicking this button the transformation defined here is applied to the grid box and the display is updated.')
+    self.resetButton.setToolTip('Reset to unit matrix')
+    self.resetButton.setWhatsThis('Reset the transformation to the identity (do nothing).')
+    self.cancelButton.setToolTip('Reset transformation matrix to the current one')
+    self.cancelButton.setWhatsThis('Restore the transformation as it was the last time the Apply button was used.')
+
+    grid = QGridLayout()
+    grid.addWidget(self.rotLabel, 0, 0, 1, 3)
+    grid.addWidget(self.rotXXBox, 1, 0)
+    grid.addWidget(self.rotXYBox, 1, 1)
+    grid.addWidget(self.rotXZBox, 1, 2)
+    grid.addWidget(self.rotYXBox, 2, 0)
+    grid.addWidget(self.rotYYBox, 2, 1)
+    grid.addWidget(self.rotYZBox, 2, 2)
+    grid.addWidget(self.rotZXBox, 3, 0)
+    grid.addWidget(self.rotZYBox, 3, 1)
+    grid.addWidget(self.rotZZBox, 3, 2)
+    grid.addWidget(self.transLabel, 4, 0, 1, 3)
+    grid.addWidget(self.transXBox, 5, 0)
+    grid.addWidget(self.transYBox, 5, 1)
+    grid.addWidget(self.transZBox, 5, 2)
+
+    hbox = QHBoxLayout()
+    hbox.addWidget(self.applyButton)
+    hbox.addStretch(1)
+    hbox.addWidget(self.resetButton)
+    hbox.addWidget(self.cancelButton)
+
+    vbox = QVBoxLayout()
+    vbox.setAlignment(Qt.AlignTop)
+    vbox.addLayout(grid)
+    vbox.addLayout(hbox)
+
+    _widget = QWidget()
+    _widget.setLayout(vbox)
+
+    self.setWidget(_widget)
+
+    self.rotXXBox.returnPressed.connect(self.set_transform)
+    self.rotXYBox.returnPressed.connect(self.set_transform)
+    self.rotXZBox.returnPressed.connect(self.set_transform)
+    self.rotYXBox.returnPressed.connect(self.set_transform)
+    self.rotYYBox.returnPressed.connect(self.set_transform)
+    self.rotYZBox.returnPressed.connect(self.set_transform)
+    self.rotZXBox.returnPressed.connect(self.set_transform)
+    self.rotZYBox.returnPressed.connect(self.set_transform)
+    self.rotZZBox.returnPressed.connect(self.set_transform)
+    self.transXBox.returnPressed.connect(self.set_transform)
+    self.transYBox.returnPressed.connect(self.set_transform)
+    self.transZBox.returnPressed.connect(self.set_transform)
+    self.applyButton.clicked.connect(self.set_transform)
+    self.resetButton.clicked.connect(self.reset)
+    self.cancelButton.clicked.connect(self.set_boxes)
+
+  def set_boxes(self, value=None):
+    if ((value is None) or (type(value) is bool)):
+      value = self.parent.transform
+    self.rotXXBox.setText('{}'.format(value[0]))
+    self.rotXYBox.setText('{}'.format(value[1]))
+    self.rotXZBox.setText('{}'.format(value[2]))
+    self.rotYXBox.setText('{}'.format(value[4]))
+    self.rotYYBox.setText('{}'.format(value[5]))
+    self.rotYZBox.setText('{}'.format(value[6]))
+    self.rotZXBox.setText('{}'.format(value[8]))
+    self.rotZYBox.setText('{}'.format(value[9]))
+    self.rotZZBox.setText('{}'.format(value[10]))
+    self.transXBox.setText('{}'.format(value[3]))
+    self.transYBox.setText('{}'.format(value[7]))
+    self.transZBox.setText('{}'.format(value[11]))
+
+  def set_transform(self):
+    value = [0]*16
     try:
-      # Instead of rewriting the labels, modify them
-      o = info.object.MO[i-1]
-      label = info.object.orblist[i]
-      if (('newtype' in o) and (o['newtype'] != o['type'])):
-        label = label[:-3]
-      o['newtype'] = tp
-      if (tp != o['type']):
-        label = label + '->' + tp
-      info.object.orblist[i] = label
-      label = info.object.notes[i-1].name[:-1] + tp
-      info.object.notes[i-1].name = label
-      info.object.update_background()
+      value[0]  = self.rotXXBox.text()
+      value[1]  = self.rotXYBox.text()
+      value[2]  = self.rotXZBox.text()
+      value[4]  = self.rotYXBox.text()
+      value[5]  = self.rotYYBox.text()
+      value[6]  = self.rotYZBox.text()
+      value[8]  = self.rotZXBox.text()
+      value[9]  = self.rotZYBox.text()
+      value[10] = self.rotZZBox.text()
+      value[3]  = self.transXBox.text()
+      value[7]  = self.transYBox.text()
+      value[11] = self.transZBox.text()
+      value[15] = 1.0
+      self.parent.transform = [float(i) for i in value]
     except:
-      pass
+      self.set_boxes()
 
-  # Actions for selecting orbitals
-  # The first change (if any) is delayed until the end,
-  # in order for the notification to trigger a density redraw
+  def reset(self):
+    value = np.eye(4).flatten().tolist()
+    value[15] = 1.0
+    self.set_boxes(value)
 
-  def select_none(self, info):
-    if (info.object.orbitals is None):
-      return
-    info.object.ready = False
-    first = None
-    for i in info.object.notes:
-      if ((first is None) and i.selected):
-        first = i
-      else:
-        i.selected = False
-    info.object.ready = True
-    if (first is not None):
-      first.selected = False
+  def set_enabled(self, value):
+    self.rotLabel.setEnabled(value)
+    self.rotXXBox.setEnabled(value)
+    self.rotXYBox.setEnabled(value)
+    self.rotXZBox.setEnabled(value)
+    self.rotYXBox.setEnabled(value)
+    self.rotYYBox.setEnabled(value)
+    self.rotYZBox.setEnabled(value)
+    self.rotZXBox.setEnabled(value)
+    self.rotZYBox.setEnabled(value)
+    self.rotZZBox.setEnabled(value)
+    self.transLabel.setEnabled(value)
+    self.transXBox.setEnabled(value)
+    self.transYBox.setEnabled(value)
+    self.transZBox.setEnabled(value)
+    self.applyButton.setEnabled(value)
+    self.resetButton.setEnabled(value)
+    self.cancelButton.setEnabled(value)
 
-  def select_active(self, info):
-    if (info.object.orbitals is None):
-      return
-    info.object.ready = False
-    first = None
-    for i,o in zip(info.object.notes, [j for i in izip_longest(info.object.orbitals.MO, info.object.orbitals.MO_b) for j in i if (j is not None)]):
-       tp = o['type']
-       if ('newtype' in o):
-         tp = o['newtype']
-       if (tp in ['1', '2', '3']):
-         if ((first is None) and not i.selected):
-           first = i
-         else:
-           i.selected = True
-       else:
-         if ((first is None) and i.selected):
-           first = i
-         else:
-           i.selected = False
-    info.object.ready = True
-    if (first is not None):
-      first.selected = not first.selected
+  def closeEvent(self, *args):
+    self.parent.transformButton.setChecked(False)
+    super().closeEvent(*args)
 
-  def select_all(self, info):
-    if (info.object.orbitals is None):
-      return
-    info.object.ready = False
-    first = None
-    for i in info.object.notes:
-      if ((first is None) and not i.selected):
-        first = i
-      else:
-        i.selected = True
-    info.object.ready = True
-    if (first is not None):
-      first.selected = True
-
-  def close_list(self, info):
-    info.object.shownotes = None
-    self._on_close(info)
-
-  def close_main(self, info):
-    if (info.object.shownotes):
-      info.object.shownotes.owner.close()
-    #self._on_close(info)
-    info.ui.dispose()
-
-#-------------------------------------------------------------------------------
-
-keys = KeyBindings(
-  KeyBinding(binding1='F1', description='Help', method_name='show_help'),
-  KeyBinding(binding1='q', description='Quit', method_name='_on_close'),
-  KeyBinding(binding1='Ctrl-l', description='Load file', method_name='set_file'),
-  KeyBinding(binding1='Ctrl-h', description='Save HDF5', method_name='write_hdf5'),
-  KeyBinding(binding1='Ctrl-o', description='Save orbitals', method_name='write_inporb'),
-  KeyBinding(binding1='Ctrl-c', description='Save cube', method_name='write_cube'),
-  KeyBinding(binding1='v', description='Decrease value', method_name='dec_val'),
-  KeyBinding(binding1='V', description='Increase value', method_name='inc_val'),
-  KeyBinding(binding1='y', description='Decrease opacity', method_name='dec_op'),
-  KeyBinding(binding1='Y', description='Increase opacity', method_name='inc_op'),
-  KeyBinding(binding1='Shift-page up', description='Previous irrep', method_name='prev_sym'),
-  KeyBinding(binding1='Shift-page down', description='Next irrep', method_name='next_sym'),
-  KeyBinding(binding1='Page Up', description='Previous orbital', method_name='prev_orb'),
-  KeyBinding(binding1='Page Down', description='Next orbital', method_name='next_orb'),
-  KeyBinding(binding1='a', description='Switch spin', method_name='switch_spin'),
-  KeyBinding(binding1='o', description='Toggle surface', method_name='toggle_surface'),
-  KeyBinding(binding1='n', description='Toggle nodes', method_name='toggle_nodes'),
-  KeyBinding(binding1='m', description='Toggle nuclei', method_name='toggle_nuc'),
-  KeyBinding(binding1='z', description='Toggle labels', method_name='toggle_lab'),
-  KeyBinding(binding1='b', description='Toggle box', method_name='toggle_box'),
-  KeyBinding(binding1='Ctrl-f', description='Make frozen', method_name='make_F'),
-  KeyBinding(binding1='Ctrl-i', description='Make inactive', method_name='make_I'),
-  KeyBinding(binding1='Ctrl-1', description='Make RAS1', method_name='make_1'),
-  KeyBinding(binding1='Ctrl-2', description='Make RAS2', method_name='make_2'),
-  KeyBinding(binding1='Ctrl-3', description='Make RAS3', method_name='make_3'),
-  KeyBinding(binding1='Ctrl-s', description='Make secondary', method_name='make_S'),
-  KeyBinding(binding1='Ctrl-d', description='Make deleted', method_name='make_D'),
-  KeyBinding(binding1='l', description='List orbitals', method_name='list_orbitals')
-)
-
-#-------------------------------------------------------------------------------
-
-# The main interface
-main_view = View(
-  Group(
-    Group(
-      Item('load_button', label='Load file', show_label=False, tooltip='Load a file to display'),
-      Item('file', style='readonly', show_label=True, springy=True, tooltip='Loaded file'),
-      Item('save_hdf5', label='Save HDF5', show_label=False, visible_when='orbitals and orbitals.type == "hdf5"',
-           tooltip='Save orbitals and basis in HDF5 format'),
-      Item('save_orbs', label='Save orbitals', show_label=False, visible_when='haveOrb',
-           tooltip='Save orbitals in InpOrb format'),
-      Item('save_cube', label='Save cube', show_label=False, visible_when='surf',
-           tooltip='Save current orbital in cube format'),
-      orientation='horizontal'
-    ),
-    Item('scene', editor=SceneEditor(scene_class=MayaviScene), height=600, width=800, show_label=False),
-    Group(
-      Item('sym', label='Irrep', editor=EnumEditor(name='symlist'), width=60, enabled_when='ready and not nosym', visible_when='not nosym',
-           tooltip='Select irrep to filter'),
-      Item('orb', label='Orbital', editor=EnumEditor(name='orblist'), width=250, enabled_when='ready',
-           tooltip='Select orbital to display'),
-      Item('spin', editor=EnumEditor(name='spinlist'), show_label=False, enabled_when='orb > 0', visible_when='len(spinlist) > 1',
-           tooltip='Select spin to display'),
-      '25',
-      Item('notelist', label='List', show_label=False, enabled_when='not shownotes',
-           tooltip='Show list of orbitals with notes'),
-      orientation='horizontal'
-    ),
-    Group(
-      Item('val', label='Value', editor=RangeEditor(mode='logslider', low_name='minval', high_name='maxval', label_width=50, format='%.3g'), springy=True, enabled_when='surface and surf',
-           tooltip='Value for isosurfaces'),
-      Item('opacity', label='Opacity', editor=RangeEditor(format='%.2f'), enabled_when='surface and surf',
-           tooltip='Opacity for isosurfaces'),
-      orientation='horizontal'
-    ),
-    Group(
-      Item('surface', label='Surface', enabled_when='surf', tooltip='Display orbital surface'),
-      Item('nodes', label='Nodes', enabled_when='node and all(range)', tooltip='Display nodal surface'),
-      Item('nuc', label='Nuclei', enabled_when='mol', tooltip='Display nuclei'),
-      Item('lab', label='Names', enabled_when='mol', tooltip='Display atom names'),
-      Item('box', label='Box', enabled_when='cube', tooltip='Display grid box'),
-      Item('edge', label='Box size', editor=CSVListEditor(auto_set=False, enter_set=True), enabled_when='ready', visible_when='not isGrid',
-           tooltip='Grid box size in bohr: one or three comma-separated values'),
-      Item('ngrid', label='Grid points', editor=TextEditor(auto_set=False, enter_set=True, evaluate=int), enabled_when='ready', visible_when='not isGrid',
-           tooltip='Number of grid points along the largest dimension'),
-      orientation='horizontal',
-    ),
-    orientation='vertical',
-  ),
-  key_bindings = keys,
-  handler = KeyHandler,
-  buttons = [Action(name='Help', action='show_help', tooltip='Show help'), 'OK',
-             Action(name='Close', action='close_main', tooltip='Close window')],
-  title = __name__,
-  statusbar = StatusItem(name='status'),
-  resizable = True
-)
-
-# List of orbitals with notes and density selection
-orbital_list = View(
-  Item('notes',
-       editor = TableEditor(columns=[ObjectColumn(name='name', label='Orbital', width=150, editable=False),
-                                     CheckboxColumn(name='selected', label='Density', width=50),
-                                     ObjectColumn(name='note', label='Note')],
-                          auto_size=False),
-       show_label=False),
-  buttons = [Action(name='None', action='select_none', tooltip='Deselect all orbitals for density'),
-             Action(name='Active', action='select_active', tooltip='Select only active orbitals for density'),
-             Action(name='All', action='select_all', tooltip='Select all orbitals for density'),
-             Action(name='Close', action='close_list', tooltip='Close window')],
-  handler = KeyHandler,
-  height = 600,
-  width = 400,
-  title = 'Orbital list',
-  kind = 'live',
-  resizable = True
-)
-
-#===============================================================================
-
-window = Viewer()
+app = QApplication(sys.argv)
+win = MainWindow()
 try:
-  window.file = os.path.abspath(sys.argv[1])
+  win.filename = os.path.abspath(sys.argv[1])
 except IndexError:
   pass
-app_icon = window.icon
-window.configure_traits(view=main_view)
+rc = app.exec_()
+# orderly cleanup
+del win
+del app
+sys.exit(rc)
