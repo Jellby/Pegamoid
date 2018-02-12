@@ -613,7 +613,7 @@ class Orbitals(object):
     for o in self.MO + self.MO_b:
       if ('root_coeff' in o):
         del o['root_coeff']
-    self.roots = [o['ene'] for o in self.MO if (o['type'] in ['1', '2', '3'])]
+    self.roots = ['InpOrb']
     self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
     return True
 
@@ -2393,7 +2393,7 @@ class MainWindow(QMainWindow):
     elif (new.MO_s is not None):
       spinlist = ['electrons', 'spin']
     else:
-      spinlist = [u'']
+      spinlist = ['']
     self.spinlist = spinlist
     # Create the list of orbitals for notes
     self.build_notes()
@@ -2645,7 +2645,8 @@ class MainWindow(QMainWindow):
       dm = self.orbitals.sdm[new]
     else:
       dm = self.orbitals.dm[new]
-    act = [o for o in self.MO if (o['type'] in ['1', '2', '3'])]
+    tp_act = ['1', '2', '3']
+    act = [o for o in self.MO if (o['type'] in tp_act)]
     if (len(act) != dm.shape[0]):
       self.show_error('Wrong density matrix size.')
       return
@@ -2655,14 +2656,25 @@ class MainWindow(QMainWindow):
         if ('root_coeff' in o):
           del o['root_coeff']
     else:
-      occ, vec = np.linalg.eigh(dm)
-      occ = occ[::-1]
-      vec = vec.T[::-1]
-      new_MO = np.dot(vec, [o['coeff'] for o in act])
-      for o,n,c in zip(act, occ, new_MO):
-        o['occup'] = n
-        o['root_coeff'] = c
-    if ((self.orbital <= 0) or (self.MO[self.orbital-1]['type'] in ['1', '2', '3'])):
+      for s in set([o['sym'] for o in act]):
+        symidx = [i for i,o in enumerate(act) if (o['sym'] == s)]
+        symdm = dm[np.ix_(symidx,symidx)]
+        occ, vec = np.linalg.eigh(symdm)
+        freevec = [1 for i in symidx]
+        idx = [-1 for i in symidx]
+        for i in range(len(symidx)):
+          idx[i] = np.argmax(abs(vec[i,:]*freevec))
+          if (vec[i,idx[i]] < 0.0):
+            vec[:,idx[i]] *= -1
+          freevec[idx[i]] = 0
+        occ = occ[idx]
+        vec = vec[:,idx]
+        symact = [act[i] for i in symidx]
+        new_MO = np.dot(vec.T, [o['coeff'] for o in symact])
+        for o,n,c in zip(symact, occ, new_MO):
+          o['occup'] = n
+          o['root_coeff'] = c
+    if ((self.orbital <= 0) or (self.MO[self.orbital-1]['type'] in tp_act)):
       self._tainted = True
     self.populate_orbitals()
     self._tainted = False
