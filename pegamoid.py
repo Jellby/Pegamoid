@@ -37,6 +37,7 @@ from datetime import datetime
 from tempfile import mkdtemp
 from shutil import rmtree
 from functools import partial
+from collections import OrderedDict
 try:
   from itertools import zip_longest
 except ImportError:
@@ -295,13 +296,18 @@ class Orbitals(object):
       self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
       if ('DENSITY_MATRIX' in f):
         self.dm = np.concatenate((self.dm, f['DENSITY_MATRIX'][:]))
-        self.roots.extend(f['ROOT_ENERGIES'][:])
+        if ('STATE_ROOTID' in f.attrs):
+          rootids = f.attrs['STATE_ROOTID']
+        else:
+          rootids = [i+1 for i in range(len(self.dm)-1)]
+        self.roots.extend(['{0}: {1:.6f}'.format(i, e) for i,e in zip(rootids, f['ROOT_ENERGIES'])])
       if ('SPINDENSITY_MATRIX' in f):
         self.sdm = f['SPINDENSITY_MATRIX'][:]
         self.sdm = np.insert(self.sdm, 0, np.mean(self.sdm, axis=0), axis=0)
-        self.MO_s = deepcopy(self.MO)
-        for o in self.MO_s:
-          o['occup'] = 0.0
+        if (np.count_nonzero(self.sdm) > 0):
+          self.MO_s = deepcopy(self.MO)
+          for o in self.MO_s:
+            o['occup'] = 0.0
 
   # Read basis set from a Molden file
   def read_molden_basis(self):
@@ -613,6 +619,7 @@ class Orbitals(object):
     for o in self.MO + self.MO_b:
       if ('root_coeff' in o):
         del o['root_coeff']
+    self.MO_s = None
     self.roots = ['InpOrb']
     self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
     return True
@@ -947,7 +954,10 @@ class Orbitals(object):
 
   # Creates an InpOrb file from scratch
   def create_inporb(self, filename):
-    index, error = create_index(self.MO, self.MO_b, self.N_bas)
+    nMO = OrderedDict()
+    for i,n in zip(self.irrep, self.N_bas):
+      nMO[i] = n
+    index, error = create_index(self.MO, self.MO_b, nMO)
     if (index is None):
       if (error is not None):
         raise Exception(error)
@@ -1024,7 +1034,6 @@ class Grid(object):
   def __init__(self, gridfile, ftype):
     self.inporb = None
     self.transform = np.eye(4)
-    self.transform[3,3] = 0
     self.file = gridfile
     self.type = ftype
     if (ftype == 'cube'):
@@ -1289,16 +1298,20 @@ class Grid(object):
 #===============================================================================
 
 # Create an index section from alpha and beta orbitals
-def create_index(MO, MO_b, nMO):
+def create_index(MO, MO_b, nMO, old=None):
   index = []
   error = None
   orbs = list(zip_longest(MO, MO_b))
-  i = 0
-  for s in nMO:
+  for si,s in enumerate(nMO):
     index.append('* 1234567890')
-    types = ''
+    if (old is not None):
+      types = old[si]
+    else:
+      types = ''
     # Try to merge different alpha and beta types
-    for oa,ob in orbs[i:i+s]:
+    for oa,ob in orbs:
+      if (oa['sym'] != s):
+        continue
       if ('newtype' in oa):
         tpa = oa['newtype'].lower()
       else:
@@ -1324,8 +1337,12 @@ def create_index(MO, MO_b, nMO):
         except TypeError:
           pass
         tp = 'I' if (o > 1.0) else 'S'
-      types += tp
-    i += s
+      if ('num' in oa):
+        l = list(types)
+        l[oa['num']-1] = tp
+        types = ''.join(l)
+      else:
+        types += tp
     for j,l in enumerate(wrap_list(types, 10, '{}')):
       index.append('{0} {1}'.format(str(j)[-1], l))
   return (index, error)
@@ -2355,11 +2372,8 @@ class MainWindow(QMainWindow):
       roots = ['Average']
     self.rootButton.clear()
     for i,r in enumerate(roots):
-      if (i == 0):
-        self.rootButton.addItem(r)
-      else:
-        self.rootButton.addItem('{0}: {1:.6f}'.format(i, r))
-    if (len(roots) > 1):
+      self.rootButton.addItem(r)
+    if (len(roots) > 2):
       self.rootGroup.setEnabled(True)
       self.rootGroup.show()
     else:
@@ -2441,7 +2455,7 @@ class MainWindow(QMainWindow):
   @MO.setter
   def MO(self, value):
     self._MO = value
-    if (self.orbital > 0):
+    if ((self.orbital is not None) and (self.orbital > 0)):
       self._tainted = True
     if (self.rootButton.count() > 1):
       self.root = self.root
@@ -2994,6 +3008,7 @@ class MainWindow(QMainWindow):
     if ('label' in orb):
       return '{0}'.format(orb['label'])
     else:
+      num = orb.get('num', n)
       # Build irrep and local numbering
       if (self.nosym):
         numsym = ''
@@ -3007,7 +3022,7 @@ class MainWindow(QMainWindow):
       tp = orb['type']
       if (('newtype' in orb) and (orb['newtype'] != tp)):
         tp += u'→' + orb['newtype']
-      return u'{0}{1}: {2:.4f} ({3:.4f}) {4}'.format(n, numsym, orb['ene'], orb['occup'], tp)
+      return u'{0}{1}: {2:.4f} ({3:.4f}) {4}'.format(num, numsym, orb['ene'], orb['occup'], tp)
 
   def populate_orbitals(self):
     prev = self.orbital
@@ -3018,10 +3033,11 @@ class MainWindow(QMainWindow):
     if (self.irrep == 'All'):
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO)}
       if (not self.isGrid):
-        if (self.spin != 'spin'):
+        is_it_spin = (self.spin == 'spin') or any([(o['occup'] < 0.0) for o in self.MO])
+        if (not is_it_spin):
           orblist[0] = 'Density'
           orblist[-2] = 'Laplacian (numerical)'
-        if ((self.spin == 'spin') or ('beta' in self.spinlist)):
+        if (is_it_spin or ('beta' in self.spinlist)):
           orblist[-1] = 'Spin density'
     else:
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (o['sym'] == self.irrep)}
@@ -3660,11 +3676,11 @@ class MainWindow(QMainWindow):
       tp = '2'
     else:
       tp = '?'
-    if ((self.rootButton.count() > 1) and (tp in ['1', '2', '3'])):
+    if ((self.rootButton.count() > 2) and (tp in ['1', '2', '3'])):
       if (self.root == 0):
         text = 'State average\n'
       else:
-        text = 'Root {0}\n'.format(self.root)
+        text = 'Root {0}\n'.format(self.rootButton.currentText().split(':')[0])
     else:
       text = ''
     try:
@@ -3874,17 +3890,6 @@ class MainWindow(QMainWindow):
 
   # Copy an InpOrb file, changing header and index section
   def patch_inporb(self, outfile):
-    nMO = [0 for i in self.irreplist if (i not in  ['All', 'z'])]
-    for o in self.orbitals.MO:
-      try:
-        nMO[self.irreplist.index(o['sym'])-1] += 1
-      except:
-        pass
-    index, error = create_index(self.orbitals.MO, self.orbitals.MO_b, nMO)
-    if (index is None):
-      if (error is not None):
-        self.show_error(error)
-        return
     with open(self.orbitals.file, 'r') as f:
       f.seek(self.orbitals.inporb)
       with open(outfile, 'w') as fo:
@@ -3898,22 +3903,34 @@ class MainWindow(QMainWindow):
             line = f.readline()
             fo.write('* File generated by {0} from {1}\n'.format(__name__, self.filename))
             line = f.readline()
-            line = f.readline()
             fo.write(line)
             line = f.readline()
             fo.write(line)
             line = f.readline()
             fo.write(line)
-            if (map(int, line.split()) != nMO):
-              self.show_error('Wrong number of orbitals')
-              return
             line = f.readline()
             fo.write(line)
             line = f.readline()
-          # Stop at the index section
+          # Read the existing index section
           if (line.startswith('#INDEX')):
             fo.write(line)
+            index = []
+            line = f.readline().split()
+            while (line[0][0] not in ['#', '<']):
+              if (line[0] == '*'):
+                index.append('')
+              else:
+                index[-1] += line[1]
+              line = f.readline().split()
+            nMO = OrderedDict()
+            for i,l in enumerate(index):
+              nMO['{0}'.format(i+1)] = len(l)
             break
+        index, error = create_index(self.orbitals.MO, self.orbitals.MO_b, nMO, old=index)
+        if (index is None):
+          if (error is not None):
+            self.show_error(error)
+            return
         # Write the new index section
         fo.write('\n'.join(index))
         fo.write('\n')
@@ -3921,44 +3938,56 @@ class MainWindow(QMainWindow):
   def prev_root(self):
     if (not self.rootButton.isEnabled()):
       return
+    self.rootButton.setEnabled(False)
     index = self.rootButton.currentIndex()
     if (index > 0):
       self.rootButton.setCurrentIndex(index-1)
+    self.rootButton.setEnabled(True)
 
   def next_root(self):
     if (not self.rootButton.isEnabled()):
       return
+    self.rootButton.setEnabled(False)
     index = self.rootButton.currentIndex()
     if (index < self.rootButton.count()-1):
       self.rootButton.setCurrentIndex(index+1)
+    self.rootButton.setEnabled(True)
 
   def prev_irrep(self):
     if (not self.irrepButton.isEnabled()):
       return
+    self.irrepButton.setEnabled(False)
     index = self.irrepButton.currentIndex()
     if (index > 0):
       self.irrepButton.setCurrentIndex(index-1)
+    self.irrepButton.setEnabled(True)
 
   def next_irrep(self):
     if (not self.irrepButton.isEnabled()):
       return
+    self.irrepButton.setEnabled(False)
     index = self.irrepButton.currentIndex()
     if (index < self.irrepButton.count()-1):
       self.irrepButton.setCurrentIndex(index+1)
+    self.irrepButton.setEnabled(True)
 
   def prev_orbital(self):
     if (not self.orbitalButton.isEnabled()):
       return
+    self.orbitalButton.setEnabled(False)
     index = self.orbitalButton.currentIndex()
     if (index > 0):
       self.orbitalButton.setCurrentIndex(index-1)
+    self.orbitalButton.setEnabled(True)
 
   def next_orbital(self):
     if (not self.orbitalButton.isEnabled()):
       return
+    self.orbitalButton.setEnabled(False)
     index = self.orbitalButton.currentIndex()
     if (index < self.orbitalButton.count()-1):
       self.orbitalButton.setCurrentIndex(index+1)
+    self.orbitalButton.setEnabled(True)
 
   def select_alpha(self):
     if (not self.spinButton.isEnabled()):
@@ -4080,7 +4109,6 @@ class ListDock(QDockWidget):
 
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self.parent = self.parent()
     self.init_UI()
 
   def init_UI(self):
@@ -4151,8 +4179,8 @@ class ListDock(QDockWidget):
     self.orbLabels = []
     self.orbCheckBoxes = []
     self.orbNotes = []
-    if (self.parent.notes is not None):
-      for i,orb in enumerate(self.parent.notes):
+    if (self.parent().notes is not None):
+      for i,orb in enumerate(self.parent().notes):
         l = QLabel(orb['name'])
         self.orbLabels.append(l)
         c = QCheckBox()
@@ -4165,6 +4193,8 @@ class ListDock(QDockWidget):
         else:
           c.setToolTip('Unoccupied orbital')
           c.setWhatsThis('This orbital is not included when computing the electron and spin density because it is empty.')
+        if (self.parent().isGrid):
+          c.setEnabled(False)
         self.orbCheckBoxes.append(c)
         e = QLineEdit()
         e.setText(orb['note'])
@@ -4179,13 +4209,13 @@ class ListDock(QDockWidget):
     self.grid.addWidget(self.spacer, len(self.orbLabels)+1, 0)
 
   def density(self, num, new):
-    self.parent.notes[num]['density'] = bool(new)
+    self.parent().notes[num]['density'] = bool(new)
     self.modified = True
     if (self.ready):
       self.redraw()
 
   def note(self, num):
-    self.parent.notes[num]['note'] = str(self.orbNotes[num].text())
+    self.parent().notes[num]['note'] = str(self.orbNotes[num].text())
 
   def select_all(self):
     self.modified = False
@@ -4200,7 +4230,7 @@ class ListDock(QDockWidget):
   def select_active(self):
     self.modified = False
     self.ready = False
-    for i,o in zip(self.orbCheckBoxes, [j for i in zip_longest(self.parent.orbitals.MO, self.parent.orbitals.MO_b) for j in i if (j is not None)]):
+    for i,o in zip(self.orbCheckBoxes, [j for i in zip_longest(self.parent().orbitals.MO, self.parent().orbitals.MO_b) for j in i if (j is not None)]):
       if (i.isEnabled()):
         tp = o['type']
         if ('newtype' in o):
@@ -4224,19 +4254,18 @@ class ListDock(QDockWidget):
       self.redraw()
 
   def redraw(self):
-    if (self.parent.orbital < 1):
-      self.parent.build_surface()
+    if (self.parent().orbital < 1):
+      self.parent().build_surface()
     self.modified = False
 
   def closeEvent(self, *args):
-    self.parent.listButton.setChecked(False)
+    self.parent().listButton.setChecked(False)
     super().closeEvent(*args)
 
 class TransformDock(QDockWidget):
 
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self.parent = self.parent()
     self.init_UI()
 
   def init_UI(self):
@@ -4341,7 +4370,7 @@ class TransformDock(QDockWidget):
 
   def set_boxes(self, value=None):
     if ((value is None) or (type(value) is bool)):
-      value = self.parent.transform
+      value = self.parent().transform
     self.rotXXBox.setText('{}'.format(value[0]))
     self.rotXYBox.setText('{}'.format(value[1]))
     self.rotXZBox.setText('{}'.format(value[2]))
@@ -4371,7 +4400,7 @@ class TransformDock(QDockWidget):
       value[7]  = self.transYBox.text()
       value[11] = self.transZBox.text()
       value[15] = 1.0
-      self.parent.transform = [float(i) for i in value]
+      self.parent().transform = [float(i) for i in value]
     except:
       self.set_boxes()
 
@@ -4400,7 +4429,7 @@ class TransformDock(QDockWidget):
     self.cancelButton.setEnabled(value)
 
   def closeEvent(self, *args):
-    self.parent.transformButton.setChecked(False)
+    self.parent().transformButton.setChecked(False)
     super().closeEvent(*args)
 
 app = QApplication(sys.argv)
