@@ -900,8 +900,12 @@ class Orbitals(object):
                 'PRIMITIVES', 'PRIMITIVE_IDS']:
         if (d in fi):
           fi.copy(d, fo)
+      if (len(self.N_bas) > 1):
+        sym = np.linalg.inv(self.mat)
+      else:
+        sym = np.eye(sum(self.N_bas))
       # Write orbital data from current orbitals
-      # (could be loaded from InpOrb and/or have modified types)
+      # (could be loaded from InpOrb, selected from a root and/or have modified types)
       uhf = len(self.MO_b) > 0
       nMO = [(sum(self.N_bas[:i]), sum(self.N_bas[:i+1])) for i in range(len(self.N_bas))]
       if (uhf):
@@ -909,17 +913,17 @@ class Orbitals(object):
         for i,j in nMO:
           for k in range(i,j):
             if ('root_coeff' in self.MO[k]):
-              cff.extend(self.MO[k]['root_coeff'][i:j])
+              cff.extend(np.dot(sym, self.MO[k]['root_coeff'])[i:j])
             else:
-              cff.extend(self.MO[k]['coeff'][i:j])
+              cff.extend(np.dot(sym, self.MO[k]['coeff'])[i:j])
         fo.create_dataset('MO_ALPHA_VECTORS', data=cff)
         cff = []
         for i,j in nMO:
           for k in range(i,j):
             if ('root_coeff' in self.MO_b[k]):
-              cff.extend(self.MO_b[k]['root_coeff'][i:j])
+              cff.extend(np.dot(sym, self.MO_b[k]['root_coeff'])[i:j])
             else:
-              cff.extend(self.MO_b[k]['coeff'][i:j])
+              cff.extend(np.dot(sym, self.MO_b[k]['coeff'])[i:j])
         fo.create_dataset('MO_BETA_VECTORS', data=cff)
         fo.create_dataset('MO_ALPHA_OCCUPATIONS', data=[o['occup'] for o in self.MO])
         fo.create_dataset('MO_BETA_OCCUPATIONS', data=[o['occup'] for o in self.MO_b])
@@ -940,9 +944,9 @@ class Orbitals(object):
         for i,j in nMO:
           for k in range(i,j):
             if ('root_coeff' in self.MO[k]):
-              cff.extend(self.MO[k]['root_coeff'][i:j])
+              cff.extend(np.dot(sym, self.MO[k]['root_coeff'])[i:j])
             else:
-              cff.extend(self.MO[k]['coeff'][i:j])
+              cff.extend(np.dot(sym, self.MO[k]['coeff'])[i:j])
         fo.create_dataset('MO_VECTORS', data=cff)
         fo.create_dataset('MO_OCCUPATIONS', data=[o['occup'] for o in self.MO])
         fo.create_dataset('MO_ENERGIES', data=[o['ene'] for o in self.MO])
@@ -3032,7 +3036,7 @@ class MainWindow(QMainWindow):
       return
     if (self.irrep == 'All'):
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO)}
-      if (not self.isGrid):
+      if ((not self.isGrid) and any([(o['occup'] != 0.0) for o in self.MO])):
         is_it_spin = (self.spin == 'spin') or any([(o['occup'] < 0.0) for o in self.MO])
         if (not is_it_spin):
           orblist[0] = 'Density'
