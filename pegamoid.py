@@ -206,7 +206,17 @@ class Orbitals(object):
       else:
         basis_function_ids = 'BASIS_FUNCTION_IDS'
       bf_id = np.rec.fromrecords(f[basis_function_ids][:], names='c, s, l, m') # (center, shell, l, m)
-      bf_cart = ([(b['c'], b['l'], b['s']) for b in bf_id if (b['l'] < 0)])
+      bf_cart = set([(b['c'], b['l'], b['s']) for b in bf_id if (b['l'] < 0)])
+      # Count the number of m per basis to make sure it matches with the expected type
+      counts = {}
+      for b in bf_id:
+        key = (b['c'], b['l'], b['s'])
+        counts[key] = counts.get(key, 0)+1
+      for f,n in counts.iteritems():
+        l = f[1]
+        if (((l >= 0) and (n != 2*l+1)) or ((l < 0) and (n != (-l+1)*(-l+2)/2))):
+          error = 'Inconsistent basis function IDs. The file could have been created by a buggy or unsupported OpenMolcas version'
+          raise Exception(error)
       # Maximum angular momentum in the whole basis set,
       maxl = max([p[1] for p in prids])
       for i,c in enumerate(self.centers):
