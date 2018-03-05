@@ -15,6 +15,7 @@ try:
   from qtpy.QtCore import Qt, QObject, QThread, QEvent
   from qtpy.QtWidgets import *
   from qtpy.QtGui import QPixmap, QIcon, QKeySequence
+  import qtpy
   v = qtpy.PYQT_VERSION
   if (v is None):
     v = qtpy.PYSIDE_VERSION
