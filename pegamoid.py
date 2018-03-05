@@ -12,12 +12,23 @@ __version__ = '2.0beta'
 
 import sys
 try:
-  from PyQt5.QtCore import Qt, QObject, QThread, QEvent, pyqtSignal, PYQT_VERSION_STR
-  from PyQt5.QtWidgets import *
-  from PyQt5.QtGui import QPixmap, QIcon, QKeySequence
-except ImportError:
-  from PyQt4.QtCore import Qt, QObject, QThread, QEvent, pyqtSignal, PYQT_VERSION_STR
-  from PyQt4.QtGui import *
+  from qtpy.QtCore import Qt, QObject, QThread, QEvent
+  from qtpy.QtWidgets import *
+  from qtpy.QtGui import QPixmap, QIcon, QKeySequence
+  v = qtpy.PYQT_VERSION
+  if (v is None):
+    v = qtpy.PYSIDE_VERSION
+  QtVersion = '{0} {1} (Qt {2})'.format(qtpy.API_NAME, v, qtpy.QT_VERSION) 
+except:
+  try:
+    from PyQt5.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
+    from PyQt5.QtWidgets import *
+    from PyQt5.QtGui import QPixmap, QIcon, QKeySequence
+    QtVersion = 'PyQt5 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR) 
+  except ImportError:
+    from PyQt4.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
+    from PyQt4.QtGui import *
+    QtVersion = 'PyQt4 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR) 
 import vtk
 from vtk.util import numpy_support
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -212,7 +223,7 @@ class Orbitals(object):
       for b in bf_id:
         key = (b['c'], b['l'], b['s'])
         counts[key] = counts.get(key, 0)+1
-      for f,n in counts.iteritems():
+      for f,n in counts.items():
         l = f[1]
         if (((l >= 0) and (n != 2*l+1)) or ((l < 0) and (n != (-l+1)*(-l+2)/2))):
           error = 'Inconsistent basis function IDs. The file could have been created by a buggy or unsupported OpenMolcas version'
@@ -1350,7 +1361,7 @@ def create_index(MO, MO_b, nMO, old=None):
           o += ob['occup']
         except TypeError:
           pass
-        tp = 'I' if (o > 1.0) else 'S'
+        tp = 'i' if (o > 1.0) else 's'
       if ('num' in oa):
         l = list(types)
         l[oa['num']-1] = tp
@@ -1902,7 +1913,7 @@ class MainWindow(QMainWindow):
 
     # display properties
     self.mainMenu.setNativeMenuBar(False)
-    self.frame.setFrameStyle(QFrame.Panel | QFrame.Sunken)
+    self.frame.setFrameStyle(QFrame.Shape(QFrame.Panel | QFrame.Sunken))
     self.filenameLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
     self.listButton.setCheckable(True)
     self.orbitalButton.setSizeAdjustPolicy(QComboBox.AdjustToContents)
@@ -2095,7 +2106,7 @@ class MainWindow(QMainWindow):
     hbox6.addStretch(1)
 
     line = QFrame()
-    line.setFrameShape(QFrame.HLine | QFrame.Sunken)
+    line.setFrameShape(QFrame.Shape(QFrame.HLine | QFrame.Sunken))
 
     vbox = QVBoxLayout()
     vbox.setSpacing(10)
@@ -4083,7 +4094,6 @@ class MainWindow(QMainWindow):
 
   def show_about(self):
     python_version = sys.version
-    pyqt_version = PYQT_VERSION_STR
     vtk_version = vtk.vtkVersion.GetVTKVersion()
     QMessageBox.about(self, 'About {0}'.format(__name__),
                       u'''<h2>{0} v{1}</h2>
@@ -4093,9 +4103,9 @@ class MainWindow(QMainWindow):
                       after loading an HDF5 file, it can also read files in <i>InpOrb</i> format.<br>
                       It can modify orbital types and save the result in <i>HDF5</i> and <i>InpOrb</i> formats, or save the volume data in <i>cube</i> format.</p>
                       <p><b>python</b>: {4}<br>
-                      <b>PyQt</b>: {5}<br>
+                      <b>Qt API</b>: {5}<br>
                       <b>VTK</b>: {6}</p>
-                      '''.format(__name__, __version__, __copyright__, __author__, python_version, pyqt_version, vtk_version)
+                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version)
                       )
 
   def show_error(self, error):
