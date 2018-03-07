@@ -1772,7 +1772,7 @@ class TakeScreenshot(QDialog):
     self.fileBox.setText(filename)
 
   def save_screenshot(self):
-    filename = self.fileBox.text()
+    filename = str(self.fileBox.text())
     if (filename == ''):
       self.parent().show_error('Filename not specified')
       return
