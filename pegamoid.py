@@ -1531,6 +1531,9 @@ def wrap_list(data, n, f, sep=''):
     text.append(fmt.format(*data[ini:end]))
     ini = end
   return text
+
+#===============================================================================
+
 def group_widgets(*args):
   layout = QHBoxLayout()
   layout.setContentsMargins(0, 0, 0, 0)
@@ -1657,6 +1660,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>Ctrl+H</b>: Save HDF5 file</p>
                    <p><b>Ctrl+I</b>: Save InpOrb file</p>
                    <p><b>Ctrl+C</b>: Save cube file</p>
+                   <p><b>Ctrl+P</b>: Save PNG image</p>
                    <p><b>{1}</b>: Clear orbitals</p>
                    <p><b>{2}</b>: Quit</p>
                    <p><b>{3}</b>: Show this window</p>
@@ -1706,6 +1710,132 @@ class ScrollMessageBox(QDialog):
     vbox.addWidget(bbox)
     self.setLayout(vbox)
     bbox.accepted.connect(self.accept)
+
+class TakeScreenshot(QDialog):
+ 
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.setWindowTitle('Save PNG image')
+    self.setSizeGripEnabled(True)
+    self.fileLabel = QLabel('&Filename:')
+    self.fileBox = QLineEdit()
+    self.fileBox.setMinimumWidth(200)
+    self.fileLabel.setBuddy(self.fileBox)
+    self.fileButton = QPushButton('...')
+    self.transparentBox = QCheckBox('&Transparent background:')
+    self.transparentBox.setLayoutDirection(Qt.RightToLeft)
+    self.transparentBox.setChecked(True)
+    self.panelBox = QCheckBox('Show text &panel:')
+    self.panelBox.setLayoutDirection(Qt.RightToLeft)
+    self.saveButton = QPushButton('&Save')
+    hbox1 = QHBoxLayout()
+    hbox1.addWidget(self.fileLabel)
+    hbox1.addWidget(self.fileBox)
+    hbox1.addWidget(self.fileButton)
+    hbox2 = QHBoxLayout()
+    hbox2.addWidget(self.transparentBox)
+    hbox2.addStretch(1)
+    hbox3 = QHBoxLayout()
+    hbox3.addWidget(self.panelBox)
+    hbox3.addStretch(1)
+    hbox4 = QHBoxLayout()
+    hbox4.addStretch(1)
+    hbox4.addWidget(self.saveButton)
+    vbox = QVBoxLayout()
+    vbox.addLayout(hbox1)
+    vbox.addLayout(hbox2)
+    vbox.addLayout(hbox3)
+    vbox.addStretch(1)
+    vbox.addLayout(hbox4)
+    self.setLayout(vbox)
+    self.fileButton.clicked.connect(self.select_file)
+    self.saveButton.clicked.connect(self.save_screenshot)
+    self.fileBox.setToolTip('Filename for the saved image')
+    self.fileBox.setWhatsThis('Type the filename for the saved image, or select it using the button to the right. The file. The file will be overwritten.')
+    self.fileButton.setToolTip('Select saved file')
+    self.fileButton.setWhatsThis('Select the file to save the image in, or type the filename in the box to the left. The file. The file will be overwritten.')
+    self.transparentBox.setToolTip('Make the background transparent, or show its current color')
+    self.transparentBox.setWhatsThis('If checked, the saved image will have transparent background.')
+    self.panelBox.setToolTip('Show or hide the text panel')
+    self.panelBox.setWhatsThis('If checked, the text panel with orbital information will be included in the saved image.')
+    self.saveButton.setToolTip('Save the image file')
+    self.saveButton.setWhatsThis('Write the image to the specified file. The file will be overwritten.')
+
+  def select_file(self):
+    result = QFileDialog.getSaveFileName(self, 'Save image')
+    if (not result):
+      return
+    try:
+      filename, _ = result
+    except ValueError:
+      filename = result
+    self.fileBox.setText(filename)
+
+  def save_screenshot(self):
+    filename = self.fileBox.text()
+    if (filename == ''):
+      self.parent().show_error('Filename not specified')
+      return
+
+    ren = self.parent().ren
+    renwin = self.parent().vtkWidget.GetRenderWindow()
+    renwin.SetAlphaBitPlanes(1)
+
+    panel_changed = False
+    if (not self.panelBox.isChecked()):
+      if (self.parent().panel is not None):
+        self.parent().panel.VisibilityOff()
+        panel_changed = True
+
+    wti = vtk.vtkWindowToImageFilter()
+    wti.SetInput(renwin)
+    wti.SetInputBufferTypeToRGBA()
+    wti.ReadFrontBufferOff()
+    w = vtk.vtkPNGWriter()
+    w.SetFileName(filename)
+    w.SetCompressionLevel(9)
+    if (self.transparentBox.isChecked()):
+      # Use the workaround of black and white backgrounds
+      c = ren.GetBackground()
+      ren.SetBackground(0,0,0)
+      wti.Update()
+      black = vtk.vtkImageData()
+      black.ShallowCopy(wti.GetOutput())
+      ren.SetBackground(1,1,1)
+      wti = vtk.vtkWindowToImageFilter()
+      wti.SetInput(renwin)
+      wti.SetInputBufferTypeToRGBA()
+      wti.ReadFrontBufferOff()
+      wti.Update()
+      white = vtk.vtkImageData()
+      white.ShallowCopy(wti.GetOutput())
+      ren.SetBackground(c)
+      self.parent().vtk_update()
+      trans = self.set_transparency(white, black)
+      w.SetInputData(trans)
+    else:
+      wti.Update()
+      w.SetInputData(wti.GetOutput())
+    if (panel_changed):
+      self.parent().panel.VisibilityOn()
+      self.parent().vtk_update()
+    w.Write()
+
+  # Getting an image with transparent background does not work within Qt, so we
+  # have to use a trick similar to that used in ParaView: get images with black
+  # and white backgrounds and figure out the transparency from their difference
+  def set_transparency(self, white_background, black_background):
+    wdata = numpy_support.vtk_to_numpy(white_background.GetPointData().GetScalars()).astype(float)
+    bdata = numpy_support.vtk_to_numpy(black_background.GetPointData().GetScalars()).astype(float)
+    output = deepcopy(bdata)
+    alpha = 255 - (wdata[:,0:3].max(1) - bdata[:,0:3].max(1))
+    mask = alpha > 0
+    output[:,0:3] *= 255/np.where(mask[:,np.newaxis], alpha[:,np.newaxis], 255)
+    output[:,3] = alpha
+    oi = vtk.vtkImageData()
+    oi.CopyStructure(black_background)
+    oi.GetPointData().SetScalars(numpy_support.numpy_to_vtk(output, 1, vtk.VTK_UNSIGNED_CHAR))
+    return oi
 
 class SimpleVTK(QVTKRenderWindowInteractor):
   def __init__(self, *args, **kwargs):
@@ -1834,6 +1964,8 @@ class MainWindow(QMainWindow):
     self.saveHDF5Action = self.saveMenu.addAction('Save &HDF5...')
     self.saveInpOrbAction = self.saveMenu.addAction('Save &InpOrb...')
     self.saveCubeAction = self.saveMenu.addAction('Save &cube...')
+    self.saveMenu.addSeparator()
+    self.screenshotAction = self.saveMenu.addAction('Save &PNG image...')
     self.fileMenu.addSeparator()
     self.clearAction = self.fileMenu.addAction('&Clear')
     self.quitAction = self.fileMenu.addAction('&Quit')
@@ -2134,6 +2266,7 @@ class MainWindow(QMainWindow):
     self.transformDock.hide()
     self.transformDock.setWhatsThis('This is a detachable window that allows setting a transformation (rotation, scaling, shearing, translation) for the grid box. This is only possible if the current file is not a precomputed grid. The transformation affects the display and any grid saved in the cube format.')
 
+    self.screenshot = None
     self.keymess = None
 
     self.setCentralWidget(_widget)
@@ -2147,6 +2280,7 @@ class MainWindow(QMainWindow):
     self.saveHDF5Action.setShortcut('Ctrl+H')
     self.saveInpOrbAction.setShortcut('Ctrl+I')
     self.saveCubeAction.setShortcut('Ctrl+C')
+    self.screenshotAction.setShortcut('Ctrl+P')
     self.clearAction.setShortcut(QKeySequence(QKeySequence.Close)) # Ctrl+W
     self.quitAction.setShortcut(QKeySequence(QKeySequence.Quit)) # Ctrl+Q
     self.keysAction.setShortcut(QKeySequence(QKeySequence.HelpContents)) # F1
@@ -2215,6 +2349,7 @@ class MainWindow(QMainWindow):
     self.saveHDF5Action.triggered.connect(self.write_hdf5)
     self.saveInpOrbAction.triggered.connect(self.write_inporb)
     self.saveCubeAction.triggered.connect(self.write_cube)
+    self.screenshotAction.triggered.connect(self.show_screenshot)
     self.clearAction.triggered.connect(self.clear)
     self.quitAction.triggered.connect(self.close)
     self.keysAction.triggered.connect(self.show_keys)
@@ -4108,6 +4243,12 @@ class MainWindow(QMainWindow):
                       <b>VTK</b>: {6}</p>
                       '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version)
                       )
+
+  def show_screenshot(self):
+    if (self.screenshot is None):
+      self.screenshot = TakeScreenshot(self)
+    self.screenshot.show()
+    self.screenshot.activateWindow()
 
   def show_error(self, error):
     msg = QMessageBox()
