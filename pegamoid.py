@@ -677,8 +677,9 @@ class Orbitals(object):
         for o in self.MO + self.MO_b:
           o['type'] = '?'
           o.pop('newtype', None)
-      if ('root_coeff' in o):
-        del o['root_coeff']
+      o.pop('root_coeff', None)
+      o.pop('root_type', None)
+      o.pop('root_ene', None)
     self.MO_s = None
     self.roots = ['InpOrb']
     self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
@@ -2866,8 +2867,10 @@ class MainWindow(QMainWindow):
     if (np.allclose(dm, np.diag(np.diag(dm)), atol=1e-20)):
       for o,n in zip(act, np.diag(dm)):
         o['occup'] = n
-        if ('root_coeff' in o):
-          del o['root_coeff']
+        o.pop('root_coeff', None)
+        o.pop('root_type', None)
+      for o in self.MO:
+        o.pop('root_ene', None)
     else:
       for s in set([o['sym'] for o in act]):
         symidx = [i for i,o in enumerate(act) if (o['sym'] == s)]
@@ -2882,11 +2885,17 @@ class MainWindow(QMainWindow):
           freevec[idx[i]] = 0
         occ = occ[idx]
         vec = vec[:,idx]
+        mix = []
+        for i in range(vec.shape[1]):
+          types = list(set([act[n]['type'] for n,j in enumerate(vec[:,i]) if (j>1e-6)]))
+          mix.append('?' if (len(types) > 1) else types[0])
         symact = [act[i] for i in symidx]
         new_MO = np.dot(vec.T, [o['coeff'] for o in symact])
-        for o,n,c in zip(symact, occ, new_MO):
+        for o,n,c,t in zip(symact, occ, new_MO, mix):
           o['occup'] = n
           o['root_coeff'] = c
+          o['root_type'] = t
+          o['root_ene'] = 0.0
     if ((self.orbital <= 0) or (self.MO[self.orbital-1]['type'] in tp_act)):
       self._tainted = True
     self.populate_orbitals()
@@ -3218,10 +3227,10 @@ class MainWindow(QMainWindow):
           m = [o['sym'] for o in self.MO[:n]].count(orb['sym'])
           numsym = ' [{0}, {1}]'.format(orb['sym'], m)
       # Add new type if it has been modified
-      tp = orb['type']
+      tp = orb.get('root_type', orb['type'])
       if (('newtype' in orb) and (orb['newtype'] != tp)):
         tp += u'→' + orb['newtype']
-      return u'{0}{1}: {2:.4f} ({3:.4f}) {4}'.format(num, numsym, orb['ene'], orb['occup'], tp)
+      return u'{0}{1}: {2:.4f} ({3:.4f}) {4}'.format(num, numsym, orb.get('root_ene', orb['ene']), orb['occup'], tp)
 
   def populate_orbitals(self):
     prev = self.orbital
@@ -3828,7 +3837,9 @@ class MainWindow(QMainWindow):
     orb = self.MO[self.orbital-1]
     item = self.orbitalButton.findData(self.orbital)
     if (self.orbital > 0):
-      orb['newtype'] = tp
+      old = orb.get('root_type', orb['type'])
+      if (tp != old):
+        orb['newtype'] = tp
       self.orbitalButton.setItemText(item, self.orb_to_list(self.orbital, orb))
     self.set_panel()
 
@@ -3842,7 +3853,7 @@ class MainWindow(QMainWindow):
         tp = ''
       else:
         try:
-          tp = orb.get('newtype', orb['type'])
+          tp = orb.get('newtype', orb.get('root_type', orb['type']))
         except:
           tp = ''
     if (tp == 'F'):
@@ -3895,7 +3906,7 @@ class MainWindow(QMainWindow):
         else:
           m = [o['sym'] for o in self.MO[:self.orbital]].count(orb['sym'])
           sym = ' [{0}, {1}]'.format(orb['sym'], m)
-        text += '#{0}{1}   E: {2:.6f}   occ: {3:.4f}   {4}'.format(self.orbital, sym, orb['ene'], orb['occup'], tp)
+        text += '#{0}{1}   E: {2:.6f}   occ: {3:.4f}   {4}'.format(self.orbital, sym, orb.get('root_ene', orb['ene']), orb['occup'], tp)
     # Update the counts
     irrep = [i for i in self.orbitals.irrep if (i != 'z')]
     nsym = len(irrep)
@@ -4390,13 +4401,8 @@ class ListDock(QDockWidget):
         c = QCheckBox()
         c.setChecked(orb['density'])
         c.stateChanged.connect(partial(self.density, i))
-        c.setEnabled(orb['occup'] != 0)
-        if (c.isEnabled()):
-          c.setToolTip('Include the orbital in density calculations?')
-          c.setWhatsThis('If checked, this orbital is included when computing the electron and spin density.')
-        else:
-          c.setToolTip('Unoccupied orbital')
-          c.setWhatsThis('This orbital is not included when computing the electron and spin density because it is empty.')
+        c.setToolTip('Include the orbital in density calculations?')
+        c.setWhatsThis('If checked, this orbital is included when computing the electron and spin density.')
         if (self.parent().isGrid):
           c.setEnabled(False)
         self.orbCheckBoxes.append(c)
