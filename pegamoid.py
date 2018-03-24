@@ -261,7 +261,6 @@ class Orbitals(object):
     # Reading the basis set invalidates the orbitals, if any
     self.MO = None
     self.MO_b = None
-    self.MO_s = None
 
   # Read molecular orbitals from an HDF5 file
   def read_h5_MO(self):
@@ -324,12 +323,10 @@ class Orbitals(object):
           rootids = [i+1 for i in range(len(self.dm)-1)]
         self.roots.extend(['{0}: {1:.6f}'.format(i, e) for i,e in zip(rootids, f['ROOT_ENERGIES'])])
       if ('SPINDENSITY_MATRIX' in f):
-        self.sdm = f['SPINDENSITY_MATRIX'][:]
-        self.sdm = np.insert(self.sdm, 0, np.mean(self.sdm, axis=0), axis=0)
-        if (np.count_nonzero(self.sdm) > 0):
-          self.MO_s = deepcopy(self.MO)
-          for o in self.MO_s:
-            o['occup'] = 0.0
+        sdm = f['SPINDENSITY_MATRIX'][:]
+        if (not np.allclose(sdm, np.zeros_like(sdm))):
+          sdm = np.insert(sdm, 0, np.mean(sdm, axis=0), axis=0)
+          self.sdm = sdm
 
   # Read basis set from a Molden file
   def read_molden_basis(self):
@@ -475,7 +472,6 @@ class Orbitals(object):
     # Reading the basis set invalidates the orbitals, if any
     self.MO = None
     self.MO_b = None
-    self.MO_s = None
 
   # Read molecular orbitals from a Molden file
   def read_molden_MO(self):
@@ -680,7 +676,6 @@ class Orbitals(object):
       o.pop('root_coeff', None)
       o.pop('root_type', None)
       o.pop('root_ene', None)
-    self.MO_s = None
     self.roots = ['InpOrb']
     self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
     return True
@@ -756,8 +751,6 @@ class Orbitals(object):
     # Reorder MO coefficients
     if (spin == 'b'):
       MO = self.MO_b[n]
-    elif (spin == 's'):
-      MO = self.MO_s[n]
     elif (spin == 'a'):
       MO = self.MO[n]
     if ('root_coeff' in MO):
@@ -828,30 +821,23 @@ class Orbitals(object):
   # It can use a cache for MO evaluation and a mask to select only some orbitals.
   def dens(self, x, y, z, cache=None, mask=None, spin=False):
     dens = np.zeros_like(x)
-    if (spin and (self.MO_s is not None)):
-      for i,orb in enumerate(self.MO_s):
-        if ((mask is None) or mask[i]):
-          occup = orb.get('root_occup', orb['occup'])
-          if (abs(occup) > self.eps):
-            dens += occup*self.mo(i, x, y, z, 's', cache)**2
-    else:
-      # Add alternated alpha and beta orbitals
-      l = 0
-      for i,orb in enumerate([j for i in zip_longest(self.MO, self.MO_b) for j in i]):
-        if (orb is None):
-          continue
-        f = 1.0
-        if (i%2 == 0):
-          s = 'a'
-        else:
-          s = 'b'
-          if (spin):
-            f = -1.0
-        if ((mask is None) or mask[l]):
-          occup = orb.get('root_occup', orb['occup'])
-          if (abs(occup) > self.eps):
-            dens += f*occup*self.mo(i//2, x, y, z, s, cache)**2
-        l += 1
+    # Add alternated alpha and beta orbitals
+    l = 0
+    for i,orb in enumerate([j for i in zip_longest(self.MO, self.MO_b) for j in i]):
+      if (orb is None):
+        continue
+      f = 1.0
+      if (i%2 == 0):
+        s = 'a'
+      else:
+        s = 'b'
+        if (spin):
+          f = -1.0
+      if ((mask is None) or mask[l]):
+        occup = orb.get('root_occup', orb['occup'])
+        if (abs(occup) > self.eps):
+          dens += f*occup*self.mo(i//2, x, y, z, s, cache)**2
+      l += 1
     return dens
 
   # Compute the Laplacian of a field by central finite differences
@@ -1161,7 +1147,6 @@ class Grid(object):
         self.nMO = 1
         self.MO = [{'label':title, 'ene':0.0, 'occup':0.0, 'type':'?', 'sym':'z'}]
       self.MO_b = []
-      self.MO_s = None
       # Number of lines occupied by each "record" (ngridz * nMO)
       self.lrec = int(np.ceil(float(self.nMO)*self.ngrid[2]/6))
       # Save the position after the header
@@ -1212,7 +1197,6 @@ class Grid(object):
       # Read and parse orbital names
       self.MO = []
       self.MO_b = []
-      self.MO_s = None
       self.irrep = []
       for i in range(self.nMO):
         name = str(f.readline().decode('ascii'))
@@ -1283,7 +1267,6 @@ class Grid(object):
       # Read and parse orbital names
       self.MO = []
       self.MO_b = []
-      self.MO_s = None
       self.irrep = []
       for i in range(self.nMO):
         name = str(f.readline().decode('ascii'))
@@ -1652,12 +1635,10 @@ class ComputeVolume(Worker):
     x, y, z = numpy_support.vtk_to_numpy(self.parent().xyz.GetOutput().GetPoints().GetData()).T
     if (self.parent().MO is self.parent().orbitals.MO_b):
       spin = 'b'
-    elif (self.parent().MO is self.parent().orbitals.MO_s):
-      spin = 's'
     else:
       spin = 'a'
     mask = [o['density'] for o in self.parent().notes]
-    if (orb == 0):
+    if ((orb == 0) or (orb == -3)):
       self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask)
     elif (orb == -1):
       self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=True)
@@ -1706,6 +1687,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>{2}</b>: Quit</p>
                    <p><b>{3}</b>: Show this window</p>
                    <p><b>PgUp</b>/<b>PgDown</b>: Switch to previous/next orbital</p>
+                   <p><b>Alt+PgUp</b>/<b>Alt+PgDown</b>: Switch to previous/next density type</p>
                    <p><b>Shift+PgUp</b>/<b>Shift+PgDown</b>: Switch to previous/next root</p>
                    <p><b>Ctrl+PgUp</b>/<b>Ctrl+PgDown</b>: Switch to previous/next irrep</p>
                    <p><b>A</b>/<b>B</b>: Switch to alpha/beta or electron/spin orbitals</p>
@@ -1927,6 +1909,7 @@ class MainWindow(QMainWindow):
     self._axes_actor = None
     self._gradient_actor = None
     self._panel_actor = None
+    self._dens = None
     self._root = None
     self._irrep = None
     self._irreplist = None
@@ -2020,6 +2003,8 @@ class MainWindow(QMainWindow):
     # widgets
     self.fileLabel = QLabel('File:')
     self.filenameLabel = QLabel('')
+    self.densityTypeLabel = QLabel('Density:')
+    self.densityTypeButton = QComboBox()
     self.rootLabel = QLabel('Root:')
     self.rootButton = QComboBox()
     self.irrepLabel = QLabel('Irrep:')
@@ -2126,6 +2111,8 @@ class MainWindow(QMainWindow):
 
     # tooltips
     self.filenameLabel.setToolTip('Currently loaded filename')
+    self.densityTypeButton.setToolTip('Select type of density for natural orbitals')
+    self.densityTypeButton.setWhatsThis('Select the type of density to compute natural orbitals for, out of those available.<br>Keys: <b>Alt+PgUp</b>, <b>Alt+PgDown</b>')
     self.rootButton.setToolTip('Select root for natural active orbitals')
     self.rootButton.setWhatsThis('Select a root to compute the natural active orbitals for, if the file contains root-specific density matrices.<br>Keys: <b>Shift+PgUp</b>, <b>Shift+PgDown</b>')
     self.irrepButton.setToolTip('Select irrep for the orbital list')
@@ -2216,53 +2203,58 @@ class MainWindow(QMainWindow):
     hbox1.addWidget(self.filenameLabel, stretch=1)
 
     hbox2 = QHBoxLayout()
-    hbox2.setSpacing(10)
-    self.rootGroup = group_widgets(self.rootLabel, self.rootButton)
-    hbox2.addWidget(self.rootGroup)
-    self.irrepGroup = group_widgets(self.irrepLabel, self.irrepButton)
-    hbox2.addWidget(self.irrepGroup)
-    self.orbitalGroup = group_widgets(self.orbitalLabel, self.orbitalButton, self.spinButton)
-    hbox2.addWidget(self.orbitalGroup)
-    hbox2.addSpacing(10)
-    hbox2.addWidget(self.listButton)
+    self.densityTypeGroup = group_widgets(self.densityTypeLabel, self.densityTypeButton)
+    hbox2.addWidget(self.densityTypeGroup)
     hbox2.addStretch(1)
 
     hbox3 = QHBoxLayout()
-    hbox3.addWidget(self.typeLabel)
+    hbox3.setSpacing(10)
+    self.rootGroup = group_widgets(self.rootLabel, self.rootButton)
+    hbox3.addWidget(self.rootGroup)
+    self.irrepGroup = group_widgets(self.irrepLabel, self.irrepButton)
+    hbox3.addWidget(self.irrepGroup)
+    self.orbitalGroup = group_widgets(self.orbitalLabel, self.orbitalButton, self.spinButton)
+    hbox3.addWidget(self.orbitalGroup)
     hbox3.addSpacing(10)
+    hbox3.addWidget(self.listButton)
+    hbox3.addStretch(1)
+
+    hbox4 = QHBoxLayout()
+    hbox4.addWidget(self.typeLabel)
+    hbox4.addSpacing(10)
     activeLayout = QHBoxLayout()
     activeLayout.addWidget(group_widgets(self.RAS1Button, self.RAS2Button, self.RAS3Button))
     activeFrame.setLayout(activeLayout)
     self.typeGroup = group_widgets(self.frozenButton, self.inactiveButton, activeFrame, self.secondaryButton, self.deletedButton)
-    hbox3.addWidget(self.typeGroup)
-    hbox3.addSpacing(10)
-    hbox3.addWidget(self.resetButton)
-    hbox3.addStretch(1)
-
-    hbox4 = QHBoxLayout()
-    hbox4.setSpacing(10)
-    self.isovalueGroup = group_widgets(self.isovalueLabel, self.isovalueSlider, self.isovalueBox)
-    hbox4.addWidget(self.isovalueGroup, stretch=2)
-    self.opacityGroup = group_widgets(self.opacityLabel, self.opacitySlider, self.opacityBox)
-    hbox4.addWidget(self.opacityGroup, stretch=1)
+    hbox4.addWidget(self.typeGroup)
+    hbox4.addSpacing(10)
+    hbox4.addWidget(self.resetButton)
+    hbox4.addStretch(1)
 
     hbox5 = QHBoxLayout()
     hbox5.setSpacing(10)
-    hbox5.addWidget(self.surfaceBox)
-    hbox5.addWidget(self.signButton)
-    hbox5.addWidget(self.nodesBox)
-    hbox5.addWidget(self.nucleiBox)
-    hbox5.addWidget(self.namesBox)
-    hbox5.addWidget(self.boxBox)
-    self.boxSizeGroup = group_widgets(self.boxSizeLabel, self.boxSizeBox)
-    hbox5.addWidget(self.boxSizeGroup)
-    hbox5.addWidget(self.transformButton)
-    self.gridPointsGroup = group_widgets(self.gridPointsLabel, self.gridPointsBox)
-    hbox5.addWidget(self.gridPointsGroup)
-    hbox5.addStretch(1)
+    self.isovalueGroup = group_widgets(self.isovalueLabel, self.isovalueSlider, self.isovalueBox)
+    hbox5.addWidget(self.isovalueGroup, stretch=2)
+    self.opacityGroup = group_widgets(self.opacityLabel, self.opacitySlider, self.opacityBox)
+    hbox5.addWidget(self.opacityGroup, stretch=1)
 
     hbox6 = QHBoxLayout()
-    hbox6.addWidget(self.gradientBox)
+    hbox6.setSpacing(10)
+    hbox6.addWidget(self.surfaceBox)
+    hbox6.addWidget(self.signButton)
+    hbox6.addWidget(self.nodesBox)
+    hbox6.addWidget(self.nucleiBox)
+    hbox6.addWidget(self.namesBox)
+    hbox6.addWidget(self.boxBox)
+    self.boxSizeGroup = group_widgets(self.boxSizeLabel, self.boxSizeBox)
+    hbox6.addWidget(self.boxSizeGroup)
+    hbox6.addWidget(self.transformButton)
+    self.gridPointsGroup = group_widgets(self.gridPointsLabel, self.gridPointsBox)
+    hbox6.addWidget(self.gridPointsGroup)
+    hbox6.addStretch(1)
+
+    hbox7 = QHBoxLayout()
+    hbox7.addWidget(self.gradientBox)
     gradientLayout = QHBoxLayout()
     gradientLayout.setContentsMargins(0, 0, 0, 0)
     self.lineDensityGroup = group_widgets(self.lineDensityLabel, self.lineDensityBox)
@@ -2275,9 +2267,9 @@ class MainWindow(QMainWindow):
     gradientLayout.addWidget(self.bothButton)
     gradientLayout.addWidget(self.upButton)
     self.gradientGroup.setLayout(gradientLayout)
-    hbox6.addWidget(self.gradientGroup)
-    hbox6.addWidget(self.showGradientButton)
-    hbox6.addStretch(1)
+    hbox7.addWidget(self.gradientGroup)
+    hbox7.addWidget(self.showGradientButton)
+    hbox7.addStretch(1)
 
     line = QFrame()
     line.setFrameShape(QFrame.Shape(QFrame.HLine | QFrame.Sunken))
@@ -2292,6 +2284,7 @@ class MainWindow(QMainWindow):
     vbox.addLayout(hbox4)
     vbox.addLayout(hbox5)
     vbox.addLayout(hbox6)
+    vbox.addLayout(hbox7)
 
     _widget = QWidget()
     _widget.setLayout(vbox)
@@ -2328,6 +2321,10 @@ class MainWindow(QMainWindow):
     self.fitViewAction.setShortcut(QKeySequence('R'))
     self.resetCameraAction.setShortcut(QKeySequence('Shift+R'))
     self.listButton.setShortcut('Ctrl+L')
+    self.prevDensShortcut = QShortcut(QKeySequence('Alt+PgUp'), self)
+    self.prevDensShortcut.activated.connect(self.prev_dens)
+    self.nextDensShortcut = QShortcut(QKeySequence('Alt+PgDown'), self)
+    self.nextDensShortcut.activated.connect(self.next_dens)
     self.prevRootShortcut = QShortcut(QKeySequence('Shift+PgUp'), self)
     self.prevRootShortcut.activated.connect(self.prev_root)
     self.nextRootShortcut = QShortcut(QKeySequence('Shift+PgDown'), self)
@@ -2397,6 +2394,7 @@ class MainWindow(QMainWindow):
     self.aboutAction.triggered.connect(self.show_about)
     self.fitViewAction.triggered.connect(self.reset_camera)
     self.resetCameraAction.triggered.connect(partial(self.reset_camera, True))
+    self.densityTypeButton.currentIndexChanged.connect(self.densityTypeButton_changed)
     self.rootButton.currentIndexChanged.connect(self.rootButton_changed)
     self.irrepButton.currentIndexChanged.connect(self.irrepButton_changed)
     self.orbitalButton.currentIndexChanged.connect(self.orbitalButton_changed)
@@ -2575,12 +2573,28 @@ class MainWindow(QMainWindow):
     self.rootButton.clear()
     for i,r in enumerate(roots):
       self.rootButton.addItem(r)
+    densities = ['State']
+    try:
+      if (self.orbitals.sdm.shape):
+        densities.append('Spin')
+    except:
+      pass
     if (len(roots) > 2):
+      densities.append('Difference')
       self.rootGroup.setEnabled(True)
       self.rootGroup.show()
     else:
       self.rootGroup.setEnabled(False)
       self.rootGroup.hide()
+    self.densityTypeButton.clear()
+    for d in densities:
+      self.densityTypeButton.addItem(d)
+    if (len(densities) > 1):
+      self.densityTypeGroup.setEnabled(True)
+      self.densityTypeGroup.show()
+    else:
+      self.densityTypeGroup.setEnabled(False)
+      self.densityTypeGroup.hide()
     if (not enabled):
       self.orbital = None
       self.haveBasis = False
@@ -2606,8 +2620,6 @@ class MainWindow(QMainWindow):
     # Generate list of spins
     if (len(new.MO_b) > 0):
       spinlist = ['alpha', 'beta']
-    elif (new.MO_s is not None):
-      spinlist = ['electrons', 'spin']
     else:
       spinlist = ['']
     self.spinlist = spinlist
@@ -2845,6 +2857,39 @@ class MainWindow(QMainWindow):
     self.saveInpOrbAction.setEnabled(value)
 
   @property
+  def dens(self):
+    return self._dens
+
+  @dens.setter
+  def dens(self, value):
+    old = self._dens
+    self._dens = value
+    self._dens_changed(value, old)
+
+  def _dens_changed(self, new, old):
+    try:
+      roots = self.orbitals.roots
+    except AttributeError:
+      roots = ['Average']
+    if (new in ['State', 'Spin']):
+      items = roots
+    elif (new == 'Difference'):
+      rootids = []
+      for r in roots:
+        i = r.find(':')
+        if (i > 0):
+          rootids.append(r[0:i])
+      items = []
+      for i,r1 in enumerate(rootids):
+        for r2 in rootids[i+1:]:
+          items.append(u'{0} → {1}'.format(r1, r2))
+    if (new != old):
+      self._tainted = True
+    self.rootButton.clear()
+    for r in items:
+      self.rootButton.addItem(r)
+
+  @property
   def root(self):
     return self._root
 
@@ -2857,50 +2902,73 @@ class MainWindow(QMainWindow):
   def _root_changed(self, new, old):
     if (self.MO is None):
       return
-    if (self.spin == 'spin'):
-      dm = self.orbitals.sdm[new]
-    else:
+    if (self.dens == 'State'):
       dm = self.orbitals.dm[new]
+    elif (self.dens == 'Spin'):
+      dm = self.orbitals.sdm[new]
+    elif (self.dens == 'Difference'):
+      n = len(self.orbitals.roots)-1
+      r1 = int((2*n-1-np.sqrt((2*n-1)**2-8*new))/2)
+      r2 = new+1+int((r1**2-(2*n-3)*r1)/2)
+      dm = self.orbitals.dm[r2+1]-self.orbitals.dm[r1+1]
     tp_act = ['1', '2', '3']
     act = [o for o in self.MO if (o['type'] in tp_act)]
     if (len(act) != dm.shape[0]):
       self.show_error('Wrong density matrix size.')
       return
-    if (np.allclose(dm, np.diag(np.diag(dm)), atol=1e-20)):
+    if (self.dens == 'State'):
+      if (np.allclose(dm, np.diag(np.diag(dm)), atol=1e-20)):
+        for o in self.MO:
+          o.pop('root_occup', None)
+          o.pop('root_ene', None)
+        for o,n in zip(act, np.diag(dm)):
+          if (n != o['occup']):
+            o['root_occup'] = n
+          o.pop('root_coeff', None)
+          o.pop('root_type', None)
+      else:
+        for s in set([o['sym'] for o in act]):
+          symidx = [i for i,o in enumerate(act) if (o['sym'] == s)]
+          symdm = dm[np.ix_(symidx,symidx)]
+          symact = [act[i] for i in symidx]
+          occ, vec = np.linalg.eigh(symdm)
+          freevec = [1 for i in symidx]
+          idx = [-1 for i in symidx]
+          for i in range(len(symidx)):
+            idx[i] = np.argmax(abs(vec[i,:]*freevec))
+            if (vec[i,idx[i]] < 0.0):
+              vec[:,idx[i]] *= -1
+            freevec[idx[i]] = 0
+          occ = occ[idx]
+          vec = vec[:,idx]
+          mix = []
+          for i in range(vec.shape[1]):
+            types = list(set([symact[n]['type'] for n,j in enumerate(vec[:,i]) if (j>1e-6)]))
+            mix.append('?' if (len(types) > 1) else types[0])
+          new_MO = np.dot(vec.T, [o['coeff'] for o in symact])
+          for o,n,c,t in zip(symact, occ, new_MO, mix):
+            o['root_occup'] = n
+            o['root_coeff'] = c
+            o['root_type'] = t
+            o['root_ene'] = 0.0
+    elif (self.dens in ['Spin', 'Difference']):
       for o in self.MO:
-        o.pop('root_occup', None)
-        o.pop('root_ene', None)
-      for o,n in zip(act, np.diag(dm)):
-        if (n != o['occup']):
-          o['root_occup'] = n
-        o.pop('root_coeff', None)
-        o.pop('root_type', None)
-    else:
+        o['root_occup'] = 0.0
+        o['root_ene'] = 0.0
       for s in set([o['sym'] for o in act]):
         symidx = [i for i,o in enumerate(act) if (o['sym'] == s)]
         symdm = dm[np.ix_(symidx,symidx)]
+        symact = [act[i] for i in symidx]
         occ, vec = np.linalg.eigh(symdm)
-        freevec = [1 for i in symidx]
-        idx = [-1 for i in symidx]
-        for i in range(len(symidx)):
-          idx[i] = np.argmax(abs(vec[i,:]*freevec))
-          if (vec[i,idx[i]] < 0.0):
-            vec[:,idx[i]] *= -1
-          freevec[idx[i]] = 0
-        occ = occ[idx]
-        vec = vec[:,idx]
         mix = []
         for i in range(vec.shape[1]):
-          types = list(set([act[n]['type'] for n,j in enumerate(vec[:,i]) if (j>1e-6)]))
+          types = list(set([symact[n]['type'] for n,j in enumerate(vec[:,i]) if (abs(j)>1e-6)]))
           mix.append('?' if (len(types) > 1) else types[0])
-        symact = [act[i] for i in symidx]
         new_MO = np.dot(vec.T, [o['coeff'] for o in symact])
         for o,n,c,t in zip(symact, occ, new_MO, mix):
-          if (n != o['occup']):
-            o['root_occup'] = n
+          o['root_occup'] = n
           o['root_coeff'] = c
           o['root_type'] = t
-          o['root_ene'] = 0.0
     if ((self.orbital <= 0) or (self.MO[self.orbital-1]['type'] in tp_act)):
       self._tainted = True
     self.populate_orbitals()
@@ -2950,8 +3018,6 @@ class MainWindow(QMainWindow):
       return
     if (new == 'beta'):
       self.MO = self.orbitals.MO_b
-    elif (new == 'spin'):
-      self.MO = self.orbitals.MO_s
     else:
       self.MO = self.orbitals.MO
 
@@ -3246,12 +3312,17 @@ class MainWindow(QMainWindow):
     if (self.irrep == 'All'):
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO)}
       if ((not self.isGrid) and any([(o.get('root_occup', o['occup']) != 0.0) for o in self.MO])):
-        is_it_spin = (self.spin == 'spin') or any([(o.get('root_occup', o['occup']) < 0.0) for o in self.MO])
-        if (not is_it_spin):
-          orblist[0] = 'Density'
-          orblist[-2] = 'Laplacian (numerical)'
-        if (is_it_spin or ('beta' in self.spinlist)):
-          orblist[-1] = 'Spin density'
+        is_it_spin = (self.dens == 'State') and any([(o.get('root_occup', o['occup']) < 0.0) for o in self.MO])
+        if (self.dens == 'State'):
+          if (not is_it_spin):
+            orblist[0] = 'Density'
+            orblist[-2] = 'Laplacian (numerical)'
+          if (is_it_spin or ('beta' in self.spinlist)):
+            orblist[-1] = 'Spin density'
+        elif (self.dens == 'Spin'):
+          orblist[-3] = 'Spin density'
+        elif (self.dens == 'Difference'):
+          orblist[-3] = 'Difference density'
     else:
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (o['sym'] == self.irrep)}
     for k in sorted(orblist.keys()):
@@ -3289,7 +3360,7 @@ class MainWindow(QMainWindow):
     self.notes = notes
 
   def initial_orbital(self):
-    if ('beta' in self.spinlist):
+    if (len(self.orbitals.MO_b) > 0):
       maxocc = 1.0
     else:
       maxocc = 2.0
@@ -3697,6 +3768,10 @@ class MainWindow(QMainWindow):
     self._minval, self._maxval = (minval, maxval)
     self.isovalue = self.isovalue
 
+  def densityTypeButton_changed(self, value):
+    if (value >= 0):
+      self.dens = self.densityTypeButton.currentText()
+
   def rootButton_changed(self, value):
     if (value >= 0):
       self.root = self.rootButton.currentIndex()
@@ -3892,14 +3967,22 @@ class MainWindow(QMainWindow):
     else:
       tp = '?'
     if ((self.rootButton.count() > 2) and (tp in ['1', '2', '3'])):
-      if (self.root == 0):
-        text = 'State average\n'
-      else:
-        text = 'Root {0}\n'.format(self.rootButton.currentText().split(':')[0])
+      if (self.dens in ['State', 'Spin']):
+        if (self.root == 0):
+          text = 'State average\n'
+        else:
+          text = 'Root {0}\n'.format(self.rootButton.currentText().split(':')[0])
+      elif (self.dens == 'Difference'):
+        text = 'Difference from root {0} to {1}\n'.format(*self.rootButton.currentText().split(u' → '))
     else:
       text = ''
     try:
-      text += {0:'Density', -1:'Spin density', -2:'Laplacian (numerical)'}[self.orbital]
+      sd = ''
+      if (self.dens == 'Spin'):
+        sd = 'Spin density'
+      elif (self.dens == 'Difference'):
+        sd = 'Difference density'
+      text += {0:'Density', -1:'Spin density', -2:'Laplacian (numerical)', -3:sd}[self.orbital]
     except KeyError:
       orb = self.MO[self.orbital-1]
       tp = orb.get('newtype', orb['type'])
@@ -4150,6 +4233,24 @@ class MainWindow(QMainWindow):
         fo.write('\n'.join(index))
         fo.write('\n')
 
+  def prev_dens(self):
+    if (not self.densityTypeButton.isEnabled()):
+      return
+    self.densityTypeButton.setEnabled(False)
+    index = self.densityTypeButton.currentIndex()
+    if (index > 0):
+      self.densityTypeButton.setCurrentIndex(index-1)
+    self.densityTypeButton.setEnabled(True)
+
+  def next_dens(self):
+    if (not self.densityTypeButton.isEnabled()):
+      return
+    self.densityTypeButton.setEnabled(False)
+    index = self.densityTypeButton.currentIndex()
+    if (index < self.densityTypeButton.count()-1):
+      self.densityTypeButton.setCurrentIndex(index+1)
+    self.densityTypeButton.setEnabled(True)
+
   def prev_root(self):
     if (not self.rootButton.isEnabled()):
       return
@@ -4217,8 +4318,6 @@ class MainWindow(QMainWindow):
     if (not self.spinButton.isEnabled()):
       return
     index = self.spinButton.findText('beta')
-    if (index == 0):
-      index = self.spinButton.findText('spin')
     if (index >= 0):
       self.spinButton.setCurrentIndex(index)
 
