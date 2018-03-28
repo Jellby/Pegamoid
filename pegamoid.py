@@ -19,17 +19,17 @@ try:
   v = qtpy.PYQT_VERSION
   if (v is None):
     v = qtpy.PYSIDE_VERSION
-  QtVersion = '{0} {1} (Qt {2})'.format(qtpy.API_NAME, v, qtpy.QT_VERSION) 
+  QtVersion = '{0} {1} (Qt {2})'.format(qtpy.API_NAME, v, qtpy.QT_VERSION)
 except:
   try:
     from PyQt5.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
     from PyQt5.QtWidgets import *
     from PyQt5.QtGui import QPixmap, QIcon, QKeySequence
-    QtVersion = 'PyQt5 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR) 
+    QtVersion = 'PyQt5 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
   except ImportError:
     from PyQt4.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
     from PyQt4.QtGui import *
-    QtVersion = 'PyQt4 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR) 
+    QtVersion = 'PyQt4 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
 import vtk
 from vtk.util import numpy_support
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -668,16 +668,20 @@ class Orbitals(object):
       else:
         for o in self.MO + self.MO_b:
           o['ene'] = 0.0
-      # Clear types
-      if (not sections.get('INDEX')):
-        for o in self.MO + self.MO_b:
-          o['type'] = '?'
-          o.pop('newtype', None)
+    # Clear types
+    if (not sections.get('INDEX')):
+      for o in self.MO + self.MO_b:
+        o['type'] = '?'
+        o.pop('newtype', None)
+    for o in self.MO + self.MO_b:
       o.pop('root_coeff', None)
+      o.pop('root_occup', None)
       o.pop('root_type', None)
       o.pop('root_ene', None)
     self.roots = ['InpOrb']
     self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
+    self.sdm = None
+
     return True
 
   # Set the Cartesian coefficients for spherical harmonics
@@ -1735,7 +1739,7 @@ class ScrollMessageBox(QDialog):
     bbox.accepted.connect(self.accept)
 
 class TakeScreenshot(QDialog):
- 
+
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self.setWindowTitle('Save PNG image')
