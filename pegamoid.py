@@ -317,16 +317,19 @@ class Orbitals(object):
       self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
       if ('DENSITY_MATRIX' in f):
         self.dm = np.concatenate((self.dm, f['DENSITY_MATRIX'][:]))
-        if ('STATE_ROOTID' in f.attrs):
-          rootids = f.attrs['STATE_ROOTID']
-        else:
-          rootids = [i+1 for i in range(len(self.dm)-1)]
+        rootids = [i+1 for i in range(f.attrs['NROOTS'])]
         self.roots.extend(['{0}: {1:.6f}'.format(i, e) for i,e in zip(rootids, f['ROOT_ENERGIES'])])
+      self.sdm = None
       if ('SPINDENSITY_MATRIX' in f):
         sdm = f['SPINDENSITY_MATRIX'][:]
         if (not np.allclose(sdm, np.zeros_like(sdm))):
           sdm = np.insert(sdm, 0, np.mean(sdm, axis=0), axis=0)
           self.sdm = sdm
+      self.tdm = None
+      if ('TRANSITION_DENSITY_MATRIX' in f):
+        tdm = f['TRANSITION_DENSITY_MATRIX'][:]
+        if (not np.allclose(tdm, np.zeros_like(tdm))):
+          self.tdm = tdm
 
   # Read basis set from a Molden file
   def read_molden_basis(self):
@@ -675,12 +678,15 @@ class Orbitals(object):
         o.pop('newtype', None)
     for o in self.MO + self.MO_b:
       o.pop('root_coeff', None)
+      o.pop('root_coeffl', None)
+      o.pop('root_coeffr', None)
       o.pop('root_occup', None)
       o.pop('root_type', None)
       o.pop('root_ene', None)
     self.roots = ['InpOrb']
     self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
     self.sdm = None
+    self.tdm = None
 
     return True
 
@@ -1644,6 +1650,8 @@ class ComputeVolume(Worker):
     mask = [o['density'] for o in self.parent().notes]
     if ((orb == 0) or (orb == -3)):
       self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask)
+      if (self.parent().spin == 'hole'):
+        self.data *= -1
     elif (orb == -1):
       self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=True)
     elif (orb == -2):
@@ -2585,6 +2593,8 @@ class MainWindow(QMainWindow):
       pass
     if (len(roots) > 2):
       densities.append('Difference')
+      if (self.orbitals.tdm is not None):
+        densities.append('Transition')
       self.rootGroup.setEnabled(True)
       self.rootGroup.show()
     else:
@@ -2877,7 +2887,7 @@ class MainWindow(QMainWindow):
       roots = ['Average']
     if (new in ['State', 'Spin']):
       items = roots
-    elif (new == 'Difference'):
+    elif (new in ['Difference', 'Transition']):
       rootids = []
       for r in roots:
         i = r.find(':')
@@ -2915,6 +2925,11 @@ class MainWindow(QMainWindow):
       r1 = int((2*n-1-np.sqrt((2*n-1)**2-8*new))/2)
       r2 = new+1+int((r1**2-(2*n-3)*r1)/2)
       dm = self.orbitals.dm[r2+1]-self.orbitals.dm[r1+1]
+    elif (self.dens == 'Transition'):
+      n = len(self.orbitals.roots)-1
+      r1 = int((2*n-1-np.sqrt((2*n-1)**2-8*new))/2)
+      r2 = new+1+int((r1**2-(2*n-3)*r1)/2)
+      dm = self.orbitals.tdm[r2*(r2-1)//2+r1]
     tp_act = ['1', '2', '3']
     act = [o for o in self.MO if (o['type'] in tp_act)]
     if (len(act) != dm.shape[0]):
@@ -2929,6 +2944,8 @@ class MainWindow(QMainWindow):
           if (n != o['occup']):
             o['root_occup'] = n
           o.pop('root_coeff', None)
+          o.pop('root_coeffl', None)
+          o.pop('root_coeffr', None)
           o.pop('root_type', None)
       else:
         for s in set([o['sym'] for o in act]):
@@ -2973,6 +2990,42 @@ class MainWindow(QMainWindow):
           o['root_occup'] = n
           o['root_coeff'] = c
           o['root_type'] = t
+    elif (self.dens == 'Transition'):
+      for o in self.MO:
+        o['root_occup'] = 0.0
+        o['root_ene'] = 0.0
+      for s in set([o['sym'] for o in act]):
+        symidx = [i for i,o in enumerate(act) if (o['sym'] == s)]
+        symdm = dm[np.ix_(symidx,symidx)]
+        symact = [act[i] for i in symidx]
+        vecl, occ, vecr = np.linalg.svd(symdm)
+        vecr = vecr.T
+        mix = []
+        for i in range(vecl.shape[1]):
+          types = list(set([symact[n]['type'] for n,j in enumerate(vecl[:,i]) if (abs(j)>1e-6)]))
+          mix.append('?' if (len(types) > 1) else types[0])
+        new_MOl = np.dot(vecl.T, [o['coeff'] for o in symact])
+        new_MOr = np.dot(vecr.T, [o['coeff'] for o in symact])
+        for o,n,cl,cr,t in zip(symact, occ, new_MOl, new_MOr, mix):
+          o['root_occup'] = n**2/2
+          o['root_coeffl'] = cl
+          o['root_coeffr'] = cr
+          if (self.spin == 'hole'):
+            o['root_coeff'] = cl
+          elif (self.spin == 'particle'):
+            o['root_coeff'] = cr
+          o['root_type'] = t
+    if (self.dens == 'Transition'):
+      spinlist = ['hole', 'particle']
+    else:
+      spinlist = ['']
+      try:
+        if (len(new.MO_b) > 0):
+          spinlist = ['alpha', 'beta']
+      except:
+        pass
+    if (set(spinlist) != set(self.spinlist)):
+      self.spinlist = spinlist
     if ((self.orbital <= 0) or (self.MO[self.orbital-1]['type'] in tp_act)):
       self._tainted = True
     self.populate_orbitals()
@@ -3020,6 +3073,14 @@ class MainWindow(QMainWindow):
   def _spin_changed(self, new):
     if (self.orbitals is None):
       return
+    if (new == 'hole'):
+      for o in self.MO:
+        if ('root_coeffl' in o):
+          o['root_coeff'] = o['root_coeffl']
+    if (new == 'particle'):
+      for o in self.MO:
+        if ('root_coeffr' in o):
+          o['root_coeff'] = o['root_coeffr']
     if (new == 'beta'):
       self.MO = self.orbitals.MO_b
     else:
@@ -3327,6 +3388,8 @@ class MainWindow(QMainWindow):
           orblist[-3] = 'Spin density'
         elif (self.dens == 'Difference'):
           orblist[-3] = 'Difference density'
+        elif (self.dens == 'Transition'):
+          orblist[-3] = 'Transition density'
     else:
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (o['sym'] == self.irrep)}
     for k in sorted(orblist.keys()):
@@ -3978,6 +4041,8 @@ class MainWindow(QMainWindow):
           text = 'Root {0}\n'.format(self.rootButton.currentText().split(':')[0])
       elif (self.dens == 'Difference'):
         text = 'Difference from root {0} to {1}\n'.format(*self.rootButton.currentText().split(u' → '))
+      elif (self.dens == 'Transition'):
+        text = 'Transition ({0}) from root {1} to {2}\n'.format(self.spin, *self.rootButton.currentText().split(u' → '))
     else:
       text = ''
     try:
@@ -3986,6 +4051,8 @@ class MainWindow(QMainWindow):
         sd = 'Spin density'
       elif (self.dens == 'Difference'):
         sd = 'Difference density'
+      elif (self.dens == 'Transition'):
+        sd = 'Transition density'
       text += {0:'Density', -1:'Spin density', -2:'Laplacian (numerical)', -3:sd}[self.orbital]
     except KeyError:
       orb = self.MO[self.orbital-1]
@@ -4313,8 +4380,8 @@ class MainWindow(QMainWindow):
     if (not self.spinButton.isEnabled()):
       return
     index = self.spinButton.findText('alpha')
-    if (index == 0):
-      index = self.spinButton.findText('electrons')
+    if (index < 0):
+      index = self.spinButton.findText('hole')
     if (index >= 0):
       self.spinButton.setCurrentIndex(index)
 
@@ -4322,6 +4389,8 @@ class MainWindow(QMainWindow):
     if (not self.spinButton.isEnabled()):
       return
     index = self.spinButton.findText('beta')
+    if (index < 0):
+      index = self.spinButton.findText('particle')
     if (index >= 0):
       self.spinButton.setCurrentIndex(index)
 
