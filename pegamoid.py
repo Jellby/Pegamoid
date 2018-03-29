@@ -1636,6 +1636,7 @@ class FileRead(Worker):
 class ComputeVolume(Worker):
   def __init__(self, *args, **kwargs):
     self.cache = kwargs.pop('cache', None)
+    self.dens_type = kwargs.pop('dens_type', [])
     super().__init__(*args, **kwargs)
     self.data = None
   def run(self):
@@ -1648,9 +1649,31 @@ class ComputeVolume(Worker):
     else:
       spin = 'a'
     mask = [o['density'] for o in self.parent().notes]
-    if ((orb == 0) or (orb == -3)):
+    if ('a' in self.dens_type):
+      l = 0
+      for o in [j for i in zip_longest(self.parent().orbitals.MO, self.parent().orbitals.MO_b) for j in i]:
+        if (o is None):
+          continue
+        try:
+          if (o['root_occup'] < 0):
+            mask[l] = False
+        except TypeError:
+          pass
+        l += 1
+    if ('d' in self.dens_type):
+      l = 0
+      for o in [j for i in zip_longest(self.parent().orbitals.MO, self.parent().orbitals.MO_b) for j in i]:
+        if (o is None):
+          continue
+        try:
+          if (o['root_occup'] > 0):
+            mask[l] = False
+        except TypeError:
+          pass
+        l += 1
+    if ((orb == 0) or (orb <= -3)):
       self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask)
-      if (self.parent().spin == 'hole'):
+      if ('h' in self.dens_type):
         self.data *= -1
     elif (orb == -1):
       self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=True)
@@ -2899,9 +2922,16 @@ class MainWindow(QMainWindow):
           items.append(u'{0} → {1}'.format(r1, r2))
     if (new != old):
       self._tainted = True
+    old_root = self.rootButton.currentText()
+    self.rootButton.blockSignals(True)
     self.rootButton.clear()
     for r in items:
       self.rootButton.addItem(r)
+    index = self.rootButton.findText(old_root)
+    if (index >= 0):
+      self.rootButton.setCurrentIndex(index)
+    self.rootButton.blockSignals(False)
+    self.root = self.rootButton.currentIndex()
 
   @property
   def root(self):
@@ -3388,8 +3418,13 @@ class MainWindow(QMainWindow):
           orblist[-3] = 'Spin density'
         elif (self.dens == 'Difference'):
           orblist[-3] = 'Difference density'
+          orblist[-4] = 'Attachment density'
+          orblist[-5] = 'Detachment density'
         elif (self.dens == 'Transition'):
-          orblist[-3] = 'Transition density'
+          if (self.spin == 'hole'):
+            orblist[-3] = 'Hole density'
+          elif (self.spin == 'particle'):
+            orblist[-3] = 'Particle density'
     else:
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (o['sym'] == self.irrep)}
     for k in sorted(orblist.keys()):
@@ -3654,7 +3689,17 @@ class MainWindow(QMainWindow):
       self.statusLabel.setText('Computing...')
     if (self._computeVolumeThread is not None):
       self._computeVolumeThread.wait()
-    self._computeVolumeThread = ComputeVolume(self, cache=self._cache_file)
+    dens_type = []
+    dt = self.orbitalButton.currentText()
+    if (dt == 'Hole density'):
+      dens_type.append('h')
+    if (dt == 'Particle density'):
+      dens_type.append('p')
+    if (dt == 'Attachment density'):
+      dens_type.append('a')
+    if (dt == 'Detachment density'):
+      dens_type.append('d')
+    self._computeVolumeThread = ComputeVolume(self, cache=self._cache_file, dens_type=dens_type)
     self._computeVolumeThread.disable_list = [self.irrepGroup, self.orbitalGroup, self.boxSizeGroup, self.gridPointsGroup, self.gradientBox, self.gradientGroup]
     self._computeVolumeThread.finished.connect(self.volume_computed)
     self._computeVolumeThread.start()
@@ -4052,8 +4097,11 @@ class MainWindow(QMainWindow):
       elif (self.dens == 'Difference'):
         sd = 'Difference density'
       elif (self.dens == 'Transition'):
-        sd = 'Transition density'
-      text += {0:'Density', -1:'Spin density', -2:'Laplacian (numerical)', -3:sd}[self.orbital]
+        if (self.spin == 'hole'):
+          sd = 'Hole density'
+        if (self.spin == 'particle'):
+          sd = 'Particle density'
+      text += {0:'Density', -1:'Spin density', -2:'Laplacian (numerical)', -3:sd, -4:'Attachment density', -5:'Detachment density'}[self.orbital]
     except KeyError:
       orb = self.MO[self.orbital-1]
       tp = orb.get('newtype', orb['type'])
