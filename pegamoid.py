@@ -4026,9 +4026,9 @@ class MainWindow(QMainWindow):
     self.vtk_update()
     if ((self.orbital is None) or (self.MO is None)):
       return
-    orb = self.MO[self.orbital-1]
-    item = self.orbitalButton.findData(self.orbital)
     if (self.orbital > 0):
+      orb = self.MO[self.orbital-1]
+      item = self.orbitalButton.findData(self.orbital)
       old = orb.get('root_type', orb['type'])
       if (tp != old):
         orb['newtype'] = tp
@@ -4040,10 +4040,10 @@ class MainWindow(QMainWindow):
     if ((self.orbital is None) or (self.MO is None)):
       tp = '?'
     else:
-      orb = self.MO[self.orbital-1]
       if (self.orbital < 1):
         tp = ''
       else:
+        orb = self.MO[self.orbital-1]
         try:
           tp = orb.get('newtype', orb.get('root_type', orb['type']))
         except:
