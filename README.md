@@ -28,7 +28,8 @@ basis set, and it is possible to change the sampling resolution and shape and
 size of the sampled volume. Luscus, grid and cube files contain precomputed
 volumetric data and only the existing data can be displayed.
 
-Depending on availability the following features and objects are supported:
+Depending on availability in the input file, the following features and objects
+are supported:
 
 * Selection of orbital.
 
@@ -115,7 +116,7 @@ Use with a remote connexion
 ---------------------------
 
 Production calculations are usually not run on the local machine, but on some
-remote server like a supercomputer. To view/save/modify orbital files, it
+remote server like a supercomputer. To view/save/modify orbital files, it is
 always possible to transfer the files between the local and remote machines. It
 is, however, more convenient to run Pegamoid directly on the remote machine and
 have the graphical interface display in the local machine. Unfortunately, there
