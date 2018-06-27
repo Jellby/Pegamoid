@@ -182,6 +182,7 @@ class Orbitals(object):
     self.file = orbfile
     self.type = ftype
     self.eps = np.finfo(np.float).eps
+    self.wf = 'SCF'
     if (self.type == 'hdf5'):
       self.read_h5_basis()
       self.read_h5_MO()
@@ -315,21 +316,54 @@ class Orbitals(object):
           orb['coeff'] = np.dot(self.mat, orb['coeff'])
       self.roots = ['Average']
       self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
-      if ('DENSITY_MATRIX' in f):
-        self.dm = np.concatenate((self.dm, f['DENSITY_MATRIX'][:]))
-        rootids = [i+1 for i in range(f.attrs['NROOTS'])]
-        self.roots.extend(['{0}: {1:.6f}'.format(i, e) for i,e in zip(rootids, f['ROOT_ENERGIES'])])
       self.sdm = None
-      if ('SPINDENSITY_MATRIX' in f):
-        sdm = f['SPINDENSITY_MATRIX'][:]
-        if (not np.allclose(sdm, np.zeros_like(sdm))):
-          sdm = np.insert(sdm, 0, np.mean(sdm, axis=0), axis=0)
-          self.sdm = sdm
       self.tdm = None
-      if ('TRANSITION_DENSITY_MATRIX' in f):
-        tdm = f['TRANSITION_DENSITY_MATRIX'][:]
-        if (not np.allclose(tdm, np.zeros_like(tdm))):
-          self.tdm = tdm
+      self.H_eff = None
+      if (f.attrs['MOLCAS_MODULE'] == 'CASPT2'):
+        self.wf = 'PT2'
+        self.roots[0] = 'Reference'
+        # For CASPT2 the density matrices are symmetry-blocked, and for all orbitals (not F or D),
+        # here we convert them to square, with full size
+        self.dm = np.array([np.diag([o['occup'] for o in self.MO if (o['type'] not in ['F', 'D'])])])
+        if ('DENSITY_MATRIX' in f):
+          rootids = f.attrs['STATE_ROOTID'][:]
+          for root in range(len(rootids)):
+            self.dm = np.concatenate((self.dm, [np.zeros_like(self.dm[0])]))
+            nMO = [(sum(self.N_bas[:i]), sum(self.N_bas[:i+1])) for i in range(len(self.N_bas))]
+            j = 0
+            k = 0
+            for i,nbas in zip(nMO, self.N_bas):
+              n = len([o for o in self.MO[i[0]:i[1]] if (o['type'] not in ['F', 'D'])])
+              j1 = int(n*(n+1)/2)
+              dm = np.zeros((n, n))
+              dm[np.tril_indices(n, 0)] = f['DENSITY_MATRIX'][root,j:j+j1]
+              dm = dm + np.tril(dm, -1).T
+              self.dm[-1][k:k+n,k:k+n] = dm
+              j += j1
+              k += n
+          # For MS-CASPT2, the densities are SS, but the energies are MS,
+          # so take the energies from the effective Hamiltonian matrix instead
+          if ('H_EFF' in f):
+            self.H_eff = f['H_EFF'][:]
+            self.roots.extend(['{0}: {1:.6f}'.format(i, e) for i,e in zip(rootids, np.diag(self.H_eff))])
+            self.msroots = ['Reference']
+            self.msroots.extend(['{0}: {1:.6f}'.format(i+1, e) for i,e in enumerate(f['STATE_PT2_ENERGIES'])])
+          else:
+            self.roots.extend(['{0}: {1:.6f}'.format(i, e) for i,e in zip(rootids, f['STATE_PT2_ENERGIES'])])
+      else:
+        if ('DENSITY_MATRIX' in f):
+          self.dm = np.concatenate((self.dm, f['DENSITY_MATRIX'][:]))
+          rootids = [i+1 for i in range(f.attrs['NROOTS'])]
+          self.roots.extend(['{0}: {1:.6f}'.format(i, e) for i,e in zip(rootids, f['ROOT_ENERGIES'])])
+        if ('SPINDENSITY_MATRIX' in f):
+          sdm = f['SPINDENSITY_MATRIX'][:]
+          if (not np.allclose(sdm, np.zeros_like(sdm))):
+            sdm = np.insert(sdm, 0, np.mean(sdm, axis=0), axis=0)
+            self.sdm = sdm
+        if ('TRANSITION_DENSITY_MATRIX' in f):
+          tdm = f['TRANSITION_DENSITY_MATRIX'][:]
+          if (not np.allclose(tdm, np.zeros_like(tdm))):
+            self.tdm = tdm
 
   # Read basis set from a Molden file
   def read_molden_basis(self):
@@ -687,6 +721,7 @@ class Orbitals(object):
     self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
     self.sdm = None
     self.tdm = None
+    self.H_eff = None
 
     return True
 
@@ -1090,6 +1125,7 @@ class Grid(object):
     self.transform = np.eye(4)
     self.file = gridfile
     self.type = ftype
+    self.wf = None
     if (ftype == 'cube'):
       self.read_cube_header()
     elif (ftype == 'luscus'):
@@ -2603,6 +2639,7 @@ class MainWindow(QMainWindow):
       densities.append('Difference')
       if (self.orbitals.tdm is not None):
         densities.append('Transition')
+    if ((len(roots) > 2) or (enabled and (new.wf == 'PT2'))):
       self.rootGroup.setEnabled(True)
       self.rootGroup.show()
     else:
@@ -2945,8 +2982,15 @@ class MainWindow(QMainWindow):
       r1 = int((2*n-1-np.sqrt((2*n-1)**2-8*new))/2)
       r2 = new+1+int((r1**2-(2*n-3)*r1)/2)
       dm = self.orbitals.tdm[r2*(r2-1)//2+r1]
-    tp_act = ['1', '2', '3']
-    act = [o for o in self.MO if (o['type'] in tp_act)]
+    if (self.orbitals.wf == 'PT2'):
+      fix_frozen = True
+      tp_act = set([o['type'] for o in self.MO])
+      tp_act -= set(['F', 'D'])
+      act = [o for o in self.MO if (o['type'] in tp_act)]
+    else:
+      fix_frozen = False
+      tp_act = ['1', '2', '3']
+      act = [o for o in self.MO if (o['type'] in tp_act)]
     if (len(act) != dm.shape[0]):
       self.show_error('Wrong density matrix size.')
       return
@@ -2992,6 +3036,10 @@ class MainWindow(QMainWindow):
             o['root_coeff'] = c
             o['root_type'] = t
             o['root_ene'] = 0.0
+      if (fix_frozen):
+        for o in self.MO:
+          if (o['type'] == 'F'):
+            o['root_occup'] = 2.0
     elif (self.dens in ['Spin', 'Difference']):
       for o in self.MO:
         o['root_occup'] = 0.0
@@ -4082,17 +4130,30 @@ class MainWindow(QMainWindow):
     else:
       tp = '?'
     text = ''
-    modified = not np.allclose(self.MO[self.orbital-1]['coeff'], self.MO[self.orbital-1].get('root_coeff', self.MO[self.orbital-1]['coeff']))
-    if ((self.rootButton.count() > 2) and (tp in ['1', '2', '3'])):
-      if (self.dens in ['State', 'Spin']):
+    try:
+      modified = not np.allclose(self.MO[self.orbital-1]['coeff'], self.MO[self.orbital-1].get('root_coeff', self.MO[self.orbital-1]['coeff']))
+    except KeyError:
+      modified = False
+    if ((not modified) and (self.orbital > 0)):
+      if (self.orbitals.wf == 'PT2'):
+        text = 'Reference\n'
+      else:
+        text = 'State average\n'
+    elif (self.dens in ['State', 'Spin']):
+      if (self.orbitals.wf == 'PT2'):
+        if (self.root == 0):
+          text = 'Reference\n'
+        else:
+          text = 'State {0}\n'.format(self.rootButton.currentText().split(':')[0])
+      else:
         if (self.root == 0):
           text = 'State average\n'
         else:
           text = 'Root {0}\n'.format(self.rootButton.currentText().split(':')[0])
-      elif (self.dens == 'Difference'):
-        text = 'Difference from root {0} to {1}\n'.format(*self.rootButton.currentText().split(u' → '))
-      elif (self.dens == 'Transition'):
-        text = 'Transition ({0}) from root {1} to {2}\n'.format(self.spin, *self.rootButton.currentText().split(u' → '))
+    elif (self.dens == 'Difference'):
+      text = 'Difference from root {0} to {1}\n'.format(*self.rootButton.currentText().split(u' → '))
+    elif (self.dens == 'Transition'):
+      text = 'Transition ({0}) from root {1} to {2}\n'.format(self.spin, *self.rootButton.currentText().split(u' → '))
     try:
       sd = ''
       if (self.dens == 'Spin'):
