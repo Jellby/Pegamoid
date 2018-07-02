@@ -261,27 +261,14 @@ class Orbitals(object):
       self.set_sph_c(maxl)
     # Reading the basis set invalidates the orbitals, if any
     self.MO = None
+    self.MO_a = None
     self.MO_b = None
 
   # Read molecular orbitals from an HDF5 file
   def read_h5_MO(self):
     with h5py.File(self.file, 'r') as f:
       # Read the orbital properties
-      if ('MO_BETA_ENERGIES' in f):
-        # If available alpha and beta orbitals are separated
-        mo_en = f['MO_ALPHA_ENERGIES'][:]
-        mo_oc = f['MO_ALPHA_OCCUPATIONS'][:]
-        mo_cf = f['MO_ALPHA_VECTORS'][:]
-        mo_en_b = f['MO_BETA_ENERGIES'][:]
-        mo_oc_b = f['MO_BETA_OCCUPATIONS'][:]
-        mo_cf_b = f['MO_BETA_VECTORS'][:]
-        if ('MO_ALPHA_TYPEINDICES' in f):
-          mo_ti = f['MO_ALPHA_TYPEINDICES'][:]
-          mo_ti_b = f['MO_BETA_TYPEINDICES'][:]
-        else:
-          mo_ti = [b'?' for i in mo_oc_b]
-          mo_ti_b = [b'?' for i in mo_oc_b]
-      else:
+      if ('MO_ENERGIES' in f):
         mo_en = f['MO_ENERGIES'][:]
         mo_oc = f['MO_OCCUPATIONS'][:]
         mo_cf = f['MO_VECTORS'][:]
@@ -289,22 +276,56 @@ class Orbitals(object):
           mo_ti = f['MO_TYPEINDICES'][:]
         else:
           mo_ti = [b'?' for i in mo_oc]
+      else:
+        mo_en = []
+        mo_oc = []
+        mo_cf = []
+        mo_ti = []
+      if ('MO_ALPHA_ENERGIES' in f):
+        mo_en_a = f['MO_ALPHA_ENERGIES'][:]
+        mo_oc_a = f['MO_ALPHA_OCCUPATIONS'][:]
+        mo_cf_a = f['MO_ALPHA_VECTORS'][:]
+        if ('MO_ALPHA_TYPEINDICES' in f):
+          mo_ti_a = f['MO_ALPHA_TYPEINDICES'][:]
+        else:
+          mo_ti_a = [b'?' for i in mo_oc_a]
+      else:
+        mo_en_a = []
+        mo_oc_a = []
+        mo_cf_a = []
+        mo_ti_a = []
+      if ('MO_BETA_ENERGIES' in f):
+        mo_en_b = f['MO_BETA_ENERGIES'][:]
+        mo_oc_b = f['MO_BETA_OCCUPATIONS'][:]
+        mo_cf_b = f['MO_BETA_VECTORS'][:]
+        if ('MO_BETA_TYPEINDICES' in f):
+          mo_ti_b = f['MO_BETA_TYPEINDICES'][:]
+        else:
+          mo_ti_b = [b'?' for i in mo_oc_b]
+      else:
         mo_en_b = []
         mo_oc_b = []
         mo_cf_b = []
         mo_ti_b = []
       mo_ti = [str(i.decode('ascii')) for i in mo_ti]
+      mo_ti_a = [str(i.decode('ascii')) for i in mo_ti_a]
       mo_ti_b = [str(i.decode('ascii')) for i in mo_ti_b]
       self.MO = [{'ene':e, 'occup':o, 'type':t} for e,o,t in zip(mo_en, mo_oc, mo_ti)]
+      self.MO_a = [{'ene':e, 'occup':o, 'type':t} for e,o,t in zip(mo_en_a, mo_oc_a, mo_ti_a)]
       self.MO_b = [{'ene':e, 'occup':o, 'type':t} for e,o,t in zip(mo_en_b, mo_oc_b, mo_ti_b)]
       # Read the coefficients
       ii = [sum(self.N_bas[:i]) for i in range(len(self.N_bas))]
       j = 0
       for i,b,s in zip(ii, self.N_bas, self.irrep):
-        for orb,orb_b in zip_longest(self.MO[i:i+b], self.MO_b[i:i+b]):
-          orb['sym'] = s
-          orb['coeff'] = np.zeros(sum(self.N_bas))
-          orb['coeff'][i:i+b] = mo_cf[j:j+b]
+        for orb,orb_a,orb_b in zip_longest(self.MO[i:i+b], self.MO_a[i:i+b], self.MO_b[i:i+b]):
+          if (orb):
+            orb['sym'] = s
+            orb['coeff'] = np.zeros(sum(self.N_bas))
+            orb['coeff'][i:i+b] = mo_cf[j:j+b]
+          if (orb_a):
+            orb_a['sym'] = s
+            orb_a['coeff'] = np.zeros(sum(self.N_bas))
+            orb_a['coeff'][i:i+b] = mo_cf_a[j:j+b]
           if (orb_b):
             orb_b['sym'] = s
             orb_b['coeff'] = np.zeros(sum(self.N_bas))
@@ -312,7 +333,7 @@ class Orbitals(object):
           j += b
       # Desymmetrize the MOs
       if (len(self.N_bas) > 1):
-        for orb in self.MO + self.MO_b:
+        for orb in self.MO + self.MO_a + self.MO_b:
           orb['coeff'] = np.dot(self.mat, orb['coeff'])
       self.roots = ['Average']
       self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
@@ -514,11 +535,13 @@ class Orbitals(object):
       self.set_sph_c(maxl)
     # Reading the basis set invalidates the orbitals, if any
     self.MO = None
+    self.MO_a = None
     self.MO_b = None
 
   # Read molecular orbitals from a Molden file
   def read_molden_MO(self):
     self.MO = []
+    self.MO_a = []
     self.MO_b = []
     # Each orbital is a header with properties and a list of coefficients
     with open(self.file, 'r') as f:
@@ -537,14 +560,17 @@ class Orbitals(object):
           if (spn == 'b'):
             self.MO_b.append({'ene':ene, 'occup':occ, 'sym':sym, 'type':'?', 'coeff':self.fact*cff})
           else:
-            self.MO.append({'ene':ene, 'occup':occ, 'sym':sym, 'type':'?', 'coeff':self.fact*cff})
+            self.MO_a.append({'ene':ene, 'occup':occ, 'sym':sym, 'type':'?', 'coeff':self.fact*cff})
         except:
           break
     # Build the list of irreps from the orbitals
     self.irrep = []
-    for o in self.MO + self.MO_b:
+    for o in self.MO_a + self.MO_b:
       if (o['sym'] not in self.irrep):
         self.irrep.append(o['sym'])
+    if (not self.MO_b):
+      self.MO = deepcopy(self.MO_a)
+      self.MO_a = []
 
   # Read molecular orbitals from an InpOrb file
   def read_inporb_MO(self, infile):
@@ -571,6 +597,7 @@ class Orbitals(object):
       if (uhf):
         self.MO_b = deepcopy(self.MO)
       else:
+        self.MO_a = []
         self.MO_b = []
       ii = [sum(self.N_bas[:i]) for i in range(len(self.N_bas))]
       # Read until EOF
@@ -723,6 +750,10 @@ class Orbitals(object):
       o.pop('root_occup', None)
       o.pop('root_type', None)
       o.pop('root_ene', None)
+    if (self.MO_b):
+      self.MO_a = deepcopy(self.MO)
+      self.MO = []
+      
     self.roots = ['InpOrb']
     self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
     self.sdm = None
@@ -796,13 +827,15 @@ class Orbitals(object):
   # at different centers. It can use a cache of atomic orbitals to avoid
   # recomputing them. "spin" specifies if the coefficients will be taken
   # from self.MO (alpha) or self.MO_b (beta)
-  def mo(self, n, x, y, z, spin='a', cache=None):
+  def mo(self, n, x, y, z, spin='n', cache=None):
     f = 0
     mo = np.zeros_like(x)
     # Reorder MO coefficients
     if (spin == 'b'):
       MO = self.MO_b[n]
     elif (spin == 'a'):
+      MO = self.MO_a[n]
+    else:
       MO = self.MO[n]
     if ('root_coeff' in MO):
       MO = MO['root_coeff'][self.bf_sort]
@@ -872,23 +905,32 @@ class Orbitals(object):
   # It can use a cache for MO evaluation and a mask to select only some orbitals.
   def dens(self, x, y, z, cache=None, mask=None, spin=False):
     dens = np.zeros_like(x)
-    # Add alternated alpha and beta orbitals
-    l = 0
-    for i,orb in enumerate([j for i in zip_longest(self.MO, self.MO_b) for j in i]):
-      if (orb is None):
-        continue
-      f = 1.0
-      if (i%2 == 0):
-        s = 'a'
-      else:
-        s = 'b'
-        if (spin):
-          f = -1.0
-      if ((mask is None) or mask[l]):
-        occup = orb.get('root_occup', orb['occup'])
-        if (abs(occup) > self.eps):
-          dens += f*occup*self.mo(i//2, x, y, z, s, cache)**2
-      l += 1
+    if (self.MO_b):
+      # Add alternated alpha and beta orbitals
+      l = 0
+      for i,orb in enumerate([j for i in zip_longest(self.MO_a, self.MO_b) for j in i]):
+        if (orb is None):
+          continue
+        f = 1.0
+        if (i%2 == 0):
+          s = 'a'
+        else:
+          s = 'b'
+          if (spin):
+            f = -1.0
+        if ((mask is None) or mask[l]):
+          occup = orb.get('root_occup', orb['occup'])
+          if (abs(occup) > self.eps):
+            dens += f*occup*self.mo(i//2, x, y, z, s, cache)**2
+        l += 1
+    else:
+      # Natural orbitals
+      s = 'n'
+      for i,orb in enumerate(self.MO):
+        if ((mask is None) or mask[i]):
+          occup = orb.get('root_occup', orb['occup'])
+          if (abs(occup) > self.eps):
+            dens += f*occup*self.mo(i//2, x, y, z, s, cache)**2
     return dens
 
   # Compute the Laplacian of a field by central finite differences
@@ -1012,19 +1054,19 @@ class Orbitals(object):
         cff = []
         for i,j in nMO:
           for k in range(i,j):
-            cff.extend(np.dot(sym, self.MO[k].get('root_coeff', self.MO[k]['coeff']))[i:j])
+            cff.extend(np.dot(sym, self.MO_a[k].get('root_coeff', self.MO_a[k]['coeff']))[i:j])
         fo.create_dataset('MO_ALPHA_VECTORS', data=cff)
         cff = []
         for i,j in nMO:
           for k in range(i,j):
             cff.extend(np.dot(sym, self.MO_b[k].get('root_coeff', self.MO_b[k]['coeff']))[i:j])
         fo.create_dataset('MO_BETA_VECTORS', data=cff)
-        fo.create_dataset('MO_ALPHA_OCCUPATIONS', data=[o['occup'] for o in self.MO])
+        fo.create_dataset('MO_ALPHA_OCCUPATIONS', data=[o['occup'] for o in self.MO_a])
         fo.create_dataset('MO_BETA_OCCUPATIONS', data=[o['occup'] for o in self.MO_b])
-        fo.create_dataset('MO_ALPHA_ENERGIES', data=[o['ene'] for o in self.MO])
+        fo.create_dataset('MO_ALPHA_ENERGIES', data=[o['ene'] for o in self.MO_a])
         fo.create_dataset('MO_BETA_ENERGIES', data=[o['ene'] for o in self.MO_b])
-        tp = [o.get('newtype', o['type']) for o in self.MO]
-        for i,o in enumerate(self.MO):
+        tp = [o.get('newtype', o['type']) for o in self.MO_a]
+        for i,o in enumerate(self.MO_a):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o['occup'] > 0.5) else 'S'
         fo.create_dataset('MO_ALPHA_TYPEINDICES', data=tp)
@@ -1050,11 +1092,17 @@ class Orbitals(object):
         fo.create_dataset('Pegamoid_notes', data=notes)
 
   # Creates an InpOrb file from scratch
-  def create_inporb(self, filename):
+  def create_inporb(self, filename, MO=None):
     nMO = OrderedDict()
     for i,n in zip(self.irrep, self.N_bas):
       nMO[i] = n
-    index, error = create_index(self.MO, self.MO_b, nMO)
+    uhf = (len(self.MO_b) > 0) and (MO is not self.MO)
+    if (uhf):
+      alphaMO = self.MO_a
+      index, error = create_index(alphaMO, self.MO_b, nMO)
+    else:
+      alphaMO = self.MO
+      index, error = create_index(alphaMO, [], nMO)
     if (index is None):
       if (error is not None):
         raise Exception(error)
@@ -1063,7 +1111,6 @@ class Orbitals(object):
       sym = np.linalg.inv(self.mat)
     else:
       sym = np.eye(sum(self.N_bas))
-    uhf = len(self.MO_b) > 0
     nMO = [(sum(self.N_bas[:i]), sum(self.N_bas[:i+1])) for i in range(len(self.N_bas))]
     with open(filename, 'w') as f:
       f.write('#INPORB 2.2\n')
@@ -1080,7 +1127,7 @@ class Orbitals(object):
       for s,(i,j) in enumerate(nMO):
         for k in range(i,j):
           f.write('* ORBITAL{0:5d}{1:5d}\n'.format(s+1, k-i+1))
-          cff = self.MO[k].get('root_coeff', self.MO[k]['coeff'])
+          cff = alphaMO[k].get('root_coeff', alphaMO[k]['coeff'])
           cff = np.dot(sym, cff)
           cff = wrap_list(cff[i:j], 5, '{:21.14E}', sep=' ')
           f.write(' ' + '\n '.join(cff) + '\n')
@@ -1096,7 +1143,7 @@ class Orbitals(object):
       f.write('#OCC\n')
       f.write('* OCCUPATION NUMBERS\n')
       for i,j in nMO:
-        occ = wrap_list([o.get('root_occup', o['occup']) for o in self.MO[i:j]], 5, '{:21.14E}', sep=' ')
+        occ = wrap_list([o.get('root_occup', o['occup']) for o in alphaMO[i:j]], 5, '{:21.14E}', sep=' ')
         f.write(' ' + '\n '.join(occ) + '\n')
       if (uhf):
         f.write('#UOCC\n')
@@ -1107,7 +1154,7 @@ class Orbitals(object):
       f.write('#ONE\n')
       f.write('* ONE ELECTRON ENERGIES\n')
       for i,j in nMO:
-        ene = wrap_list([o.get('root_ene', o['ene']) for o in self.MO[i:j]], 10, '{:11.4E}', sep=' ')
+        ene = wrap_list([o.get('root_ene', o['ene']) for o in alphaMO[i:j]], 10, '{:11.4E}', sep=' ')
         f.write(' ' + '\n '.join(ene) + '\n')
       if (uhf):
         f.write('#UONE\n')
@@ -1191,6 +1238,7 @@ class Grid(object):
       else:
         self.nMO = 1
         self.MO = [{'label':title, 'ene':0.0, 'occup':0.0, 'type':'?', 'sym':'z'}]
+      self.MO_a = []
       self.MO_b = []
       # Number of lines occupied by each "record" (ngridz * nMO)
       self.lrec = int(np.ceil(float(self.nMO)*self.ngrid[2]/6))
@@ -1241,6 +1289,7 @@ class Grid(object):
       self.end = np.array([1.0, 1.0, 1.0])
       # Read and parse orbital names
       self.MO = []
+      self.MO_a = []
       self.MO_b = []
       self.irrep = []
       for i in range(self.nMO):
@@ -1311,6 +1360,7 @@ class Grid(object):
       self.orboff = int(f.readline().split()[2])
       # Read and parse orbital names
       self.MO = []
+      self.MO_a = []
       self.MO_b = []
       self.irrep = []
       for i in range(self.nMO):
@@ -1675,12 +1725,18 @@ class ComputeVolume(Worker):
     x, y, z = numpy_support.vtk_to_numpy(self.parent().xyz.GetOutput().GetPoints().GetData()).T
     if (self.parent().MO is self.parent().orbitals.MO_b):
       spin = 'b'
-    else:
+    elif (self.parent().MO is self.parent().orbitals.MO_a):
       spin = 'a'
+    else:
+      spin = 'n'
     mask = [o['density'] for o in self.parent().notes]
     if ('a' in self.dens_type):
       l = 0
-      for o in [j for i in zip_longest(self.parent().orbitals.MO, self.parent().orbitals.MO_b) for j in i]:
+      if (self.parent().orbitals.MO_b):
+        alphaMO = self.parent().orbitals.MO_a
+      else:
+        alphaMO = self.parent().orbitals.MO
+      for o in [j for i in zip_longest(alphaMO, self.parent().orbitals.MO_b) for j in i]:
         if (o is None):
           continue
         try:
@@ -1691,7 +1747,11 @@ class ComputeVolume(Worker):
         l += 1
     if ('d' in self.dens_type):
       l = 0
-      for o in [j for i in zip_longest(self.parent().orbitals.MO, self.parent().orbitals.MO_b) for j in i]:
+      if (self.parent().orbitals.MO_b):
+        alphaMO = self.parent().orbitals.MO_a
+      else:
+        alphaMO = self.parent().orbitals.MO
+      for o in [j for i in zip_longest(alphaMO, self.parent().orbitals.MO_b) for j in i]:
         if (o is None):
           continue
         try:
@@ -2677,7 +2737,7 @@ class MainWindow(QMainWindow):
     self.initial_orbital()
     # Generate list of irreps
     irreplist = []
-    for o in new.MO + new.MO_b:
+    for o in new.MO + new.MO_a + new.MO_b:
       s = o['sym']
       if (s not in irreplist):
         irreplist.append(s)
@@ -2685,9 +2745,14 @@ class MainWindow(QMainWindow):
       irreplist.remove('z')
     self.irreplist = irreplist
     # Generate list of spins
+    spinlist = []
+    if (len(new.MO_a) > 0):
+      spinlist.append('alpha')
     if (len(new.MO_b) > 0):
-      spinlist = ['alpha', 'beta']
-    else:
+      spinlist.append('beta')
+    if ((len(new.MO) > 0) and spinlist):
+      spinlist.insert(0, u'—')
+    if (not spinlist):
       spinlist = ['']
     self.spinlist = spinlist
     # Create the list of orbitals for notes
@@ -3103,12 +3168,18 @@ class MainWindow(QMainWindow):
     if (self.dens == 'Transition'):
       spinlist = ['hole', 'particle']
     else:
-      spinlist = ['']
       try:
+        spinlist = []
+        if (len(new.MO_a) > 0):
+          spinlist.append('alpha')
         if (len(new.MO_b) > 0):
-          spinlist = ['alpha', 'beta']
+          spinlist.append('beta')
+        if ((len(new.MO) > 0) and spinlist):
+          spinlist.insert(0, '—')
+        if (not spinlist):
+          spinlist = ['']
       except:
-        pass
+        spinlist = ['']
     if (set(spinlist) != set(self.spinlist)):
       self.spinlist = spinlist
     if ((self.orbital <= 0) or (self.MO[self.orbital-1]['type'] in tp_act)):
@@ -3166,7 +3237,9 @@ class MainWindow(QMainWindow):
       for o in self.MO:
         if ('root_coeffr' in o):
           o['root_coeff'] = o['root_coeffr']
-    if (new == 'beta'):
+    if (new == 'alpha'):
+      self.MO = self.orbitals.MO_a
+    elif (new == 'beta'):
       self.MO = self.orbitals.MO_b
     else:
       self.MO = self.orbitals.MO
@@ -3497,7 +3570,11 @@ class MainWindow(QMainWindow):
 
   def build_notes(self):
     notes = []
-    for i,orb in enumerate([j for i in zip_longest(self.orbitals.MO, self.orbitals.MO_b) for j in i]):
+    if (self.orbitals.MO_b):
+      alphaMO = self.orbitals.MO_a
+    else:
+      alphaMO = self.orbitals.MO
+    for i,orb in enumerate([j for i in zip_longest(alphaMO, self.orbitals.MO_b) for j in i]):
       if (orb is None):
         continue
       note = {}
@@ -3533,7 +3610,7 @@ class MainWindow(QMainWindow):
     minene = -np.inf
     orb = -10
     if (self.MO is None):
-      MO = self.orbitals.MO
+      MO = self.orbitals.MO if (self.orbitals.MO) else self.orbitals.MO_a
     else:
       MO = self.MO
     for i,o in enumerate(MO):
@@ -4339,7 +4416,7 @@ class MainWindow(QMainWindow):
       filename = result
     try:
       if (self.orbitals.inporb == 'gen'):
-        self.orbitals.create_inporb(filename)
+        self.orbitals.create_inporb(filename, self.MO)
       else:
         self.patch_inporb(filename)
     except Exception as e:
@@ -4426,7 +4503,11 @@ class MainWindow(QMainWindow):
             for i,l in enumerate(index):
               nMO['{0}'.format(i+1)] = len(l)
             break
-        index, error = create_index(self.orbitals.MO, self.orbitals.MO_b, nMO, old=index)
+        if (self.orbitals.MO_b):
+          alphaMO = self.orbitals.MO_a
+        else:
+          alphaMO = self.orbitals.MO
+        index, error = create_index(alphaMO, self.orbitals.MO_b, nMO, old=index)
         if (index is None):
           if (error is not None):
             self.show_error(error)
@@ -4748,7 +4829,11 @@ class ListDock(QDockWidget):
   def select_active(self):
     self.modified = False
     self.ready = False
-    for i,o in zip(self.orbCheckBoxes, [j for i in zip_longest(self.parent().orbitals.MO, self.parent().orbitals.MO_b) for j in i if (j is not None)]):
+    if (self.parent().orbitals.MO_b):
+      alphaMO = self.parent().orbitals.MO_a
+    else:
+      alphaMO = self.parent().orbitals.MO
+    for i,o in zip(self.orbCheckBoxes, [j for i in zip_longest(alphaMO, self.parent().orbitals.MO_b) for j in i if (j is not None)]):
       if (i.isEnabled()):
         tp = o['type']
         if ('newtype' in o):
