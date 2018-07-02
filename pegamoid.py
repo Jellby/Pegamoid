@@ -319,7 +319,10 @@ class Orbitals(object):
       self.sdm = None
       self.tdm = None
       self.H_eff = None
-      if (f.attrs['MOLCAS_MODULE'] == 'CASPT2'):
+      mod = None
+      if ('MOLCAS_MODULE' in f.attrs):
+        mod = f.attrs['MOLCAS_MODULE']
+      if (mod == 'CASPT2'):
         self.wf = 'PT2'
         self.roots[0] = 'Reference'
         # For CASPT2 the density matrices are symmetry-blocked, and for all orbitals (not F or D),
@@ -364,6 +367,9 @@ class Orbitals(object):
           tdm = f['TRANSITION_DENSITY_MATRIX'][:]
           if (not np.allclose(tdm, np.zeros_like(tdm))):
             self.tdm = tdm
+      # Read the optional notes
+      if ('Pegamoid_notes' in f):
+        self.notes = f['Pegamoid_notes'][:]
 
   # Read basis set from a Molden file
   def read_molden_basis(self):
@@ -984,7 +990,7 @@ class Orbitals(object):
   # Writes a new HDF5 file
   def write_hdf5(self, filename):
     with h5py.File(self.h5file, 'r') as fi, h5py.File(filename, 'w') as fo:
-      fo.attrs['MOLCAS_VERSION'] = '{0} {1}'.format(__name__, __version__)
+      fo.attrs['Pegamoid_version'] = '{0} {1}'.format(__name__, __version__)
       # Copy some data from the original file
       for a in ['NSYM', 'NBAS', 'NPRIM', 'IRREP_LABELS', 'NATOMS_ALL', 'NATOMS_UNIQUE']:
         if (a in fi.attrs):
@@ -1040,6 +1046,8 @@ class Orbitals(object):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o.get('root_occup', o['occup']) > 1.0) else 'S'
         fo.create_dataset('MO_TYPEINDICES', data=tp)
+      if (self.notes is not None):
+        fo.create_dataset('Pegamoid_notes', data=notes)
 
   # Creates an InpOrb file from scratch
   def create_inporb(self, filename):
@@ -3510,6 +3518,11 @@ class MainWindow(QMainWindow):
       note['density'] = True
       note['note'] = ''
       notes.append(note)
+    for i,note in enumerate(notes):
+      try:
+        note['note'] = self.orbitals.notes[i]
+      except:
+        pass
     self.notes = notes
 
   def initial_orbital(self):
@@ -4134,26 +4147,27 @@ class MainWindow(QMainWindow):
       modified = not np.allclose(self.MO[self.orbital-1]['coeff'], self.MO[self.orbital-1].get('root_coeff', self.MO[self.orbital-1]['coeff']))
     except KeyError:
       modified = False
-    if ((not modified) and (self.orbital > 0)):
-      if (self.orbitals.wf == 'PT2'):
-        text = 'Reference\n'
-      else:
-        text = 'State average\n'
-    elif (self.dens in ['State', 'Spin']):
-      if (self.orbitals.wf == 'PT2'):
-        if (self.root == 0):
+    if (self.rootGroup.isEnabled()):
+      if ((not modified) and (self.orbital > 0)):
+        if (self.orbitals.wf == 'PT2'):
           text = 'Reference\n'
         else:
-          text = 'State {0}\n'.format(self.rootButton.currentText().split(':')[0])
-      else:
-        if (self.root == 0):
           text = 'State average\n'
+      elif (self.dens in ['State', 'Spin']):
+        if (self.orbitals.wf == 'PT2'):
+          if (self.root == 0):
+            text = 'Reference\n'
+          else:
+            text = 'State {0}\n'.format(self.rootButton.currentText().split(':')[0])
         else:
-          text = 'Root {0}\n'.format(self.rootButton.currentText().split(':')[0])
-    elif (self.dens == 'Difference'):
-      text = 'Difference from root {0} to {1}\n'.format(*self.rootButton.currentText().split(u' → '))
-    elif (self.dens == 'Transition'):
-      text = 'Transition ({0}) from root {1} to {2}\n'.format(self.spin, *self.rootButton.currentText().split(u' → '))
+          if (self.root == 0):
+            text = 'State average\n'
+          else:
+            text = 'Root {0}\n'.format(self.rootButton.currentText().split(':')[0])
+      elif (self.dens == 'Difference'):
+        text = 'Difference from root {0} to {1}\n'.format(*self.rootButton.currentText().split(u' → '))
+      elif (self.dens == 'Transition'):
+        text = 'Transition ({0}) from root {1} to {2}\n'.format(self.spin, *self.rootButton.currentText().split(u' → '))
     try:
       sd = ''
       if (self.dens == 'Spin'):
@@ -4302,6 +4316,11 @@ class MainWindow(QMainWindow):
       filename, _ = result
     except ValueError:
       filename = result
+    notes = [n['note'] for n in self.notes]
+    if (any(notes)):
+      self.orbitals.notes = notes
+    else:
+      self.orbitals.notes = None
     try:
       self.orbitals.write_hdf5(str(filename))
     except Exception as e:
