@@ -6,6 +6,15 @@ Pegamoid is an orbital viewer especially suited for use with
 orbitals and quickly select active spaces for use in CASSCF or RASSCF
 calculations.
 
+Screenshots
+-----------
+
+<img src="https://gitlab.com/Jellby/pegamoid/raw/master/screenshots/nonorthogonal.png" height=200 />
+<img src="https://gitlab.com/Jellby/pegamoid/raw/master/screenshots/difference.png" height=200 />
+<img src="https://gitlab.com/Jellby/pegamoid/raw/master/screenshots/gradient.png" height=200 />
+<img src="https://gitlab.com/Jellby/pegamoid/raw/master/screenshots/labels.png" height=200 />
+<img src="https://gitlab.com/Jellby/pegamoid/raw/master/screenshots/list.png" height=200 />
+
 Features
 --------
 

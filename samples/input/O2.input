@@ -1,0 +1,16 @@
+* OpenMolcas input for oxygen
+
+&GATEWAY
+  Coord = 2
+
+    O -0.604  0.000  0.000
+    O  0.604  0.000  0.000
+  Basis = ANO-RCC-VDZP
+  Group = NoSym
+  RICD
+
+&SEWARD
+
+&SCF
+  UHF
+  Spin = 3

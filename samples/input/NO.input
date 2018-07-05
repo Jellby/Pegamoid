@@ -1,0 +1,19 @@
+* OpenMolcas input for NO radical
+
+&GATEWAY
+  Coord = 2
+
+    N  -0.575  0.000  0.000
+    O   0.575  0.000  0.000
+  Basis = N.6-31G*, O.cc-pVDZ
+  RICD
+
+&SEWARD
+
+&RASSCF
+  NActElec = 11
+  Inactive = 2 0 0 0
+  RAS2     = 4 2 0 2
+  CIRoot   = 4 4 1
+  Spin     = 2
+  TDM

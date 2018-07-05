@@ -1,0 +1,40 @@
+* OpenMolcas input for ferrocene
+
+&GATEWAY
+  Symmetry = xz xyz
+  Basis = C.ANO-RCC-MB 
+    C1  0.99234  0.72098  1.73785 angstrom
+    C2 -0.37904 -1.16657  1.73785 angstrom
+    C3 -1.22660  0.00000  1.73785 angstrom
+  End of Basis
+  Basis = H.ANO-RCC-MB
+    H1  1.86677  1.35629  1.73016 angstrom
+    H2 -0.71304 -2.19452  1.73016 angstrom
+    H3 -2.30745  0.00000  1.73016 angstrom
+  End of Basis
+  Basis = Fe.ANO-RCC-MB
+    Fe  0.00000  0.00000  0.00000 angstrom
+  End of Basis
+  RICD
+
+&SEWARD
+
+&RASSCF
+  Alter = 6
+    1  13 16
+    1  12 15
+    1  11 13
+    2   5  7
+    2   6  8
+    4  12 14
+  NActElec = 18  2  0
+  Inactive = 12  6  8 13
+  RAS1     =  2  0  1  2
+  RAS2     =  4  4  1  1
+  CIRoot   =  2  2  1
+
+&CASPT2
+  File = $Project.rasscf.h5
+  Multistate = All
+  Density
+  Properties
