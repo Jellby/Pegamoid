@@ -110,19 +110,19 @@ work:
 
 * Python 2 or python 3 (at least versions 2.7 and 3.4 have been tested).
 
-* Python bindings for Qt. PyQt 4, PyQt 5 and Pyside have been tested. It is
+* Qt with python bindings. PyQt 4, PyQt 5 and Pyside have been tested. It is
   recommended to install the python module qtpy (needed for Pyside).
 
-* Python bindings for VTK. Version 8.1.0 has been tested, earlier versions will
-  most likely not work.
+* VTK with python bindings. Version 8.1.0 has been tested, earlier versions
+  will most likely not work.
 
 * The numpy and h5py python modules.
 
 * Other python modules that may not be installed by default, it should be clear
   which ones, if any, are needed when trying to run Pegamoid.
 
-Use with a remote connexion
----------------------------
+Use with a remote connection
+----------------------------
 
 Production calculations are usually not run on the local machine, but on some
 remote server like a supercomputer. To view/save/modify orbital files, it is
@@ -132,15 +132,15 @@ have the graphical interface display in the local machine. Unfortunately, there
 are some difficulties that make this nontrivial.
 
 First, the different requirements may not be installed in the remote system. A
-possible solution is installing them for the user account with e.g. ``pip
-install --user``. In this case it will probably be easier to install qtpy and
-Pyside instead of PyQt.
+possible solution is installing them for the user account with e.g.
+``pip install --user``. In this case it will probably be easier to install qtpy
+and Pyside instead of PyQt.
 
 Then, the VTK visualization uses some advanced OpenGL features that may not be
 available with all graphical drivers and it could be challenging to make it
-work through a remote connexion. We have had success running Pegamoid with
+work through a remote connection. We have had success running Pegamoid with
 ``vglrun`` inside a
 [ThinLinc](https://www.cendio.com/thinlinc/what-is-thinlinc) session, or a VNC
-session opened directly from an ssh connexion. The specific needs and working
+session opened directly from an ssh connection. The specific needs and working
 solution will probably depend on the hardware and software available in the
 remote computer.
