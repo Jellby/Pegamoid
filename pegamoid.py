@@ -43,6 +43,7 @@ import os.path
 import codecs
 import re
 import struct
+import traceback
 from copy import deepcopy
 from socket import gethostname
 from datetime import datetime
@@ -342,7 +343,7 @@ class Orbitals(object):
       self.H_eff = None
       mod = None
       if ('MOLCAS_MODULE' in f.attrs):
-        mod = f.attrs['MOLCAS_MODULE']
+        mod = f.attrs['MOLCAS_MODULE'].decode('ascii')
       if (mod == 'CASPT2'):
         self.wf = 'PT2'
         self.roots[0] = 'Reference'
@@ -930,7 +931,7 @@ class Orbitals(object):
         if ((mask is None) or mask[i]):
           occup = orb.get('root_occup', orb['occup'])
           if (abs(occup) > self.eps):
-            dens += f*occup*self.mo(i//2, x, y, z, s, cache)**2
+            dens += occup*self.mo(i//2, x, y, z, s, cache)**2
     return dens
 
   # Compute the Laplacian of a field by central finite differences
@@ -1701,6 +1702,7 @@ class FileRead(Worker):
         self.orbitals = Orbitals(self.filename, self.ftype)
       except Exception as e:
         self.error = 'Error processing {0} file {1}:\n{2}'.format(self.ftype, self.filename, e)
+        traceback.print_exc()
     elif (self.ftype in ['inporb']):
       self.error = self.parent().orbitals.read_inporb_MO(self.filename)
       if (self.error == True):
@@ -1711,6 +1713,7 @@ class FileRead(Worker):
         self.orbitals = Grid(self.filename, self.ftype)
       except Exception as e:
         self.error = 'Error processing {0} file {1}:\n{2}'.format(self.ftype, self.filename, e)
+        traceback.print_exc()
 
 class ComputeVolume(Worker):
   def __init__(self, *args, **kwargs):
@@ -4402,6 +4405,7 @@ class MainWindow(QMainWindow):
       self.orbitals.write_hdf5(str(filename))
     except Exception as e:
       error = 'Error writing hdf5 file {0}:\n{1}'.format(filename, e)
+      traceback.print_exc()
       self.show_error(error)
 
   def write_inporb(self, *args):
@@ -4421,6 +4425,7 @@ class MainWindow(QMainWindow):
         self.patch_inporb(filename)
     except Exception as e:
       error = 'Error writing inporb file {0}:\n{1}'.format(filename, e)
+      traceback.print_exc()
       self.show_error(error)
 
   def write_cube(self, *args):
@@ -4463,6 +4468,7 @@ class MainWindow(QMainWindow):
             f.write('\n')
     except Exception as e:
       error = 'Error writing cube file {0}:\n{1}'.format(filename, e)
+      traceback.print_exc()
       self.show_error(error)
 
   # Copy an InpOrb file, changing header and index section

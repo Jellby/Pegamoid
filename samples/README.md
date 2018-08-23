@@ -10,7 +10,7 @@ the features of Pegamoid, and not as a scientifically sound reference.
 Some of the features to pay attention to:
 
 * ``acrolein.guessorb.h5``:
-  Large basis set (828 functions), including h functions.
+  Large basis set (828 functions, 1284 primitives), including h functions.
 
 * ``acrolein.UhfOrb``:
   Alpha and beta orbitals.
