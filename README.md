@@ -96,8 +96,23 @@ or the current volumetric data or snapshot can be saved as:
 Installation
 ------------
 
-Pegamoid is contained in a single python script file, and it can be run
-directly or through a python interpreter, no installation is needed, i.e.
+The recommended way to install Pegamoid is by using the [`pip` package
+manager](https://packaging.python.org/tutorials/installing-packages/#use-pip-for-installing):
+
+    pip install Pegamoid
+
+(you may also want to add the flags `--upgrade` and/or `--user`).
+
+There are other ways to get Pegamoid. One is cloning the git repository, e.g.
+
+    git clone https://gitlab.com/Jellby/Pegamoid.git
+
+Another way, since Pegamoid is contained in a single python script, is
+downloading only the script file
+[pegamoid.py](https://gitlab.com/Jellby/Pegamoid/raw/master/pegamoid.py?inline=false).
+
+Once the program is fetched, it can be run directly or through a python
+interpreter, no installation is needed, i.e.
 
     ./pegamoid.py
 
@@ -105,8 +120,8 @@ or
 
     python pegamoid.py
 
-However, the script has some requirements that must be installed for it to
-work:
+However, the script has some requirements (this should be taken care of by
+`pip`, if you use it) that must be installed for it to work:
 
 * Python 2 or python 3 (at least versions 2.7 and 3.4 have been tested).
 
