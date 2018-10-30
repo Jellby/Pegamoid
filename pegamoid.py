@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018'
 __license__ = 'GPL v3.0'
-__version__ = '2.0'
+__version__ = '2.0.1'
 
 import sys
 try:
@@ -931,7 +931,7 @@ class Orbitals(object):
         if ((mask is None) or mask[i]):
           occup = orb.get('root_occup', orb['occup'])
           if (abs(occup) > self.eps):
-            dens += occup*self.mo(i//2, x, y, z, s, cache)**2
+            dens += occup*self.mo(i, x, y, z, s, cache)**2
     return dens
 
   # Compute the Laplacian of a field by central finite differences
