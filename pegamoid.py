@@ -6,9 +6,9 @@ from builtins import bytes, dict, int, range, super
 
 __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
-__copyright__ = u'Copyright © 2018'
+__copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.0.1'
+__version__ = '2.0.2'
 
 import sys
 try:
@@ -4166,17 +4166,19 @@ class MainWindow(QMainWindow):
     except AttributeError:
       tp = '?'
     tp = tp.replace('&', '')
-    self.ren.SetBackground(*background_color[tp])
-    self.vtk_update()
     if ((self.orbital is None) or (self.MO is None)):
       return
     if (self.orbital > 0):
       orb = self.MO[self.orbital-1]
       item = self.orbitalButton.findData(self.orbital)
       old = orb.get('root_type', orb['type'])
-      if (tp != old):
+      if (tp == old):
+        orb.pop('newtype', None)
+      else:
         orb['newtype'] = tp
       self.orbitalButton.setItemText(item, self.orb_to_list(self.orbital, orb))
+    self.ren.SetBackground(*background_color[tp])
+    self.vtk_update()
     self.set_panel()
 
   def set_typeButtonGroup(self):
