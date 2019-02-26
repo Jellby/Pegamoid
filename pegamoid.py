@@ -219,12 +219,50 @@ class Orbitals(object):
         basis_function_ids = 'DESYM_BASIS_FUNCTION_IDS'
       else:
         basis_function_ids = 'BASIS_FUNCTION_IDS'
-      bf_id = np.rec.fromrecords(f[basis_function_ids][:], names='c, s, l, m') # (center, shell, l, m)
+      bf_id = np.rec.fromrecords(np.insert(f[basis_function_ids][:], 4, -1, axis=1), names='c, s, l, m, tl') # (center, shell, l, m, true-l)
       bf_cart = set([(b['c'], b['l'], b['s']) for b in bf_id if (b['l'] < 0)])
+      # Add contaminants, which are found as lower l basis functions after higher l ones
+      # The "tl" field means the "l" from which exponents and coefficients are to be taken, or "true l"
+      ii = [sum(self.N_bas[:i]) for i in range(len(self.N_bas))]
+      if (sym > 1):
+        sbf_id = np.rec.fromrecords(np.insert(f['BASIS_FUNCTION_IDS'][:], 4, -1, axis=1), names='c, s, l, m, tl')
+      else:
+        sbf_id = bf_id
+      for i,nb in zip(ii, self.N_bas):
+        prev = {'c': -1, 'l': -1, 's': -1, 'tl': 0, 'm': None}
+        for b in sbf_id[i:i+nb]:
+          if (b['c']==prev['c'] and abs(b['l']) < abs(prev['tl'])):
+            b['tl'] = prev['tl']
+          else:
+            b['tl'] = b['l']
+          prev = {n: b[n] for n in b.dtype.names}
+      if (sym > 1):
+        for i,b in enumerate(self.mat.T):
+          bb = sbf_id[i]
+          nz = np.nonzero(b)[0]
+          assert (np.all(bf_id[nz][['l', 's', 'm']] == bb[['l', 's', 'm']]))
+          for j in nz:
+            bf_id[j]['tl'] = bb['tl']
+      # Workaround for bug in HDF5 files where p-type contaminants did all have m=0
+      p_shells, p0_counts = np.unique([b[['c','s','tl']] for b in bf_id if ((b['l']==1) and (b['m']==0))], return_counts=True)
+      if (np.any(p0_counts > 1)):
+        if (sym > 1):
+          # can't fix it with symmetry
+          error = 'Bad m for p contaminants. The file could have been created by a buggy or unsupported OpenMolcas version'
+          raise Exception(error)
+        else:
+          m = -1
+          for i in np.where(bf_id['l']==1)[0]:
+            bi = list(p_shells).index(bf_id[i][['c','s','tl']])
+            if (p0_counts[bi] > 1):
+              bf_id[i]['m'] = m
+              m += 1
+              if (m > 1):
+                m = -1
       # Count the number of m per basis to make sure it matches with the expected type
       counts = {}
       for b in bf_id:
-        key = (b['c'], b['l'], b['s'])
+        key = (b['c'], b['l'], b['s'], b['tl'])
         counts[key] = counts.get(key, 0)+1
       for f,n in counts.items():
         l = f[1]
@@ -242,22 +280,37 @@ class Orbitals(object):
           maxshell = max([0] + [p[2] for p in prids if ((p[0] == i+1) and (p[1] == l))])
           for s in range(maxshell):
             # find out if this is a Cartesian shell (if the l is negative)
+            # note that Cartesian shells never have (nor are) contaminants,
+            # and since contaminants come after regular shells,
+            # it should be safe to save just l and s
             if ((i+1, -l, s+1) in bf_cart):
               c['cart'][(l, s)] = True
             # get exponents and coefficients
-            ll.append([pp.tolist() for p,pp in zip(prids, prims) if ((p[0] == i+1) and (p[1] == l) and (p[2] == s+1))])
+            ll.append([0, [pp.tolist() for p,pp in zip(prids, prims) if ((p[0] == i+1) and (p[1] == l) and (p[2] == s+1))]])
           c['basis'].append(ll)
+        # Add contaminant shells, that is, additional shells for lower l, with exponents and coefficients
+        # from a higher l, and with some power of r**2
+        for l in range(maxl-1):
+          # find basis functions for this center and l, where l != tl
+          cont = [(b['l'],b['tl'],b['s']) for b in bf_id[np.logical_and(bf_id['c']==i+1, bf_id['l']==l)] if (b['l'] != b['tl'])]
+          # get a sorted unique set
+          cont = sorted(set(cont))
+          # copy the exponents and coefficients from the higher l and set the power of r**2
+          for j in cont:
+            new = deepcopy(c['basis'][j[1]][j[2]-1])
+            new[0] = (j[1]-j[0])//2
+            c['basis'][l].append(new)
       # At this point each center[i]['basis'] is a list of maxl items, one for each value of l,
       # each item is a list of shells,
-      # each item is a list of primitives,
-      # each item is a list of [exponent, coefficient]
+      # each item is [power of r**2, primitives],
+      # each "primitives" is a list of [exponent, coefficient]
       # Now get the indices for sorting all the basis functions (2l+1 or (l+1)(l+2)/2 for each shell)
-      # by center, l, m, shell
+      # by center, l, m, "true l", shell
       # To get the correct sorting for Cartesian shells, invert l
       for b in bf_id:
         if (b['l'] < 0):
           b['l'] *= -1
-      self.bf_sort = np.argsort(bf_id, order=('c', 'l', 'm', 's'))
+      self.bf_sort = np.argsort(bf_id, order=('c', 'l', 'm', 'tl', 's'))
       # And sph_c can be computed
       self.set_sph_c(maxl)
     # Reading the basis set invalidates the orbitals, if any
@@ -466,14 +519,14 @@ class Orbitals(object):
                 if (l.lower() == 'sp'):
                   if (0 not in basis):
                     basis[0] = []
-                  basis[0].append([])
+                  basis[0].append([0, []])
                   if (1 not in basis):
                     basis[1] = []
-                  basis[1].append([])
+                  basis[1].append([0, []])
                   for i in range(nprim):
                     e, c1, c2 = (float(i) for i in f.readline().split())
-                    basis[0][-1].append([e, c1])
-                    basis[1][-1].append([e, c2])
+                    basis[0][-1][1].append([e, c1])
+                    basis[1][-1][1].append([e, c2])
                   bf_id.append([n, len(basis[0]), 0, 0])
                   if (cart[0]):
                     self.centers[n-1]['cart'].append((0, len(basis[0])-1))
@@ -485,11 +538,11 @@ class Orbitals(object):
                   l = ang_labels.index(l.lower())
                   if (l not in basis):
                     basis[l] = []
-                  basis[l].append([])
+                  basis[l].append([0, []])
                   # Read exponents and coefficients
                   for i in range(nprim):
                     e, c = (float(i) for i in f.readline().split())
-                    basis[l][-1].append([e, c])
+                    basis[l][-1][1].append([e, c])
                   # Set up the basis_id
                   if (cart[l]):
                     self.centers[n-1]['cart'].append((l, len(basis[l])-1))
@@ -509,8 +562,8 @@ class Orbitals(object):
               self.centers[n-1]['basis'][i] = basis[i][:]
           # At this point each center[i]['basis'] is a list of maxl items, one for each value of l,
           # each item is a list of shells,
-          # each item is a list of primitives,
-          # each item is a list of [exponent, coefficient]
+          # each item is [power of r**2, primitives],
+          # each "primitives" is a list of [exponent, coefficient]
         elif re.search(r'\[MO\]', line, re.IGNORECASE):
           done = True
       # Now get the normalization factors and invert l for Cartesian shells
@@ -808,20 +861,34 @@ class Orbitals(object):
 
   # Compute the radial component, with quantum number l, given the values of r**2 (as r2),
   # for a list of primitive Gaussians (exponents and coefficients, as ec)
-  def rad(self, r2, l, ec):
+  # and an optional power of r**2 (for contaminants)
+  def rad(self, r2, l, ec, p=0):
     rad = 0
+    # For contaminants, the radial part is multiplied by r**(2*p)
+    # and the normalization must be corrected, noting that the
+    # angular part already includes a factor r**l
+    if (p > 0):
+      m = Fraction(2*l+1, 2*l+4*p+1)
+      for i in range(2*l+1, 2*l+4*p, 2):
+        m /= i
+      m = np.sqrt(float(m))
+      prad = np.power(r2, p)
     for e,c in ec:
       if (c != 0.0):
         # Combine total normalization factor and coefficient
         N = np.power((2*e)**(3+2*l)/np.pi**3, 0.25) * c
-        rad += N * np.exp(-e*r2)
+        if (p > 0):
+          N *= m*np.power(4*e, p)
+          rad += N * np.exp(-e*r2)*prad
+        else:
+          rad += N * np.exp(-e*r2)
     return rad
 
   # Compute an atomic orbital as product of angular and radial components
-  def ao(self, x, y, z, ec, l, m):
+  def ao(self, x, y, z, ec, l, m, p=0):
     ang = self.ang(x, y, z, l, m)
     r2 = x**2+y**2+z**2
-    rad = self.rad(r2, l, ec)
+    rad = self.rad(r2, l, ec, p)
     return ang*rad
 
   # Compute a molecular orbital, as linear combination of atomic orbitals
@@ -860,7 +927,7 @@ class Orbitals(object):
           ao_ang = None
           cart = None
           # Now each shell is an atomic orbital (basis function)
-          for s,i in enumerate(ll):
+          for s,p in enumerate(ll):
             # Skip when out of range for spherical shells
             # Also invalidate the angular part if for some reason
             # there is a mixture of types among shells
@@ -888,7 +955,7 @@ class Orbitals(object):
                   ao_ang = self.ang(x0, y0, z0, l, m, cart=cart)
                 # Compute radial part if not done yet
                 if (s not in rad_l):
-                  rad_l[s] = self.rad(r2, l, i)
+                  rad_l[s] = self.rad(r2, l, p[1], p[0])
                 cch = ao_ang*rad_l[s]
                 # Save in the cache if enabled
                 if (cache is not None):
@@ -982,13 +1049,13 @@ class Orbitals(object):
     return binom
 
   # Computes the coefficient for x^lx * y^ly * z^lz in the expansion of
-  # the real spherical harmonic Y(l,m)
+  # the real solid harmonic S(l,±m) = C * r^l*(Y(l,m)±Y(l,-m))
   # Since the coefficients are square roots of rational numbers, this
   # returns the square of the coefficient as a fraction, with its sign
   #
   # See:
   # Transformation between Cartesian and pure spherical harmonic Gaussians
-  # 10.1002/qua.560540202
+  # doi: 10.1002/qua.560540202
   # (note that there appears to be a error in v(4,0), the coefficient 1/4
   #  should probably be 3/4*sqrt(3/35) )
   def _c_sph(self, l, m, lx, ly, lz):
