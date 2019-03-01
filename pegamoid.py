@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.0.2'
+__version__ = '2.1'
 
 import sys
 try:
@@ -168,6 +168,8 @@ surface_color = {
    0: (172/255, 189/255, 208/255),
    1: (204/255, 222/255,  61/255)
 }
+
+angstrom = 0.52917721067
 
 #===============================================================================
 # Class for orbitals defined in term of basis functions, which can be computed
@@ -1391,7 +1393,6 @@ class Grid(object):
     self.irrep = ['z']
     with open(self.file, 'rb') as f:
       # Read the geometry
-      angstrom = 0.52917721067
       num = int(f.readline())
       f.readline()
       atom = []
@@ -1582,126 +1583,6 @@ def name_to_Z(name):
 
 #===============================================================================
 
-# from http://jmol.sourceforge.net/jscolors/
-def cpk(Z):
-  cpklist = [[255,  0,  0,255], #X
-             [255,255,255,255], #H
-             [217,255,255,255], #He
-             [204,128,255,255], #Li
-             [194,255,  0,255], #Be
-             [255,181,181,255], #B
-             [144,144,144,255], #C
-             [ 48, 80,248,255], #N
-             [255, 13, 13,255], #O
-             [144,224, 80,255], #F
-             [179,227,245,255], #Ne
-             [171, 92,242,255], #Na
-             [138,255,  0,255], #Mg
-             [191,166,166,255], #Al
-             [240,200,160,255], #Si
-             [255,128,  0,255], #P
-             [255,255, 48,255], #S
-             [ 31,240, 31,255], #Cl
-             [128,209,227,255], #Ar
-             [143, 64,212,255], #K
-             [ 61,255,  0,255], #Ca
-             [230,230,230,255], #Sc
-             [191,194,199,255], #Ti
-             [166,166,171,255], #V
-             [138,153,199,255], #Cr
-             [156,122,199,255], #Mn
-             [224,102, 51,255], #Fe
-             [240,144,160,255], #Co
-             [ 80,208, 80,255], #Ni
-             [200,128, 51,255], #Cu
-             [125,128,176,255], #Zn
-             [194,143,143,255], #Ga
-             [102,143,143,255], #Ge
-             [189,128,227,255], #As
-             [255,161,  0,255], #Se
-             [166, 41, 41,255], #Br
-             [ 92,184,209,255], #Kr
-             [112, 46,176,255], #Rb
-             [  0,255,  0,255], #Sr
-             [148,255,255,255], #Y
-             [148,224,224,255], #Zr
-             [115,194,201,255], #Nb
-             [ 84,181,181,255], #Mo
-             [ 59,158,158,255], #Tc
-             [ 36,143,143,255], #Ru
-             [ 10,125,140,255], #Rh
-             [  0,105,133,255], #Pd
-             [192,192,192,255], #Ag
-             [255,217,143,255], #Cd
-             [166,117,115,255], #In
-             [102,128,128,255], #Sn
-             [158, 99,181,255], #Sb
-             [212,122,  0,255], #Te
-             [148,  0,148,255], #I
-             [ 66,158,176,255], #Xe
-             [ 87, 23,143,255], #Cs
-             [  0,201,  0,255], #Ba
-             [112,212,255,255], #La
-             [255,255,199,255], #Ce
-             [217,255,199,255], #Pr
-             [199,255,199,255], #Nd
-             [163,255,199,255], #Pm
-             [143,255,199,255], #Sm
-             [ 97,255,199,255], #Eu
-             [ 69,255,199,255], #Gd
-             [ 48,255,199,255], #Tb
-             [ 31,255,199,255], #Dy
-             [  0,255,156,255], #Ho
-             [  0,230,117,255], #Er
-             [  0,212, 82,255], #Tm
-             [  0,191, 56,255], #Yb
-             [  0,171, 36,255], #Lu
-             [ 77,194,255,255], #Hf
-             [ 77,166,255,255], #Ta
-             [ 33,148,214,255], #W
-             [ 38,125,171,255], #Re
-             [ 38,102,150,255], #Os
-             [ 23, 84,135,255], #Ir
-             [208,208,224,255], #Pt
-             [255,209, 35,255], #Au
-             [184,184,208,255], #Hg
-             [166, 84, 77,255], #Tl
-             [ 87, 89, 97,255], #Pb
-             [158, 79,181,255], #Bi
-             [171, 92,  0,255], #Po
-             [117, 79, 69,255], #At
-             [ 66,130,150,255], #Rn
-             [ 66,  0,102,255], #Fr
-             [  0,125,  0,255], #Ra
-             [112,171,250,255], #Ac
-             [  0,186,255,255], #Th
-             [  0,161,255,255], #Pa
-             [  0,143,255,255], #U
-             [  0,128,255,255], #Np
-             [  0,107,255,255], #Pu
-             [ 84, 92,242,255], #Am
-             [120, 92,227,255], #Cm
-             [138, 79,227,255], #Bk
-             [161, 54,212,255], #Cf
-             [179, 31,212,255], #Es
-             [179, 31,186,255], #Fm
-             [179, 13,166,255], #Md
-             [189, 13,135,255], #No
-             [199,  0,102,255], #Lr
-             [204,  0, 89,255], #Rf
-             [209,  0, 79,255], #Db
-             [217,  0, 69,255], #Sg
-             [224,  0, 56,255], #Bh
-             [230,  0, 46,255], #Hs
-             [235,  0, 38,255]] #Mt
-  try:
-    cpk = cpklist[Z]
-  except:
-    cpk = [255, 255, 255, 128]
-  return cpk
-
-#===============================================================================
-
 # Return a list, each element containing at most n items each with format f
 def wrap_list(data, n, f, sep=''):
   text = []
@@ -1732,7 +1613,6 @@ def get_input_type(mapper, algtype):
 
 class Initializer(QThread):
   def run(self):
-    self.msleep(300)
     self.parent().vtkWidget.Initialize()
 
 class Worker(QThread):
@@ -1901,7 +1781,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>Ctrl+S</b>: Toggle isosurface display</p>
                    <p><b>Ctrl+Shift+PgUp</b>/<b>Ctrl+Shift+PgDown</b>: Cycle through the different sign displays</p>
                    <p><b>Ctrl+N</b>: Toggle nodal surface display</p>
-                   <p><b>Ctrl+A</b>: Toggle nuclei display</p>
+                   <p><b>Ctrl+A</b>: Cycle through molecule representations</p>
                    <p><b>Ctrl+M</b>: Toggle name labels display</p>
                    <p><b>Ctrl+B</b>: Toggle grid box display</p>
                    <p><b>Alt+B</b>: Set focus to box size</p>
@@ -2158,7 +2038,6 @@ class MainWindow(QMainWindow):
     self.surfaceBox.setEnabled(False)
     self.nodesBox.setChecked(False)
     self.nodesBox.setEnabled(False)
-    self.nucleiBox.setChecked(True)
     self.namesBox.setChecked(False)
     self.boxBox.setChecked(False)
     self.bothButton.setChecked(True)
@@ -2229,7 +2108,8 @@ class MainWindow(QMainWindow):
     self.surfaceBox = QCheckBox('Surface:')
     self.signButton = QComboBox()
     self.nodesBox = QCheckBox('Nodes:')
-    self.nucleiBox = QCheckBox('Nuclei:')
+    self.moleculeLabel = QLabel('Molecule:')
+    self.moleculeButton = QComboBox()
     self.namesBox = QCheckBox('Names:')
     self.boxBox = QCheckBox('Box:')
     self.boxSizeLabel = QLabel('&Box size:')
@@ -2286,7 +2166,8 @@ class MainWindow(QMainWindow):
     self.signButton.addItem(u'+ & −', [True, True])
     self.signButton.setCurrentIndex(2)
     self.nodesBox.setLayoutDirection(Qt.RightToLeft)
-    self.nucleiBox.setLayoutDirection(Qt.RightToLeft)
+    self.moleculeButton.addItems([u'Balls&Sticks', u'Nuclei', u'None'])
+    self.moleculeButton.setCurrentIndex(0)
     self.namesBox.setLayoutDirection(Qt.RightToLeft)
     self.boxBox.setLayoutDirection(Qt.RightToLeft)
     self.boxSizeBox.setFixedWidth(120)
@@ -2348,8 +2229,8 @@ class MainWindow(QMainWindow):
     self.signButton.setWhatsThis('Controls whether the positive, negative or both parts of the isosurface are displayed.<br>Key: <b>Ctrl+Shift+PgUp</b>, <b>Ctrl+Shift+PgDown</b></b>')
     self.nodesBox.setToolTip('Show/hide the nodal surfaces')
     self.nodesBox.setWhatsThis('If checked, the nodal surfaces (value=0) of the current orbital or density are displayed.<br>Key: <b>Ctrl+N</b>')
-    self.nucleiBox.setToolTip('Show/hide the nuclei')
-    self.nucleiBox.setWhatsThis('If checked, the nuclei or centers are displayed as balls.<br>Key: <b>Ctrl+A</b>')
+    self.moleculeButton.setToolTip('Set molecule representation')
+    self.moleculeButton.setWhatsThis('Select the type of representation used for the molecule: balls and sticks, smaller nuclei, or none.<br>Key: <b>Ctrl+A</b>')
     self.namesBox.setToolTip('Show/hide the atom names')
     self.namesBox.setWhatsThis('If checked, text labels with the available names are shown at the nucleus or center positions.<br>Key: <b>Ctrl+M</b>')
     self.boxBox.setToolTip('Show/hide the grid box')
@@ -2424,6 +2305,9 @@ class MainWindow(QMainWindow):
     hbox4.addSpacing(10)
     hbox4.addWidget(self.resetButton)
     hbox4.addStretch(1)
+    self.moleculeGroup = group_widgets(self.moleculeLabel, self.moleculeButton)
+    hbox4.addWidget(self.moleculeGroup)
+    hbox4.addWidget(self.namesBox)
 
     hbox5 = QHBoxLayout()
     hbox5.setSpacing(10)
@@ -2437,8 +2321,6 @@ class MainWindow(QMainWindow):
     hbox6.addWidget(self.surfaceBox)
     hbox6.addWidget(self.signButton)
     hbox6.addWidget(self.nodesBox)
-    hbox6.addWidget(self.nucleiBox)
-    hbox6.addWidget(self.namesBox)
     hbox6.addWidget(self.boxBox)
     self.boxSizeGroup = group_widgets(self.boxSizeLabel, self.boxSizeBox)
     hbox6.addWidget(self.boxSizeGroup)
@@ -2523,6 +2405,8 @@ class MainWindow(QMainWindow):
     self.prevRootShortcut.activated.connect(self.prev_root)
     self.nextRootShortcut = QShortcut(QKeySequence('Shift+PgDown'), self)
     self.nextRootShortcut.activated.connect(self.next_root)
+    self.nextMoleculeShortcut = QShortcut(QKeySequence('Ctrl+A'), self)
+    self.nextMoleculeShortcut.activated.connect(self.next_molecule)
     self.prevIrrepShortcut = QShortcut(QKeySequence('Ctrl+PgUp'), self)
     self.prevIrrepShortcut.activated.connect(self.prev_irrep)
     self.nextIrrepShortcut = QShortcut(QKeySequence('Ctrl+PgDown'), self)
@@ -2565,7 +2449,6 @@ class MainWindow(QMainWindow):
     self.nextSignShortcut = QShortcut(QKeySequence('Ctrl+Shift+PgDown'), self)
     self.nextSignShortcut.activated.connect(self.next_sign)
     self.nodesBox.setShortcut('Ctrl+N')
-    self.nucleiBox.setShortcut('Ctrl+A')
     self.namesBox.setShortcut('Ctrl+M')
     self.boxBox.setShortcut('Ctrl+B')
     self.transformButton.setShortcut('Ctrl+T')
@@ -2603,7 +2486,7 @@ class MainWindow(QMainWindow):
     self.surfaceBox.stateChanged.connect(self.toggle_surface)
     self.signButton.currentIndexChanged.connect(self.sign_changed)
     self.nodesBox.stateChanged.connect(self.toggle_nodes)
-    self.nucleiBox.stateChanged.connect(self.toggle_nuclei)
+    self.moleculeButton.currentIndexChanged.connect(self.molecule_changed)
     self.namesBox.stateChanged.connect(self.toggle_names)
     self.boxBox.stateChanged.connect(self.toggle_box)
     self.boxSizeBox.editingFinished.connect(self.boxSizeBox_changed)
@@ -2635,7 +2518,7 @@ class MainWindow(QMainWindow):
     self.iren.SetInteractorStyle(vtk.vtkInteractorStyleTrackballCamera())
     #self.iren.Initialize()
     t = Initializer(self)
-    t.start()
+    t.wait()
 
     self.lut = vtk.vtkLookupTable()
     self.lut.SetNumberOfTableValues(3)
@@ -2835,7 +2718,6 @@ class MainWindow(QMainWindow):
     self.nodes = None
     self.gradient = None
     self.new_box()
-    self.toggle_nuclei()
     self.toggle_names()
     if (self.box is not None):
       v = self.box.GetVisibility()
@@ -2953,7 +2835,7 @@ class MainWindow(QMainWindow):
 
   def _mol_changed(self, new):
     enabled = new is not None
-    self.nucleiBox.setEnabled(enabled)
+    self.moleculeGroup.setEnabled(enabled)
 
   @property
   def names(self):
@@ -3692,18 +3574,16 @@ class MainWindow(QMainWindow):
     self.orbital = orb
 
   def new_mol(self):
-    Z = np.array([c['Z'] for c in self.orbitals.centers])
-    # Assign radii
+    # Assign nuclear radii
+    r = np.array([c['Z'] for c in self.orbitals.centers])
     try:
-      r = np.cbrt(Z)
+      r = np.cbrt(r)
     except AttributeError:
-      r = np.power(Z, 1.0/3)
+      r = np.power(r, 1.0/3)
     r[r<0.5] = 0.5
-
     # Create VTK objects
-    vtks = numpy_support.numpy_to_vtk(np.arange(len(Z)), 1, vtk.VTK_INT)
-    vtks.SetName('index')
-    vtkr = numpy_support.numpy_to_vtk(np.ascontiguousarray(np.vstack((r, np.zeros((2, r.shape[0])))).T), 1, vtk.VTK_DOUBLE)
+    pt = vtk.vtkPeriodicTable()
+    vtkr = numpy_support.numpy_to_vtk(0.1*r, 1, vtk.VTK_DOUBLE)
     vtkr.SetName('radii')
     vtkl = vtk.vtkStringArray()
     for c in self.orbitals.centers:
@@ -3714,35 +3594,43 @@ class MainWindow(QMainWindow):
       pts.InsertNextPoint(*c['xyz'])
     pd = vtk.vtkPolyData()
     pd.SetPoints(pts)
-    pd.GetPointData().SetVectors(vtkr)
-    pd.GetPointData().SetScalars(vtks)
     pd.GetPointData().AddArray(vtkl)
-    lut = vtk.vtkLookupTable()
-    lut.SetNumberOfTableValues(len(Z))
-    for i,c in enumerate(Z):
-      lut.SetTableValue(i, *[x/255 for x in cpk(c)])
-    lut.SetTableRange(0, len(Z)-1)
-    ss = vtk.vtkSphereSource()
-    ss.SetThetaResolution(20)
-    ss.SetPhiResolution(20)
-    g3 = vtk.vtkGlyph3D()
-    g3.SetColorModeToColorByScalar()
-    g3.SetSourceConnection(ss.GetOutputPort())
-    try:
-      g3.SetInputData(pd)
-    except AttributeError:
-      g3.SetInput(pd)
-    g3.SetScaleModeToScaleByVector()
-    g3.ScalingOn()
-    g3.ClampingOff()
-    g3.SetScaleFactor(0.2)
-    m = vtk.vtkPolyDataMapper()
-    m.SetInputConnection(g3.GetOutputPort())
-    m.SetLookupTable(lut)
-    m.UseLookupTableScalarRangeOn()
-    # Add actor for nuclei
+    # Add actor for molecule
+    mol = vtk.vtkMolecule()
+    # Change coordinates in angstrom for setting bonds
+    for i,c in enumerate(self.orbitals.centers):
+      xyz = c['xyz']*angstrom
+      mol.AppendAtom(c['Z'], *xyz)
+    bp = vtk.vtkSimpleBondPerceiver()
+    bp.SetInputData(mol)
+    bp.Update()
+    molb = vtk.vtkMolecule()
+    molb.DeepCopy(bp.GetOutput())
+    # Change coordinates back to bohr
+    for i in range(molb.GetNumberOfAtoms()):
+      xyz = np.array(molb.GetAtomPosition(i))/angstrom
+      molb.SetAtomPosition(i, *xyz)
+    # Remove (hide) bonds with ghost atoms
+    for i in range(molb.GetNumberOfBonds()):
+      Z1 = molb.GetBond(i).GetBeginAtom().GetAtomicNumber()
+      Z2 = molb.GetBond(i).GetEndAtom().GetAtomicNumber()
+      if ((Z1 < 1) or (Z2 < 1)):
+        molb.SetBondOrder(i, 0)
+    molb.GetVertexData().AddArray(vtkr)
+    mm = vtk.vtkMoleculeMapper()
+    mm.SetInputData(molb)
+    mm.SetRenderAtoms(True)
+    mm.SetAtomicRadiusScaleFactor(0.3)
+    mm.SetBondRadius(0.075)
+    if (True):
+      mm.SetAtomicRadiusTypeToVDWRadius()
+      mm.SetRenderBonds(True)
+    else:
+      mm.SetAtomicRadiusTypeToCustomArrayRadius()
+      mm.SetRenderBonds(False)
     self.mol = vtk.vtkActor()
-    self.mol.SetMapper(m)
+    self.mol.SetMapper(mm)
+    self.set_representation(self.moleculeButton.currentIndex())
     # Add actor for names
     l = vtk.vtkLabeledDataMapper()
     try:
@@ -4177,14 +4065,24 @@ class MainWindow(QMainWindow):
       self.nodes.VisibilityOff()
     self.vtk_update()
 
-  def toggle_nuclei(self):
+  def molecule_changed(self, new):
     if (self.mol is None):
       return
-    if (self.nucleiBox.isChecked()):
-      self.mol.VisibilityOn()
-    else:
-      self.mol.VisibilityOff()
+    self.set_representation(new)
     self.vtk_update()
+
+  def set_representation(self, rep):
+    if (rep == 2):
+      self.mol.VisibilityOff()
+    else:
+      self.mol.VisibilityOn()
+      mm = self.mol.GetMapper()
+      if (rep == 0):
+        mm.SetAtomicRadiusTypeToVDWRadius()
+        mm.SetRenderBonds(True)
+      elif (rep == 1):
+        mm.SetAtomicRadiusTypeToCustomArrayRadius()
+        mm.SetRenderBonds(False)
 
   def toggle_names(self):
     if (self.names is None):
@@ -4725,15 +4623,29 @@ class MainWindow(QMainWindow):
     if (not self.signButton.isEnabled()):
       return
     index = self.signButton.currentIndex()
-    index = (index+1) % self.signButton.count()
+    index = (index-1) % self.signButton.count()
     self.signButton.setCurrentIndex(index)
 
   def next_sign(self):
     if (not self.signButton.isEnabled()):
       return
     index = self.signButton.currentIndex()
-    index = (index-1) % self.signButton.count()
+    index = (index+1) % self.signButton.count()
     self.signButton.setCurrentIndex(index)
+
+  def prev_molecule(self):
+    if (not self.moleculeButton.isEnabled()):
+      return
+    index = self.moleculeButton.currentIndex()
+    index = (index-1) % self.moleculeButton.count()
+    self.moleculeButton.setCurrentIndex(index)
+
+  def next_molecule(self):
+    if (not self.moleculeButton.isEnabled()):
+      return
+    index = self.moleculeButton.currentIndex()
+    index = (index+1) % self.moleculeButton.count()
+    self.moleculeButton.setCurrentIndex(index)
 
   def show_keys(self):
     if (self.keymess is None):

@@ -74,7 +74,7 @@ of the following elements can be toggled:
 
 * Nodal surfaces.
 
-* Nuclei.
+* Nuclei and bonds.
 
 * Atom labels.
 
