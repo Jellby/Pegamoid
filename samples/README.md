@@ -27,6 +27,9 @@ Some of the features to pay attention to:
 * ``NH3.cube``:
   Cube file with a non-orthogonal grid.
 
+* ``NiCO4.scf.h5``:
+  Symmetry, ghost atoms, mixed Cartesian, spherical harmonics and contaminant functions.
+
 * ``NO.rasscf.h5``:
   SA-CASSCF spin densities, with symmetry.
 
