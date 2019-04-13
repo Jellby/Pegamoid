@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.1'
+__version__ = '2.1.1'
 
 import sys
 try:
@@ -240,13 +240,13 @@ class Orbitals(object):
           prev = {n: b[n] for n in b.dtype.names}
       if (sym > 1):
         for i,b in enumerate(self.mat.T):
-          bb = sbf_id[i]
+          bb = np.array(sbf_id[i])
           nz = np.nonzero(b)[0]
-          assert (np.all(bf_id[nz][['l', 's', 'm']] == bb[['l', 's', 'm']]))
+          assert (np.all(bf_id[nz][['l','s','m']] == bb[['l','s','m']]))
           for j in nz:
             bf_id[j]['tl'] = bb['tl']
       # Workaround for bug in HDF5 files where p-type contaminants did all have m=0
-      p_shells, p0_counts = np.unique([b[['c','s','tl']] for b in bf_id if ((b['l']==1) and (b['m']==0))], return_counts=True)
+      p_shells, p0_counts = np.unique([np.array(b)[['c','s','tl']] for b in bf_id if ((b['l']==1) and (b['m']==0))], return_counts=True)
       if (np.any(p0_counts > 1)):
         if (sym > 1):
           # can't fix it with symmetry
@@ -845,7 +845,7 @@ class Orbitals(object):
   # If cart=True, this is for a Cartesian shell
   def ang(self, x, y, z, l, m, cart=False):
     if (cart):
-      # For Cartesians shells, m does not actually contain m, but:
+      # For Cartesian shells, m does not actually contain m, but:
       # m = T(ly+lz)-(lx+ly), where T(n) = n*(n+1)/2 is the nth triangular number
       ly = int(np.floor((np.sqrt(8*(m+l)+1)-1)/2))
       lz = m+l-ly*(ly+1)//2
@@ -1139,12 +1139,12 @@ class Orbitals(object):
         for i,o in enumerate(self.MO_a):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o['occup'] > 0.5) else 'S'
-        fo.create_dataset('MO_ALPHA_TYPEINDICES', data=tp)
+        fo.create_dataset('MO_ALPHA_TYPEINDICES', data=np.string_(tp))
         tp = [o.get('newtype', o['type'])for o in self.MO_b]
         for i,o in enumerate(self.MO_b):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o['occup'] > 0.5) else 'S'
-        fo.create_dataset('MO_BETA_TYPEINDICES', data=tp)
+        fo.create_dataset('MO_BETA_TYPEINDICES', data=np.string_(tp))
       else:
         cff = []
         for i,j in nMO:
@@ -1157,9 +1157,9 @@ class Orbitals(object):
         for i,o in enumerate(self.MO):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o.get('root_occup', o['occup']) > 1.0) else 'S'
-        fo.create_dataset('MO_TYPEINDICES', data=tp)
+        fo.create_dataset('MO_TYPEINDICES', data=np.string_(tp))
       if (self.notes is not None):
-        fo.create_dataset('Pegamoid_notes', data=notes)
+        fo.create_dataset('Pegamoid_notes', data=np.string_(self.notes))
 
   # Creates an InpOrb file from scratch
   def create_inporb(self, filename, MO=None):
