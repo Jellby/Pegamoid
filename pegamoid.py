@@ -1038,8 +1038,7 @@ class Orbitals(object):
     return data
 
   # Returns binomial coefficient as a fraction
-  # Easy overflow for large arguments, but we are interested in
-  # relatively small arguments
+  # Easy overflow for large arguments, but we are interested in relatively small arguments
   def _binom(self, n, k):
     mk = max(k,n-k)
     try:
@@ -1955,6 +1954,7 @@ class MainWindow(QMainWindow):
 
     self.vtkWidget.setFocus()
     self.show()
+    self.vtk_update()
 
   # Clean up when exiting
   def __del__(self):
@@ -3395,6 +3395,8 @@ class MainWindow(QMainWindow):
     self.box = None
     self.axes = None
     self.gradient = None
+    self.panel = None
+    self.ren.SetBackground(*background_color['?'])
     self.vtk_update()
 
   def load_file(self):
@@ -4666,7 +4668,8 @@ class MainWindow(QMainWindow):
                       <p><b>python</b>: {4}<br>
                       <b>Qt API</b>: {5}<br>
                       <b>VTK</b>: {6}</p>
-                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version)
+                      <p>Scratch space: {7}</p>
+                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version, self._tmpdir)
                       )
 
   def show_screenshot(self):
