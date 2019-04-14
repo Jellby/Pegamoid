@@ -1941,6 +1941,17 @@ class SimpleVTK(QVTKRenderWindowInteractor):
   def keyReleaseEvent(self, event):
     pass
 
+# A menu with tooltips
+class MenuTT(QMenu):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+  def event(self, e):
+    if ((e.type() == QEvent.ToolTip) and (self.activeAction() != 0)):
+      QToolTip.showText(e.globalPos(), self.activeAction().toolTip())
+    elif (e.type() != QEvent.Timer):
+      QToolTip.hideText()
+    return super().event(e)
+
 class MainWindow(QMainWindow):
 
   def __init__(self, *args, **kwargs):
@@ -2054,22 +2065,30 @@ class MainWindow(QMainWindow):
     self.setWindowFlags(self.windowFlags() | Qt.WindowContextHelpButtonHint)
 
     self.mainMenu = self.menuBar()
-    self.fileMenu = self.mainMenu.addMenu('&File')
+    self.fileMenu = MenuTT('&File')
+    self.mainMenu.addMenu(self.fileMenu)
     self.loadAction = self.fileMenu.addAction('&Load file...')
     self.fileMenu.addSeparator()
-    self.saveMenu = self.fileMenu.addMenu('&Save')
+    self.saveMenu = MenuTT('&Save')
+    self.fileMenu.addMenu(self.saveMenu)
     self.saveHDF5Action = self.saveMenu.addAction('Save &HDF5...')
     self.saveInpOrbAction = self.saveMenu.addAction('Save &InpOrb...')
     self.saveCubeAction = self.saveMenu.addAction('Save &cube...')
     self.saveMenu.addSeparator()
     self.screenshotAction = self.saveMenu.addAction('Save &PNG image...')
     self.fileMenu.addSeparator()
+    self.scratchAction = self.fileMenu.addAction('Use scratch')
+    self.scratchAction.setCheckable(True)
+    self.scratchAction.setChecked(True)
+    self.fileMenu.addSeparator()
     self.clearAction = self.fileMenu.addAction('&Clear')
     self.quitAction = self.fileMenu.addAction('&Quit')
-    self.viewMenu = self.mainMenu.addMenu('&View')
+    self.viewMenu = MenuTT('&View')
+    self.mainMenu.addMenu(self.viewMenu)
     self.fitViewAction = self.viewMenu.addAction('&Fit view')
     self.resetCameraAction = self.viewMenu.addAction('&Reset camera')
-    self.helpMenu = self.mainMenu.addMenu('&Help')
+    self.helpMenu = MenuTT('&Help')
+    self.mainMenu.addMenu(self.helpMenu)
     self.keysAction = self.helpMenu.addAction('&Keys')
     self.aboutAction = self.helpMenu.addAction('&About')
 
@@ -2185,6 +2204,18 @@ class MainWindow(QMainWindow):
     self.upButton.setLayoutDirection(Qt.RightToLeft)
 
     # tooltips
+    self.loadAction.setToolTip('Load a file in any supported format')
+    self.saveHDF5Action.setToolTip('Save current orbitals in HDF5 format')
+    self.saveInpOrbAction.setToolTip('Save current orbitals in InpOrb format')
+    self.saveCubeAction.setToolTip('Save current volume in cube format')
+    self.screenshotAction.setToolTip('Save the current view as an image')
+    self.scratchAction.setToolTip('Use a scratch file for caching basis functions (faster, but uses disk space)')
+    self.clearAction.setToolTip('Clear the currently loaded file')
+    self.quitAction.setToolTip('Quit {}'.format(__name__))
+    self.fitViewAction.setToolTip('Fit the currently displayed objects in the view')
+    self.resetCameraAction.setToolTip('Reset the camera to the default view')
+    self.keysAction.setToolTip('Show list of hotkeys')
+    self.aboutAction.setToolTip('Show information about {} and environment'.format(__name__))
     self.filenameLabel.setToolTip('Currently loaded filename')
     self.densityTypeButton.setToolTip('Select type of density for natural orbitals')
     self.densityTypeButton.setWhatsThis('Select the type of density to compute natural orbitals for, out of those available.<br>Keys: <b>Alt+PgUp</b>, <b>Alt+PgDown</b>')
@@ -2466,6 +2497,7 @@ class MainWindow(QMainWindow):
     self.saveCubeAction.triggered.connect(self.write_cube)
     self.screenshotAction.triggered.connect(self.show_screenshot)
     self.clearAction.triggered.connect(self.clear)
+    self.scratchAction.triggered.connect(self.toggle_cache)
     self.quitAction.triggered.connect(self.close)
     self.keysAction.triggered.connect(self.show_keys)
     self.aboutAction.triggered.connect(self.show_about)
@@ -3775,11 +3807,26 @@ class MainWindow(QMainWindow):
       return
     if (self._cache_file is not None):
       del self._cache_file
+    if (not self.scratchAction.isChecked()):
+      return
     if (self.isGrid):
       self._cache_file = None
     else:
       self._cache_file = np.memmap(os.path.join(self._tmpdir, '{0}.cache'.format(__name__.lower())), dtype='float32', mode='w+', shape=(sum(self.orbitals.N_bas), np.prod(ngrid)))
       self._cache_file[:,0] = np.nan
+
+  def toggle_cache(self, enabled):
+    if (enabled):
+      try:
+        ngrid = self.xyz.GetInput().GetDimensions()
+        self.update_cache(ngrid)
+      except:
+        raise
+    else:
+      if (self._cache_file is not None):
+        fname = self._cache_file.filename
+        del self._cache_file
+        self._cache_file = None
 
   def build_surface(self):
     if (self.xyz is None):
@@ -3801,7 +3848,7 @@ class MainWindow(QMainWindow):
     if (dt == 'Detachment density'):
       dens_type.append('d')
     self._computeVolumeThread = ComputeVolume(self, cache=self._cache_file, dens_type=dens_type)
-    self._computeVolumeThread.disable_list = [self.irrepGroup, self.orbitalGroup, self.boxSizeGroup, self.gridPointsGroup, self.gradientBox, self.gradientGroup]
+    self._computeVolumeThread.disable_list = [self.scratchAction, self.irrepGroup, self.orbitalGroup, self.boxSizeGroup, self.gridPointsGroup, self.gradientBox, self.gradientGroup]
     self._computeVolumeThread.finished.connect(self.volume_computed)
     self._computeVolumeThread.start()
 
