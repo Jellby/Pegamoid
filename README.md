@@ -136,6 +136,19 @@ However, the script has some requirements (this should be taken care of by
 * Other python modules that may not be installed by default, it should be clear
   which ones, if any, are needed when trying to run Pegamoid.
 
+Use of scratch disk space
+-------------------------
+
+To speed up the display of several orbitals and the computation of densities,
+Pegamoid uses some scratch disk space to store the computed basis functions. A
+file named ``pegamoid.cache`` will be created in a temporary location
+(typically inside the ``/tmp`` directory, the instance-specific path is given
+in the "About" window). For grids with many points and with many basis
+functions, this file can grow very large and even use up all available disk
+space. You can turn off this feature in ``File > Use scratch``. The scratch
+file and directory are removed on a clean exit, but if the program crashes or
+is otherwise abnormally interrupted, they may be left behind.
+
 Use with a remote connection
 ----------------------------
 
