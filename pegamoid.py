@@ -864,7 +864,7 @@ class Orbitals(object):
   # Compute the radial component, with quantum number l, given the values of r**2 (as r2),
   # for a list of primitive Gaussians (exponents and coefficients, as ec)
   # and an optional power of r**2 (for contaminants)
-  def rad(self, r2, l, ec, p=0):
+  def rad(self, r2, l, ec, p=0, cache=None):
     rad = 0
     # For contaminants, the radial part is multiplied by r**(2*p)
     # and the normalization must be corrected, noting that the
@@ -877,13 +877,18 @@ class Orbitals(object):
       prad = np.power(r2, p)
     for e,c in ec:
       if (c != 0.0):
-        # Combine total normalization factor and coefficient
-        N = np.power((2*e)**(3+2*l)/np.pi**3, 0.25) * c
-        if (p > 0):
-          N *= m*np.power(4*e, p)
-          rad += N * np.exp(-e*r2)*prad
+        if ((cache is None) or ((e,p) not in cache)):
+          N = np.power((2*e)**(3+2*l)/np.pi**3, 0.25)
+          if (p > 0):
+            N *= m*np.power(4*e, p)
+            cch = N * np.exp(-e*r2)*prad
+          else:
+            cch = N * np.exp(-e*r2)
+          if (cache is not None):
+            cache[(e,p)] = np.copy(cch)
         else:
-          rad += N * np.exp(-e*r2)
+          cch = cache[(e,p)]
+        rad += c*cch
     return rad
 
   # Compute an atomic orbital as product of angular and radial components
@@ -922,6 +927,7 @@ class Orbitals(object):
         # each shell to reuse it. This is a dict and not a list because
         # some shells could be skipped altogether
         rad_l = {}
+        prim_cache = {}
         # For each center, l and m we have different angular parts
         # (the range includes both spherical and Cartesian indices)
         #for m in range(-l, l*(l+1)+1):
@@ -957,7 +963,7 @@ class Orbitals(object):
                   ao_ang = self.ang(x0, y0, z0, l, m, cart=cart)
                 # Compute radial part if not done yet
                 if (s not in rad_l):
-                  rad_l[s] = self.rad(r2, l, p[1], p[0])
+                  rad_l[s] = self.rad(r2, l, p[1], p[0], cache=prim_cache)
                 cch = ao_ang*rad_l[s]
                 # Save in the cache if enabled
                 if (cache is not None):
