@@ -44,6 +44,7 @@ import codecs
 import re
 import struct
 import traceback
+import time
 from copy import deepcopy
 from socket import gethostname
 from datetime import datetime
@@ -806,10 +807,10 @@ class Orbitals(object):
       o.pop('root_occup', None)
       o.pop('root_type', None)
       o.pop('root_ene', None)
+
     if (self.MO_b):
       self.MO_a = deepcopy(self.MO)
       self.MO = []
-      
     self.roots = ['InpOrb']
     self.dm = [np.diag([o['occup'] for o in self.MO if (o['type'] in ['1', '2', '3'])])]
     self.sdm = None
@@ -902,8 +903,7 @@ class Orbitals(object):
   # at different centers. It can use a cache of atomic orbitals to avoid
   # recomputing them. "spin" specifies if the coefficients will be taken
   # from self.MO (alpha) or self.MO_b (beta)
-  def mo(self, n, x, y, z, spin='n', cache=None):
-    f = 0
+  def mo(self, n, x, y, z, spin='n', cache=None, callback=None):
     mo = np.zeros_like(x)
     # Reorder MO coefficients
     if (spin == 'b'):
@@ -916,97 +916,129 @@ class Orbitals(object):
       MO = MO['root_coeff'][self.bf_sort]
     else:
       MO = MO['coeff'][self.bf_sort]
-    # For each center, the relative x,y,z and r**2 are different
-    for c in self.centers:
-      x0, y0, z0 = [None]*3
-      r2 = None
-      # For each center, l and shell we have different radial parts
-      for l,ll in enumerate(c['basis']):
-        # Since all shells are computed for each m value, but the radial
-        # part does not depend on m, we will save the radial part for
-        # each shell to reuse it. This is a dict and not a list because
-        # some shells could be skipped altogether
-        rad_l = {}
-        prim_cache = {}
-        # For each center, l and m we have different angular parts
-        # (the range includes both spherical and Cartesian indices)
-        #for m in range(-l, l*(l+1)+1):
-        for m in range(-l, l*(l+1)//2+1):
-          ao_ang = None
-          cart = None
-          # Now each shell is an atomic orbital (basis function)
-          for s,p in enumerate(ll):
-            # Skip when out of range for spherical shells
-            # Also invalidate the angular part if for some reason
-            # there is a mixture of types among shells
-            if ((l, s) in c['cart']):
-              if (cart is False):
-                ang = None
-              cart = True
-            else:
-              if (cart is True):
-                ang = None
-              cart = False
-              if (m > l):
-                continue
-            # Only compute if above threshold
-            if (abs(MO[f]) > self.eps):
-              # The AO contribution is either in the cache
-              # or we compute it now
-              if ((cache is None) or np.isnan(cache[f,0])):
-                # Compute relative coordinates if not done yet
-                if (x0 is None):
-                  x0, y0, z0 = [x, y, z] - c['xyz'][:, np.newaxis]
-                  r2 = x0**2 + y0**2 + z0**2
-                # Compute angular part if not done yet
-                if (ao_ang is None):
-                  ao_ang = self.ang(x0, y0, z0, l, m, cart=cart)
-                # Compute radial part if not done yet
-                if (s not in rad_l):
-                  rad_l[s] = self.rad(r2, l, p[1], p[0], cache=prim_cache)
-                cch = ao_ang*rad_l[s]
-                # Save in the cache if enabled
-                if (cache is not None):
-                  cache[f] = np.copy(cch)
-              elif (cache is not None):
-                cch = cache[f]
-              # Add the AO contribution to the MO
-              mo += MO[f]*cch
-            f += 1
+
+    if (callback is None):
+      actions = [True]
+    else:
+      num = 0
+      total = 0
+      actions = [False,True]
+
+    for compute in actions:
+      f = 0
+      # For each center, the relative x,y,z and r**2 are different
+      for c in self.centers:
+        x0, y0, z0 = [None]*3
+        r2 = None
+        # For each center, l and shell we have different radial parts
+        for l,ll in enumerate(c['basis']):
+          # Since all shells are computed for each m value, but the radial
+          # part does not depend on m, we will save the radial part for
+          # each shell to reuse it. This is a dict and not a list because
+          # some shells could be skipped altogether
+          rad_l = {}
+          prim_cache = {}
+          # For each center, l and m we have different angular parts
+          # (the range includes both spherical and Cartesian indices)
+          #for m in range(-l, l*(l+1)+1):
+          for m in range(-l, l*(l+1)//2+1):
+            ao_ang = None
+            cart = None
+            # Now each shell is an atomic orbital (basis function)
+            for s,p in enumerate(ll):
+              # Skip when out of range for spherical shells
+              # Also invalidate the angular part if for some reason
+              # there is a mixture of types among shells
+              if ((l, s) in c['cart']):
+                if (cart is False):
+                  ang = None
+                cart = True
+              else:
+                if (cart is True):
+                  ang = None
+                cart = False
+                if (m > l):
+                  continue
+              # Only compute if above threshold
+              if (abs(MO[f]) > self.eps):
+                if (compute):
+                  if callback is not None:
+                    num += 1
+                    callback('Computing: {0}/{1} ...'.format(num, total))
+                  # The AO contribution is either in the cache
+                  # or we compute it now
+                  if ((cache is None) or np.isnan(cache[f,0])):
+                    # Compute relative coordinates if not done yet
+                    if (x0 is None):
+                      x0, y0, z0 = [x, y, z] - c['xyz'][:, np.newaxis]
+                      r2 = x0**2 + y0**2 + z0**2
+                    # Compute angular part if not done yet
+                    if (ao_ang is None):
+                      ao_ang = self.ang(x0, y0, z0, l, m, cart=cart)
+                    # Compute radial part if not done yet
+                    if (s not in rad_l):
+                      rad_l[s] = self.rad(r2, l, p[1], p[0])#, cache=prim_cache)
+                    cch = ao_ang*rad_l[s]
+                    # Save in the cache if enabled
+                    if (cache is not None):
+                      cache[f] = np.copy(cch)
+                  elif (cache is not None):
+                    cch = cache[f]
+                  # Add the AO contribution to the MO
+                  mo += MO[f]*cch
+                else:
+                  total += 1
+              f += 1
     if (cache is not None):
       cache.flush()
     return mo
 
   # Compute electron density as sum of square of (natural) orbitals times occupation.
   # It can use a cache for MO evaluation and a mask to select only some orbitals.
-  def dens(self, x, y, z, cache=None, mask=None, spin=False):
+  def dens(self, x, y, z, cache=None, mask=None, spin=False, callback=None):
     dens = np.zeros_like(x)
     if (self.MO_b):
-      # Add alternated alpha and beta orbitals
-      l = 0
-      for i,orb in enumerate([j for i in zip_longest(self.MO_a, self.MO_b) for j in i]):
+      MO_list = [j for i in zip_longest(self.MO_a, self.MO_b) for j in i]
+    else:
+      MO_list = self.MO
+    # If there is a callback function, we take two passes,
+    # one to count the orbitals and another to actually compute them
+    if (callback is None):
+      actions = [True]
+    else:
+      total = 0
+      num = 0
+      actions = [False, True]
+    for compute in actions:
+      j = 0
+      for i,orb in enumerate(MO_list):
         if (orb is None):
           continue
         f = 1.0
-        if (i%2 == 0):
-          s = 'a'
+        if (MO_list is self.MO):
+          # Natural orbitals
+          ii = i
+          s = 'n'
         else:
-          s = 'b'
-          if (spin):
-            f = -1.0
-        if ((mask is None) or mask[l]):
-          occup = orb.get('root_occup', orb['occup'])
+          # Add alternated alpha and beta orbitals
+          ii = i//2
+          if (i%2 == 0):
+            s = 'a'
+          else:
+            s = 'b'
+            if (spin):
+              f = -1.0
+        if ((mask is None) or mask[j]):
+          occup = f*orb.get('root_occup', orb['occup'])
           if (abs(occup) > self.eps):
-            dens += f*occup*self.mo(i//2, x, y, z, s, cache)**2
-        l += 1
-    else:
-      # Natural orbitals
-      s = 'n'
-      for i,orb in enumerate(self.MO):
-        if ((mask is None) or mask[i]):
-          occup = orb.get('root_occup', orb['occup'])
-          if (abs(occup) > self.eps):
-            dens += occup*self.mo(i, x, y, z, s, cache)**2
+            if (compute):
+              if callback is not None:
+                num += 1
+                callback('Computing: {0}/{1} ...'.format(num, total))
+              dens += occup*self.mo(ii, x, y, z, s, cache)**2
+            else:
+              total += 1
+        j += 1
     return dens
 
   # Compute the Laplacian of a field by central finite differences
@@ -1676,6 +1708,7 @@ class ComputeVolume(Worker):
   def run(self):
     if (self.parent() is None):
       return
+    print_func = self.parent().setStatus
     orb = self.parent().orbital
     x, y, z = numpy_support.vtk_to_numpy(self.parent().xyz.GetOutput().GetPoints().GetData()).T
     if (self.parent().MO is self.parent().orbitals.MO_b):
@@ -1716,14 +1749,14 @@ class ComputeVolume(Worker):
           pass
         l += 1
     if ((orb == 0) or (orb <= -3)):
-      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask)
+      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, callback=print_func)
       if ('h' in self.dens_type):
         self.data *= -1
     elif (orb == -1):
-      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=True)
+      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=True, callback=print_func)
     elif (orb == -2):
       ngrid = self.parent().xyz.GetInput().GetDimensions()
-      data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask).reshape(ngrid[::-1])
+      data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, callback=print_func).reshape(ngrid[::-1])
       # Get the actual lengths of the possibly transformed axes
       c0 = np.array([x[0], y[0], z[0]])
       n = ngrid[0]-1
@@ -1736,7 +1769,7 @@ class ComputeVolume(Worker):
       data = self.parent().orbitals.laplacian(matrix, data).T
       self.data = data
     else:
-      self.data = self.parent().orbitals.mo(orb-1, x, y, z, spin, self.cache)
+      self.data = self.parent().orbitals.mo(orb-1, x, y, z, spin, self.cache, callback=print_func)
 
 class ScrollMessageBox(QDialog):
   def __init__(self, *args, **kwargs):
@@ -2025,6 +2058,7 @@ class MainWindow(QMainWindow):
     self._maxval = 0.1
     self._tmpdir = mkdtemp()
     self._cache_file = None
+    self._timestamp = time.time()
 
     self.orbitals = None
     self.orbital = None
@@ -2654,7 +2688,7 @@ class MainWindow(QMainWindow):
         error = 'The InpOrb format does not contain basis set information, it must be loaded after an HDF5 file (*.h5)'
         self.show_error(error)
         return
-    self.statusLabel.setText('Reading...')
+    self.setStatus('Reading...')
     if (self._fileReadThread is not None):
       self._fileReadThread.wait()
     self._fileReadThread = FileRead(self, filename=new, ftype=ftype)
@@ -3486,8 +3520,19 @@ class MainWindow(QMainWindow):
                 pass
     return 'unknown'
 
+  def setStatus(self, text, force=False):
+    # Try to to change status too fast, it may cause crashes
+    t = time.time()
+    if (t - self._timestamp >= 0.05):
+      self.statusLabel.setText(text)
+      self._timestamp = time.time()
+    elif (force):
+      time.sleep(0.05)
+      self.statusLabel.setText(text)
+      self._timestamp = time.time()
+
   def file_read(self):
-    self.statusLabel.setText('Ready.')
+    self.setStatus('Ready.', force=True)
     if (self._fileReadThread.error is None):
       self.filenameLabel.setText(self.filename)
     else:
@@ -3838,9 +3883,9 @@ class MainWindow(QMainWindow):
     if (self.xyz is None):
       return
     if (self.isGrid):
-      self.statusLabel.setText('Reading...')
+      self.setStatus('Reading...')
     else:
-      self.statusLabel.setText('Computing...')
+      self.setStatus('Computing...')
     if (self._computeVolumeThread is not None):
       self._computeVolumeThread.wait()
     dens_type = []
@@ -3997,7 +4042,7 @@ class MainWindow(QMainWindow):
     self.type_setEnabled(enabled)
     self.set_typeButtonGroup()
     self.set_panel()
-    self.statusLabel.setText('Ready.')
+    self.setStatus('Ready.', force=True)
 
   def set_gradient_source(self):
     if (self.gradient is None):
