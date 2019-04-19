@@ -165,9 +165,10 @@ background_color = {
 }
 
 surface_color = {
-  -1: (222/255, 119/255,  61/255),
-   0: (172/255, 189/255, 208/255),
-   1: (204/255, 222/255,  61/255)
+   -1: (222/255, 119/255,  61/255),
+    0: (172/255, 189/255, 208/255),
+    1: (204/255, 222/255,  61/255),
+'nan': (255/255, 200/255, 255/255)
 }
 
 angstrom = 0.52917721067
@@ -903,7 +904,7 @@ class Orbitals(object):
   # at different centers. It can use a cache of atomic orbitals to avoid
   # recomputing them. "spin" specifies if the coefficients will be taken
   # from self.MO (alpha) or self.MO_b (beta)
-  def mo(self, n, x, y, z, spin='n', cache=None, callback=None):
+  def mo(self, n, x, y, z, spin='n', cache=None, callback=None, interrupt=False):
     mo = np.zeros_like(x)
     # Reorder MO coefficients
     if (spin == 'b'):
@@ -951,6 +952,8 @@ class Orbitals(object):
             cart = None
             # Now each shell is an atomic orbital (basis function)
             for s,p in enumerate(ll):
+              if (interrupt):
+                return mo
               # Skip when out of range for spherical shells
               # Also invalidate the angular part if for some reason
               # there is a mixture of types among shells
@@ -1000,7 +1003,7 @@ class Orbitals(object):
 
   # Compute electron density as sum of square of (natural) orbitals times occupation.
   # It can use a cache for MO evaluation and a mask to select only some orbitals.
-  def dens(self, x, y, z, cache=None, mask=None, spin=False, callback=None):
+  def dens(self, x, y, z, cache=None, mask=None, spin=False, callback=None, interrupt=False):
     dens = np.zeros_like(x)
     if (self.MO_b):
       MO_list = [j for i in zip_longest(self.MO_a, self.MO_b) for j in i]
@@ -1035,6 +1038,8 @@ class Orbitals(object):
         num = 0
         j = 0
         for i,orb in enumerate(MO_list):
+          if (interrupt):
+            return dens
           if (orb is None):
             continue
           f = 1.0
@@ -1061,7 +1066,7 @@ class Orbitals(object):
                     callback('Computing: {0}/{1} (chunk {2}/{3}) ...'.format(num, total, chunk+1, len(do_list)))
                   else:
                     callback('Computing: {0}/{1} ...'.format(num, total))
-                dens[start:start+chunk_size] += occup*self.mo(ii, x_, y_, z_, s, cache)**2
+                dens[start:start+chunk_size] += occup*self.mo(ii, x_, y_, z_, s, cache, interrupt=interrupt)**2
               else:
                 total += 1
           j += 1
@@ -1523,7 +1528,7 @@ class Grid(object):
           break
 
   # Read and return precomputed MO values
-  def mo(self, n, x, y, z, spin=None, cache=None, callback=None):
+  def mo(self, n, x, y, z, spin=None, cache=None, callback=None, interrupt=False):
     if (self.type == 'cube'):
       # In Cube format, the nesting is x:y:z:MO, with
       # wrapped lines and forced newlines every lrec values
@@ -1534,6 +1539,8 @@ class Grid(object):
           for j in range(self.ngrid[1]):
             data = b''
             for k in range(self.lrec):
+              if (interrupt):
+                return vol
               data += f.readline()
             vol[i,j,:] = [float(k) for k in data.split()[n::self.nMO]]
     elif (self.type == 'grid'):
@@ -1548,11 +1555,13 @@ class Grid(object):
           lb = min(self.bsize, num-len(data))
           for o in range(self.nMO):
             f.readline()
-            if (o == norb):
-              for i in range(lb):
+            for i in range(lb):
+              if (interrupt):
+                vol = np.resize(data, num)
+                return np.reshape(vol, tuple(self.ngrid))
+              if (o == norb):
                 data.append(float(f.readline()))
-            else:
-              for i in range(lb):
+              else:
                 f.readline()
       vol = np.reshape(data, tuple(self.ngrid))
     elif (self.type == 'luscus'):
@@ -1564,6 +1573,9 @@ class Grid(object):
         f.seek(self.head)
         num = np.prod(self.ngrid)
         while (len(data) < num):
+          if (interrupt):
+            vol = np.resize(data, num)
+            return np.reshape(vol, tuple(self.ngrid))
           lb = min(self.bsize, num-len(data))
           lbb = lb*struct.calcsize('d')
           f.seek(norb*lbb, 1)
@@ -1797,14 +1809,14 @@ class ComputeVolume(Worker):
           pass
         l += 1
     if ((orb == 0) or (orb <= -3)):
-      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, callback=print_func)
+      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, callback=print_func, interrupt=self.parent().interrupt)
       if ('h' in self.dens_type):
         self.data *= -1
     elif (orb == -1):
-      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=True, callback=print_func)
+      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=True, callback=print_func, interrupt=self.parent().interrupt)
     elif (orb == -2):
       ngrid = self.parent().xyz.GetInput().GetDimensions()
-      data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, callback=print_func).reshape(ngrid[::-1])
+      data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, callback=print_func, interrupt=self.parent().interrupt).reshape(ngrid[::-1])
       # Get the actual lengths of the possibly transformed axes
       c0 = np.array([x[0], y[0], z[0]])
       n = ngrid[0]-1
@@ -1817,7 +1829,7 @@ class ComputeVolume(Worker):
       data = self.parent().orbitals.laplacian(matrix, data).T
       self.data = data
     else:
-      self.data = self.parent().orbitals.mo(orb-1, x, y, z, spin, self.cache, callback=print_func)
+      self.data = self.parent().orbitals.mo(orb-1, x, y, z, spin, self.cache, callback=print_func, interrupt=self.parent().interrupt)
 
 class ScrollMessageBox(QDialog):
   def __init__(self, *args, **kwargs):
@@ -2039,6 +2051,16 @@ class MenuTT(QMenu):
       QToolTip.hideText()
     return super().event(e)
 
+# A fake mutable boolean type, to pass as reference
+class MutableBool(object):
+  def __init__(self):
+    self.value = False
+  def put(self, value):
+    self.value = value
+  def __bool__(self):
+    return self.value
+  __nonzero__ = __bool__
+
 class MainWindow(QMainWindow):
 
   def __init__(self, *args, **kwargs):
@@ -2141,6 +2163,7 @@ class MainWindow(QMainWindow):
     self.boxBox.setChecked(False)
     self.bothButton.setChecked(True)
 
+    self.interrupt = MutableBool()
     self.scratchsize = {'max':parse_size(os.environ.get('PEGAMOID_MAXSCRATCH')), 'rec':None}
     if (self.scratchsize['max'] is None):
       self.scratchsize['max'] = parse_size('1GiB')
@@ -2246,6 +2269,7 @@ class MainWindow(QMainWindow):
     self.upButton = QRadioButton('Up')
     self.bothButton = QRadioButton('Both')
     self.downButton = QRadioButton('Down')
+    self.cancelButton = QPushButton('Cancel')
     self.statusLabel = QLabel()
 
     self.boxicon = QPixmap()
@@ -2294,6 +2318,8 @@ class MainWindow(QMainWindow):
     self.downButton.setLayoutDirection(Qt.RightToLeft)
     self.bothButton.setLayoutDirection(Qt.RightToLeft)
     self.upButton.setLayoutDirection(Qt.RightToLeft)
+    self.cancelButton.setEnabled(False)
+    self.cancelButton.hide()
 
     # tooltips
     self.loadAction.setToolTip('Load a file in any supported format')
@@ -2380,6 +2406,8 @@ class MainWindow(QMainWindow):
     self.downButton.setWhatsThis('Integrate the gradient stream lines in both directions.<br>Key: <b>Ctrl+Shift+B</b>')
     self.upButton.setToolTip('Show only lines towards higher values')
     self.upButton.setWhatsThis('Integrate the gradient stream lines only towards higher values from the starting points (inwards for the electron density).<br>Key: <b>Ctrl+Shift+U</b>')
+    self.cancelButton.setToolTip('Interrupt current calculation')
+    self.cancelButton.setWhatsThis('Interrupt the current calculation as soon as possible, the display window will show the partial result in pink.<br>Key: <b>Esc</b>')
 
     # value properties
     self.isovalueSlider.setRange(0, 1000)
@@ -2504,6 +2532,7 @@ class MainWindow(QMainWindow):
 
     self.setCentralWidget(_widget)
     self.statusBar().addWidget(self.statusLabel)
+    self.statusBar().addPermanentWidget(self.cancelButton)
     self.statusBar().setStyleSheet('QStatusBar::item{border:0};')
     self.statusLabel.setText('Ready.')
     self.resize(800,800)
@@ -2580,6 +2609,7 @@ class MainWindow(QMainWindow):
     self.downButton.setShortcut('Ctrl+Shift+D')
     self.bothButton.setShortcut('Ctrl+Shift+B')
     self.upButton.setShortcut('Ctrl+Shift+U')
+    self.cancelButton.setShortcut('Esc')
 
     # signals
     self.qApp.aboutToQuit.connect(self.deltmp)
@@ -2622,6 +2652,7 @@ class MainWindow(QMainWindow):
     self.startRadiusBox.editingFinished.connect(self.startRadiusBox_changed)
     self.maxStepsBox.editingFinished.connect(self.maxStepsBox_changed)
     self.directionButtonGroup.buttonClicked.connect(self.directionButtonGroup_changed)
+    self.cancelButton.clicked.connect(self.cancel)
 
   def init_VTK(self):
     framelayout = QVBoxLayout()
@@ -3956,6 +3987,8 @@ class MainWindow(QMainWindow):
       self.setStatus('Reading...')
     else:
       self.setStatus('Computing...')
+    self.cancelButton.setEnabled(True)
+    self.cancelButton.show()
     if (self._computeVolumeThread is not None):
       self._computeVolumeThread.wait()
     dens_type = []
@@ -3974,6 +4007,8 @@ class MainWindow(QMainWindow):
     self._computeVolumeThread.start()
 
   def volume_computed(self):
+    self.cancelButton.setEnabled(False)
+    self.cancelButton.hide()
     points = self.xyz.GetInput()
     try:
       vtkmo = numpy_support.numpy_to_vtk(self._computeVolumeThread.data.flatten('F'), 1, vtk.VTK_DOUBLE)
@@ -4102,7 +4137,12 @@ class MainWindow(QMainWindow):
     b = get_input_type(self.gradient.GetMapper(), vtk.vtkArrayCalculator)
     b.Update()
     self.gradient.GetMapper().SetScalarRange(b.GetOutput().GetScalarRange())
-    self.surface.GetMapper().SetScalarVisibility(self.orbital != 0)
+    # If interrupted the surface is probably incomplete
+    if (self.interrupt):
+      self.surface.GetMapper().SetScalarVisibility(False)
+      self.surface.GetProperty().SetColor(*surface_color['nan'])
+    else:
+      self.surface.GetMapper().SetScalarVisibility(self.orbital != 0)
     self.update_range()
     self.toggle_surface()
     self.toggle_nodes()
@@ -4112,7 +4152,11 @@ class MainWindow(QMainWindow):
     self.type_setEnabled(enabled)
     self.set_typeButtonGroup()
     self.set_panel()
-    self.setStatus('Ready.', force=True)
+    if (self.interrupt):
+      self.interrupt.put(False)
+      self.setStatus('Interrupted.', force=True)
+    else:
+      self.setStatus('Ready.', force=True)
 
   def set_gradient_source(self):
     if (self.gradient is None):
@@ -4522,6 +4566,10 @@ class MainWindow(QMainWindow):
     sl = get_input_type(self.gradient.GetMapper(), vtk.vtkStreamTracer)
     sl.SetIntegrationDirection(self.directionButtonGroup.checkedId())
     self.vtk_update()
+
+  def cancel(self):
+    if (self._computeVolumeThread.isRunning()):
+      self.interrupt.put(True)
 
   def write_hdf5(self, *args):
     if (self.orbitals.type != 'hdf5'):
