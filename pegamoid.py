@@ -924,6 +924,11 @@ class Orbitals(object):
       total = 0
       actions = [False,True]
 
+    npoints = x.size
+    if (cache is not None):
+      chunk_size = cache.shape[1]
+    use_cache = (cache is not None) and (chunk_size >= npoints)
+
     for compute in actions:
       f = 0
       # For each center, the relative x,y,z and r**2 are different
@@ -967,7 +972,7 @@ class Orbitals(object):
                     callback('Computing: {0}/{1} ...'.format(num, total))
                   # The AO contribution is either in the cache
                   # or we compute it now
-                  if ((cache is None) or np.isnan(cache[f,0])):
+                  if (not use_cache or np.isnan(cache[f,0])):
                     # Compute relative coordinates if not done yet
                     if (x0 is None):
                       x0, y0, z0 = [x, y, z] - c['xyz'][:, np.newaxis]
@@ -977,19 +982,19 @@ class Orbitals(object):
                       ao_ang = self.ang(x0, y0, z0, l, m, cart=cart)
                     # Compute radial part if not done yet
                     if (s not in rad_l):
-                      rad_l[s] = self.rad(r2, l, p[1], p[0])#, cache=prim_cache)
+                      rad_l[s] = self.rad(r2, l, p[1], p[0], cache=prim_cache)
                     cch = ao_ang*rad_l[s]
                     # Save in the cache if enabled
-                    if (cache is not None):
-                      cache[f] = np.copy(cch)
-                  elif (cache is not None):
-                    cch = cache[f]
+                    if (use_cache):
+                      cache[f][0:cch.size] = np.copy(cch)
+                  elif (use_cache):
+                    cch = cache[f][0:x.size]
                   # Add the AO contribution to the MO
                   mo += MO[f]*cch
                 else:
                   total += 1
               f += 1
-    if (cache is not None):
+    if (use_cache):
       cache.flush()
     return mo
 
@@ -1007,38 +1012,59 @@ class Orbitals(object):
       actions = [True]
     else:
       total = 0
-      num = 0
       actions = [False, True]
+
+    npoints = x.size
+    if (cache is not None):
+      chunk_size = cache.shape[1]
+    else:
+      chunk_size = npoints
+    chunk_list = list(range(0, npoints, chunk_size))
+
     for compute in actions:
-      j = 0
-      for i,orb in enumerate(MO_list):
-        if (orb is None):
-          continue
-        f = 1.0
-        if (MO_list is self.MO):
-          # Natural orbitals
-          ii = i
-          s = 'n'
-        else:
-          # Add alternated alpha and beta orbitals
-          ii = i//2
-          if (i%2 == 0):
-            s = 'a'
+      if (compute):
+        do_list = chunk_list
+      else:
+        do_list = [0]
+      for chunk,start in enumerate(do_list):
+        if ((cache is not None) and (len(do_list) > 1)):
+          cache[:,0] = np.nan
+        x_ = x[start:start+chunk_size]
+        y_ = y[start:start+chunk_size]
+        z_ = z[start:start+chunk_size]
+        num = 0
+        j = 0
+        for i,orb in enumerate(MO_list):
+          if (orb is None):
+            continue
+          f = 1.0
+          if (MO_list is self.MO):
+            # Natural orbitals
+            ii = i
+            s = 'n'
           else:
-            s = 'b'
-            if (spin):
-              f = -1.0
-        if ((mask is None) or mask[j]):
-          occup = f*orb.get('root_occup', orb['occup'])
-          if (abs(occup) > self.eps):
-            if (compute):
-              if callback is not None:
-                num += 1
-                callback('Computing: {0}/{1} ...'.format(num, total))
-              dens += occup*self.mo(ii, x, y, z, s, cache)**2
+            # Add alternated alpha and beta orbitals
+            ii = i//2
+            if (i%2 == 0):
+              s = 'a'
             else:
-              total += 1
-        j += 1
+              s = 'b'
+              if (spin):
+                f = -1.0
+          if ((mask is None) or mask[j]):
+            occup = f*orb.get('root_occup', orb['occup'])
+            if (abs(occup) > self.eps):
+              if (compute):
+                if callback is not None:
+                  num += 1
+                  if (len(do_list) > 1):
+                    callback('Computing: {0}/{1} (chunk {2}/{3}) ...'.format(num, total, chunk+1, len(do_list)))
+                  else:
+                    callback('Computing: {0}/{1} ...'.format(num, total))
+                dens[start:start+chunk_size] += occup*self.mo(ii, x_, y_, z_, s, cache)**2
+              else:
+                total += 1
+          j += 1
     return dens
 
   # Compute the Laplacian of a field by central finite differences
@@ -1497,7 +1523,7 @@ class Grid(object):
           break
 
   # Read and return precomputed MO values
-  def mo(self, n, x, y, z, spin=None, cache=None):
+  def mo(self, n, x, y, z, spin=None, cache=None, callback=None):
     if (self.type == 'cube'):
       # In Cube format, the nesting is x:y:z:MO, with
       # wrapped lines and forced newlines every lrec values
@@ -1630,6 +1656,28 @@ def wrap_list(data, n, f, sep=''):
     text.append(fmt.format(*data[ini:end]))
     ini = end
   return text
+
+#===============================================================================
+
+# Convert a "human-readable" file size into a number of bytes
+def parse_size(size):
+  units = { 'KB': 10**3,  'MB': 10**6,  'GB': 10**9,  'TB': 10**12,
+           'KIB': 2**10, 'MIB': 2**20, 'GIB': 2**30, 'TIB': 2**40}
+  factor = 1
+  try:
+    size_ = size.upper()
+    for i in units:
+      if i in size_:
+        factor *= units[i]
+        size_ = size_.replace(i, '')
+    size_.replace('B', '')
+    num = float(size_)
+    if (num >= 0):
+      return int(factor*num)
+    else:
+      raise
+  except:
+    return None
 
 #===============================================================================
 
@@ -2092,6 +2140,10 @@ class MainWindow(QMainWindow):
     self.namesBox.setChecked(False)
     self.boxBox.setChecked(False)
     self.bothButton.setChecked(True)
+
+    self.scratchsize = {'max':parse_size(os.environ.get('PEGAMOID_MAXSCRATCH')), 'rec':None}
+    if (self.scratchsize['max'] is None):
+      self.scratchsize['max'] = parse_size('1GiB')
 
   def init_UI(self):
     self.icon = QPixmap()
@@ -3854,6 +3906,7 @@ class MainWindow(QMainWindow):
     self.axes.AddPart(axisZ)
 
   def update_cache(self, ngrid):
+    self.scratchsize['rec'] = None
     if (self.orbitals is None):
       return
     if (self._cache_file is not None):
@@ -3863,7 +3916,24 @@ class MainWindow(QMainWindow):
     if (self.isGrid):
       self._cache_file = None
     else:
-      self._cache_file = np.memmap(os.path.join(self._tmpdir, '{0}.cache'.format(__name__.lower())), dtype='float32', mode='w+', shape=(sum(self.orbitals.N_bas), np.prod(ngrid)))
+      nbas = sum(self.orbitals.N_bas)
+      npoints = np.prod(ngrid)
+      size = nbas*npoints
+      mintype = 'float32'
+      self.scratchsize['rec'] = size*np.dtype(mintype).itemsize
+      # Select a type such that everything fits
+      for i in ['float64', mintype]:
+        if (size*np.dtype(i).itemsize <= self.scratchsize['max']):
+          dtype = i
+          break
+      else:
+        # If not possible, find out maximum size
+        dtype = mintype
+        npoints = self.scratchsize['max']//(nbas*np.dtype(dtype).itemsize)
+        self._cache_file = None
+        if (npoints < 100):
+          return
+      self._cache_file = np.memmap(os.path.join(self._tmpdir, '{0}.cache'.format(__name__.lower())), dtype=dtype, mode='w+', shape=(sum(self.orbitals.N_bas), npoints))
       self._cache_file[:,0] = np.nan
 
   def toggle_cache(self, enabled):
@@ -4756,6 +4826,17 @@ class MainWindow(QMainWindow):
   def show_about(self):
     python_version = sys.version
     vtk_version = vtk.vtkVersion.GetVTKVersion()
+    if (self._cache_file is None):
+      s_act = 0
+    else:
+      s_act = self._cache_file.nbytes / 2**20
+    s_max = 0
+    if (self.scratchsize['max'] is not None):
+      s_max = self.scratchsize['max'] / 2**20
+    s_rec = 0
+    if (self.scratchsize['rec'] is not None):
+      s_rec = np.ceil(self.scratchsize['rec'] / 2**20)
+    scratchstring = 'max: {0:.2f}, used: {1:.2f}, rec: {2:.0f}, in MiB'.format(s_max, s_act, s_rec)
     QMessageBox.about(self, 'About {0}'.format(__name__),
                       u'''<h2>{0} v{1}</h2>
                       <p>An orbital viewer ideal for OpenMolcas.<br>
@@ -4766,8 +4847,8 @@ class MainWindow(QMainWindow):
                       <p><b>python</b>: {4}<br>
                       <b>Qt API</b>: {5}<br>
                       <b>VTK</b>: {6}</p>
-                      <p>Scratch space: {7}</p>
-                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version, self._tmpdir)
+                      <p>Scratch space: {7}<br>({8})</p>
+                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version, self._tmpdir, scratchstring)
                       )
 
   def show_screenshot(self):
