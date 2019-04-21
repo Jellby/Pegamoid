@@ -164,13 +164,6 @@ background_color = {
   '?': (0.466, 0.466, 0.466)  # CIELab(50,0,0)
 }
 
-surface_color = {
-   -1: (222/255, 119/255,  61/255),
-    0: (172/255, 189/255, 208/255),
-    1: (204/255, 222/255,  61/255),
-'nan': (255/255, 200/255, 255/255)
-}
-
 angstrom = 0.52917721067
 
 #===============================================================================
@@ -923,7 +916,7 @@ class Orbitals(object):
     else:
       num = 0
       total = 0
-      actions = [False,True]
+      actions = [False, True]
 
     npoints = x.size
     if (cache is not None):
@@ -1848,6 +1841,7 @@ class ScrollMessageBox(QDialog):
                    &nbsp;&nbsp;<b>Right button</b>, <b>Ctrl+Shift+Left button</b>, <b>Wheel</b>: Zoom<br>
                    &nbsp;&nbsp;<b>Middle button</b>, <b>Shift+Left button</b>: Translate<br>
                    &nbsp;&nbsp;<b>Ctrl+Left button</b>: Rotate in the screen plane</p>
+                   <p><b>P</b>: Toggle orthographic projection</p>
                    <p><b>R</b>: Fit the view to the scene</p>
                    <p><b>Shift+R</b>: Reset camera to default position</p>
                    <p><b>{0}</b>: Load file</p>
@@ -1893,6 +1887,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>Ctrl+Shift+D</b>: Set gradient lines direction to down</p>
                    <p><b>Ctrl+Shift+B</b>: Set gradient lines direction to both (up and down)</p>
                    <p><b>Ctrl+Shift+U</b>: Set gradient lines direction to up</p>
+                   <p><b>X</b>: Show/hide texture and color settings</p>
                    '''.format(
                        QKeySequence(QKeySequence.Open).toString(),
                        QKeySequence(QKeySequence.Close).toString(),
@@ -2046,7 +2041,10 @@ class MenuTT(QMenu):
     super().__init__(*args, **kwargs)
   def event(self, e):
     if ((e.type() == QEvent.ToolTip) and (self.activeAction() != 0)):
-      QToolTip.showText(e.globalPos(), self.activeAction().toolTip())
+      try:
+        QToolTip.showText(e.globalPos(), self.activeAction().toolTip())
+      except AttributeError:
+        pass
     elif (e.type() != QEvent.Timer):
       QToolTip.hideText()
     return super().event(e)
@@ -2065,6 +2063,7 @@ class MainWindow(QMainWindow):
 
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
+    self._ready = False
     self.init_UI()
     self.init_properties()
     self.init_VTK()
@@ -2088,7 +2087,6 @@ class MainWindow(QMainWindow):
     event.accept()
 
   def init_properties(self):
-    self._ready = False
     self._filename = None
     self._orbitals = None
     self._MO = None
@@ -2198,8 +2196,10 @@ class MainWindow(QMainWindow):
     self.fileMenu.addSeparator()
     self.clearAction = self.fileMenu.addAction('&Clear')
     self.quitAction = self.fileMenu.addAction('&Quit')
-    self.viewMenu = MenuTT('&View')
+    self.viewMenu = MenuTT('Vie&w')
     self.mainMenu.addMenu(self.viewMenu)
+    self.orthographicAction = self.viewMenu.addAction('&Orthographic')
+    self.orthographicAction.setCheckable(True)
     self.fitViewAction = self.viewMenu.addAction('&Fit view')
     self.resetCameraAction = self.viewMenu.addAction('&Reset camera')
     self.helpMenu = MenuTT('&Help')
@@ -2210,6 +2210,7 @@ class MainWindow(QMainWindow):
     # widgets
     self.fileLabel = QLabel('File:')
     self.filenameLabel = QLabel('')
+    self.fileButton = QPushButton('Load file...')
     self.densityTypeLabel = QLabel('Density:')
     self.densityTypeButton = QComboBox()
     self.rootLabel = QLabel('Root:')
@@ -2239,6 +2240,7 @@ class MainWindow(QMainWindow):
     self.opacitySlider = QSlider(Qt.Horizontal)
     self.opacityBox = QLineEdit()
     self.opacityLabel.setBuddy(self.opacityBox)
+    self.textureButton = QPushButton('Te&xture')
     self.surfaceBox = QCheckBox('Surface:')
     self.signButton = QComboBox()
     self.nodesBox = QCheckBox('Nodes:')
@@ -2295,6 +2297,7 @@ class MainWindow(QMainWindow):
     self.deletedButton.setLayoutDirection(Qt.RightToLeft)
     self.isovalueBox.setFixedWidth(80)
     self.opacityBox.setFixedWidth(60)
+    self.textureButton.setCheckable(True)
     self.surfaceBox.setLayoutDirection(Qt.RightToLeft)
     self.signButton.addItem(u'+', [True, False])
     self.signButton.addItem(u'−', [False, True])
@@ -2330,11 +2333,13 @@ class MainWindow(QMainWindow):
     self.scratchAction.setToolTip('Use a scratch file for caching basis functions (faster, but uses disk space)')
     self.clearAction.setToolTip('Clear the currently loaded file')
     self.quitAction.setToolTip('Quit {}'.format(__name__))
+    self.orthographicAction.setToolTip('Toggle the use of an orthographic projection (perspective if disabled)')
     self.fitViewAction.setToolTip('Fit the currently displayed objects in the view')
     self.resetCameraAction.setToolTip('Reset the camera to the default view')
     self.keysAction.setToolTip('Show list of hotkeys')
     self.aboutAction.setToolTip('Show information about {} and environment'.format(__name__))
     self.filenameLabel.setToolTip('Currently loaded filename')
+    self.fileButton.setToolTip('Load a file in any supported format')
     self.densityTypeButton.setToolTip('Select type of density for natural orbitals')
     self.densityTypeButton.setWhatsThis('Select the type of density to compute natural orbitals for, out of those available.<br>Keys: <b>Alt+PgUp</b>, <b>Alt+PgDown</b>')
     self.rootButton.setToolTip('Select root for natural active orbitals')
@@ -2372,6 +2377,8 @@ class MainWindow(QMainWindow):
     self.opacitySlider.setWhatsThis('Change the opacity of the isosurfaces. Lower opacity makes the surface more transparent.<br>Keys: <b>(Shift+)O</b> (oh), <b>(Shift+)T</b>')
     self.opacityBox.setToolTip('Set opacity of the isosurfaces')
     self.opacityBox.setWhatsThis('Opacity of the isosurfaces. Lower opacity makes the surface more transparent.')
+    self.textureButton.setToolTip('Show/hide the texture settings for the isosurfaces')
+    self.textureButton.setWhatsThis('Open or close a window where isosurface colors and texture/shading settings can be changed.<br>Key: <b>X</b>')
     self.surfaceBox.setToolTip('Show/hide the isosurfaces')
     self.surfaceBox.setWhatsThis('If checked, the isosurfaces of the current orbital or density are displayed.<br>Key: <b>Ctrl+S</b>')
     self.signButton.setToolTip('Set which parts of the isosurfaces are displayed')
@@ -2425,6 +2432,7 @@ class MainWindow(QMainWindow):
 
     # layout
     hbox1 = QHBoxLayout()
+    hbox1.addWidget(self.fileButton)
     hbox1.addWidget(self.fileLabel)
     hbox1.addWidget(self.filenameLabel, stretch=1)
 
@@ -2466,6 +2474,7 @@ class MainWindow(QMainWindow):
     hbox5.addWidget(self.isovalueGroup, stretch=2)
     self.opacityGroup = group_widgets(self.opacityLabel, self.opacitySlider, self.opacityBox)
     hbox5.addWidget(self.opacityGroup, stretch=1)
+    hbox5.addWidget(self.textureButton)
 
     hbox6 = QHBoxLayout()
     hbox6.setSpacing(10)
@@ -2523,9 +2532,14 @@ class MainWindow(QMainWindow):
     self.listDock.setWhatsThis('This is a detachable window that shows all orbitals in the file. For each orbital you can add a custom note and specify whether it should be included in the electron and spin density. This information is not saved.<br>Key: <b>Ctrl+L</b>')
 
     self.transformDock = TransformDock(self)
-    self.addDockWidget(Qt.RightDockWidgetArea, self.transformDock)
+    self.transformDock.setFloating(True)
     self.transformDock.hide()
     self.transformDock.setWhatsThis('This is a detachable window that allows setting a transformation (rotation, scaling, shearing, translation) for the grid box. This is only possible if the current file is not a precomputed grid. The transformation affects the display and any grid saved in the cube format.')
+
+    self.textureDock = TextureDock(self)
+    self.textureDock.setFloating(True)
+    self.textureDock.hide()
+    self.textureDock.setWhatsThis('This is a detachable window that allows modifying the color and texture/shading properties for the isosurfaces.')
 
     self.screenshot = None
     self.keymess = None
@@ -2535,7 +2549,7 @@ class MainWindow(QMainWindow):
     self.statusBar().addPermanentWidget(self.cancelButton)
     self.statusBar().setStyleSheet('QStatusBar::item{border:0};')
     self.statusLabel.setText('Ready.')
-    self.resize(800,800)
+    self.resize(800, 800)
 
     # shortcuts
     self.loadAction.setShortcut(QKeySequence(QKeySequence.Open)) # Ctrl+O
@@ -2546,6 +2560,7 @@ class MainWindow(QMainWindow):
     self.clearAction.setShortcut(QKeySequence(QKeySequence.Close)) # Ctrl+W
     self.quitAction.setShortcut(QKeySequence(QKeySequence.Quit)) # Ctrl+Q
     self.keysAction.setShortcut(QKeySequence(QKeySequence.HelpContents)) # F1
+    self.orthographicAction.setShortcut(QKeySequence('P'))
     self.fitViewAction.setShortcut(QKeySequence('R'))
     self.resetCameraAction.setShortcut(QKeySequence('Shift+R'))
     self.listButton.setShortcut('Ctrl+L')
@@ -2595,6 +2610,7 @@ class MainWindow(QMainWindow):
     self.increaseMoreOpacityShortcut.activated.connect(partial(self.increase_opacity, True))
     self.decreaseMoreOpacityShortcut = QShortcut(QKeySequence('Shift+T'), self)
     self.decreaseMoreOpacityShortcut.activated.connect(partial(self.decrease_opacity, True))
+    self.textureButton.setShortcut('X')
     self.surfaceBox.setShortcut('Ctrl+S')
     self.prevSignShortcut = QShortcut(QKeySequence('Ctrl+Shift+PgUp'), self)
     self.prevSignShortcut.activated.connect(self.prev_sign)
@@ -2623,8 +2639,10 @@ class MainWindow(QMainWindow):
     self.quitAction.triggered.connect(self.close)
     self.keysAction.triggered.connect(self.show_keys)
     self.aboutAction.triggered.connect(self.show_about)
+    self.orthographicAction.triggered.connect(self.orthographic)
     self.fitViewAction.triggered.connect(self.reset_camera)
     self.resetCameraAction.triggered.connect(partial(self.reset_camera, True))
+    self.fileButton.clicked.connect(self.load_file)
     self.densityTypeButton.currentIndexChanged.connect(self.densityTypeButton_changed)
     self.rootButton.currentIndexChanged.connect(self.rootButton_changed)
     self.irrepButton.currentIndexChanged.connect(self.irrepButton_changed)
@@ -2637,6 +2655,7 @@ class MainWindow(QMainWindow):
     self.isovalueBox.editingFinished.connect(self.isovalueBox_changed)
     self.opacitySlider.valueChanged.connect(self.opacitySlider_changed)
     self.opacityBox.editingFinished.connect(self.opacityBox_changed)
+    self.textureButton.clicked.connect(self.show_texture)
     self.surfaceBox.stateChanged.connect(self.toggle_surface)
     self.signButton.currentIndexChanged.connect(self.sign_changed)
     self.nodesBox.stateChanged.connect(self.toggle_nodes)
@@ -2677,9 +2696,9 @@ class MainWindow(QMainWindow):
 
     self.lut = vtk.vtkLookupTable()
     self.lut.SetNumberOfTableValues(3)
-    self.lut.SetTableValue(0, *surface_color[-1])
-    self.lut.SetTableValue(1, *surface_color[ 0])
-    self.lut.SetTableValue(2, *surface_color[ 1])
+    self.lut.SetTableValue(0, *self.textureDock.negcolor)
+    self.lut.SetTableValue(1, *self.textureDock.zerocolor)
+    self.lut.SetTableValue(2, *self.textureDock.poscolor)
     self.lut.SetTableRange(-np.finfo(np.float).eps, np.finfo(np.float).eps)
     self.lut.SetNanColor(1, 1, 1, 1)
 
@@ -2775,7 +2794,7 @@ class MainWindow(QMainWindow):
     if (self._fileReadThread is not None):
       self._fileReadThread.wait()
     self._fileReadThread = FileRead(self, filename=new, ftype=ftype)
-    self._fileReadThread.disable_list = [self.loadAction, self.saveMenu, self.clearAction]
+    self._fileReadThread.disable_list = [self.loadAction, self.saveMenu, self.clearAction, self.fileButton]
     self._fileReadThread.finished.connect(self.file_read)
     self._fileReadThread.start()
 
@@ -3870,7 +3889,7 @@ class MainWindow(QMainWindow):
     m.SetInputConnection(o.GetOutputPort())
     self.box = vtk.vtkActor()
     self.box.SetMapper(m)
-    self.box.GetProperty().SetColor(1,1,1)
+    self.box.GetProperty().SetColor(1, 1, 1)
     self.box.GetProperty().SetOpacity(0.5)
     self.build_axes()
     self.toggle_box()
@@ -3884,10 +3903,10 @@ class MainWindow(QMainWindow):
     ox = np.zeros(3)
     oy = np.zeros(3)
     oz = np.zeros(3)
-    grid.GetPoint(0,0,0,o)
-    grid.GetPoint(ngrid[0]-1,0,0,ox)
-    grid.GetPoint(0,ngrid[1]-1,0,oy)
-    grid.GetPoint(0,0,ngrid[2]-1,oz)
+    grid.GetPoint(0, 0, 0, o)
+    grid.GetPoint(ngrid[0]-1, 0, 0, ox)
+    grid.GetPoint(0, ngrid[1]-1, 0, oy)
+    grid.GetPoint(0, 0, ngrid[2]-1, oz)
     nx = (ox-o)/(ngrid[0]-1)
     ny = (oy-o)/(ngrid[1]-1)
     nz = (oz-o)/(ngrid[2]-1)
@@ -3903,8 +3922,8 @@ class MainWindow(QMainWindow):
     axisX.SetPoint1(o)
     axisX.SetPoint2(ox)
     axisX.SetAxisTypeToX()
-    axisX.GetAxisMajorTicksProperty().SetColor(1,0.8,0.8)
-    axisX.SetRange(0,ngrid[0]-1)
+    axisX.GetAxisMajorTicksProperty().SetColor(1, 0.8, 0.8)
+    axisX.SetRange(0, ngrid[0]-1)
     axisY = vtk.vtkAxisActor()
     axisY.SetAxisBaseForX(nx)
     axisY.SetAxisBaseForY(ny)
@@ -3916,8 +3935,8 @@ class MainWindow(QMainWindow):
     axisY.SetPoint1(o)
     axisY.SetPoint2(oy)
     axisY.SetAxisTypeToY()
-    axisY.GetAxisMajorTicksProperty().SetColor(0.8,1,0.8)
-    axisY.SetRange(0,ngrid[1]-1)
+    axisY.GetAxisMajorTicksProperty().SetColor(0.8, 1, 0.8)
+    axisY.SetRange(0, ngrid[1]-1)
     axisZ = vtk.vtkAxisActor()
     axisZ.SetAxisBaseForX(nx)
     axisZ.SetAxisBaseForY(ny)
@@ -3929,8 +3948,8 @@ class MainWindow(QMainWindow):
     axisZ.SetPoint1(o)
     axisZ.SetPoint2(oz)
     axisZ.SetAxisTypeToZ()
-    axisZ.GetAxisMajorTicksProperty().SetColor(0.8,0.8,1)
-    axisZ.SetRange(0,ngrid[2]-1)
+    axisZ.GetAxisMajorTicksProperty().SetColor(0.8, 0.8, 1)
+    axisZ.SetRange(0, ngrid[2]-1)
     self.axes = vtk.vtkAssembly()
     self.axes.AddPart(axisX)
     self.axes.AddPart(axisY)
@@ -4033,8 +4052,21 @@ class MainWindow(QMainWindow):
       t = vtk.vtkTransformPolyDataFilter()
       t.SetTransform(transform)
       t.SetInputConnection(c.GetOutputPort())
+      # split positive and negative parts to get good normals
+      pos = vtk.vtkClipPolyData()
+      pos.SetInputConnection(t.GetOutputPort())
+      neg = vtk.vtkClipPolyData()
+      neg.InsideOutOn()
+      neg.SetInputConnection(t.GetOutputPort())
+      rvneg = vtk.vtkReverseSense()
+      rvneg.SetInputConnection(neg.GetOutputPort())
+      rvneg.ReverseCellsOn()
+      rvneg.ReverseNormalsOn()
+      tot = vtk.vtkAppendPolyData()
+      tot.AddInputConnection(pos.GetOutputPort())
+      tot.AddInputConnection(rvneg.GetOutputPort())
       rv = vtk.vtkReverseSense()
-      rv.SetInputConnection(t.GetOutputPort())
+      rv.SetInputConnection(tot.GetOutputPort())
       rv.SetReverseCells(transform.GetMatrix().Determinant() < 0)
       m = vtk.vtkPolyDataMapper()
       m.SetInputConnection(rv.GetOutputPort())
@@ -4042,8 +4074,17 @@ class MainWindow(QMainWindow):
       m.SetLookupTable(self.lut)
       self.surface = vtk.vtkActor()
       self.surface.SetMapper(m)
-      self.surface.GetProperty().SetColor(surface_color[0])
+      self.surface.GetProperty().SetColor(self.textureDock.zerocolor)
       self.surface.GetProperty().SetOpacity(self.opacity)
+      self.surface.GetProperty().SetAmbient(self.textureDock.ambient)
+      self.surface.GetProperty().SetDiffuse(self.textureDock.diffuse)
+      self.surface.GetProperty().SetSpecular(self.textureDock.specular)
+      self.surface.GetProperty().SetSpecularPower(self.textureDock.power)
+      self.surface.GetProperty().SetSpecularColor(self.textureDock.specularcolor)
+      self.surface.GetProperty().SetInterpolation(self.textureDock.interpolation)
+      self.surface.GetProperty().SetRepresentation(self.textureDock.representation)
+      self.surface.GetProperty().SetLineWidth(self.textureDock.size)
+      self.surface.GetProperty().SetPointSize(self.textureDock.size)
       # Create the nodal surface
       cn = vtk.vtkContourFilter()
       try:
@@ -4140,7 +4181,7 @@ class MainWindow(QMainWindow):
     # If interrupted the surface is probably incomplete
     if (self.interrupt):
       self.surface.GetMapper().SetScalarVisibility(False)
-      self.surface.GetProperty().SetColor(*surface_color['nan'])
+      self.surface.GetProperty().SetColor(1.0, 0.8, 1.0)
     else:
       self.surface.GetMapper().SetScalarVisibility(self.orbital != 0)
     self.update_range()
@@ -4257,6 +4298,13 @@ class MainWindow(QMainWindow):
       self.listDock.show()
     else:
       self.listDock.hide()
+
+  def show_texture(self):
+    if (self.textureButton.isChecked()):
+      self.textureDock.set_pos()
+      self.textureDock.show()
+    else:
+      self.textureDock.hide()
 
   def toggle_surface(self):
     if (self.surface is None):
@@ -4498,6 +4546,7 @@ class MainWindow(QMainWindow):
 
   def edit_transform(self):
     if (self.transformButton.isChecked()):
+      self.transformDock.set_pos()
       self.transformDock.show()
     else:
       self.transformDock.hide()
@@ -4914,16 +4963,41 @@ class MainWindow(QMainWindow):
     msg.exec_()
     del msg
 
+  def set_scale(self):
+    camera = self.ren.GetActiveCamera()
+    if (camera.GetParallelProjection()):
+      self._prevscale = camera.GetParallelScale()
+    else:
+      self._prevscale = camera.GetDistance()
+
+  def orthographic(self):
+    camera = self.ren.GetActiveCamera()
+    # Set the orthographic or perspective projection, trying to keep the same scale factor
+    if (self.orthographicAction.isChecked()):
+      # Zooming in perspective projection changes distance
+      scale = camera.GetDistance()/self._prevscale * camera.GetParallelScale()
+      camera.SetParallelScale(scale)
+      camera.ParallelProjectionOn()
+    else:
+      # Zooming in orthographic projection changes parallel scale
+      factor = self._prevscale/camera.GetParallelScale()
+      camera.Dolly(factor)
+      camera.ParallelProjectionOff()
+    self.set_scale()
+    self.vtk_update()
+
   def reset_camera(self, restore=False):
     if (restore):
       self.ren.GetActiveCamera().SetFocalPoint(0, 0, 0)
       self.ren.GetActiveCamera().SetPosition(0, 0, 10)
       self.ren.GetActiveCamera().SetViewUp(0, 1, 0)
     self.ren.ResetCamera()
+    self.set_scale()
     self.vtk_update()
 
   def vtk_update(self):
     if (self.ready):
+      self.ren.ResetCameraClippingRange()
       self.vtkWidget.GetRenderWindow().Render()
 
 class ListDock(QDockWidget):
@@ -4933,6 +5007,7 @@ class ListDock(QDockWidget):
     self.init_UI()
 
   def init_UI(self):
+    self.setWindowTitle('List')
     self.ready = True
     self.modified = False
     self.orbLabels = []
@@ -5087,8 +5162,10 @@ class TransformDock(QDockWidget):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self.init_UI()
+    self.pos = False
 
   def init_UI(self):
+    self.setWindowTitle('Transformation')
     self.rotLabel = QLabel('Transformation matrix:')
     self.rotXXBox = QLineEdit()
     self.rotXYBox = QLineEdit()
@@ -5107,7 +5184,7 @@ class TransformDock(QDockWidget):
     self.resetButton = QPushButton('Reset')
     self.cancelButton = QPushButton('Cancel')
 
-    rotText = 'These elements define the 3×3 transformation matrix applied to the grid box.'
+    rotText = u'These elements define the 3×3 transformation matrix applied to the grid box.'
     self.rotXXBox.setToolTip('Element 1,1 of the rotation matrix')
     self.rotXXBox.setWhatsThis(rotText)
     self.rotXYBox.setToolTip('Element 1,2 of the rotation matrix')
@@ -5188,6 +5265,11 @@ class TransformDock(QDockWidget):
     self.resetButton.clicked.connect(self.reset)
     self.cancelButton.clicked.connect(self.set_boxes)
 
+  def set_pos(self):
+    if (not self.pos):
+      self.move(self.parent().frameGeometry().topLeft() + self.parent().rect().center() - self.rect().center())
+      self.pos = True
+
   def set_boxes(self, value=None):
     if ((value is None) or (type(value) is bool)):
       value = self.parent().transform
@@ -5250,6 +5332,621 @@ class TransformDock(QDockWidget):
 
   def closeEvent(self, *args):
     self.parent().transformButton.setChecked(False)
+    super().closeEvent(*args)
+
+class TextureDock(QDockWidget):
+
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._ambient = None
+    self._diffuse = None
+    self._specular = None
+    self._power = None
+    self._interpolation = None
+    self._representation = None
+    self._size = None
+    self._negcolor = None
+    self._zerocolor = None
+    self._poscolor = None
+    self._specularcolor = None
+    self.init_UI()
+    self.pos = False
+
+  def init_UI(self):
+    self.setWindowTitle('Texture')
+    self.ambientLabel = QLabel('Ambient:')
+    self.ambientSlider = QSlider(Qt.Horizontal)
+    self.ambientBox = QLineEdit()
+    self.ambientBox.setFixedWidth(60)
+    self.ambientLabel.setBuddy(self.ambientBox)
+    self.diffuseLabel = QLabel('Diffuse:')
+    self.diffuseSlider = QSlider(Qt.Horizontal)
+    self.diffuseBox = QLineEdit()
+    self.diffuseBox.setFixedWidth(60)
+    self.diffuseLabel.setBuddy(self.diffuseBox)
+    self.specularLabel = QLabel('Specular:')
+    self.specularSlider = QSlider(Qt.Horizontal)
+    self.specularBox = QLineEdit()
+    self.specularBox.setFixedWidth(60)
+    self.specularLabel.setBuddy(self.specularBox)
+    self.powerLabel = QLabel('Power:')
+    self.powerSlider = QSlider(Qt.Horizontal)
+    self.powerBox = QLineEdit()
+    self.powerBox.setFixedWidth(60)
+    self.powerLabel.setBuddy(self.powerBox)
+    self.presetsLabel = QLabel('Presets:')
+    self.matteButton = QPushButton('Matte')
+    self.metalButton = QPushButton('Metal')
+    self.plasticButton = QPushButton('Plastic')
+    self.cartoonButton = QPushButton('Cartoon')
+    self.interpolationLabel = QLabel('Interpolation:')
+    self.interpolationButton = QComboBox()
+    self.interpolationButton.addItems([u'Flat', u'Gouraud', u'Phong'])
+    self.representationLabel = QLabel('Representation:')
+    self.representationButton = QComboBox()
+    self.representationButton.addItems([u'Points', u'Wireframe', u'Surface'])
+    self.sizeLabel = QLabel('Point/line size:')
+    self.sizeBox = QSpinBox()
+    self.sizeBox.setMinimum(0)
+    self.colorsLabel = QLabel('Colors:')
+    self.negColorButton = QPushButton(u'−')
+    self.zeroColorButton = QPushButton(u'0')
+    self.posColorButton = QPushButton(u'+')
+    self.specColorButton = QPushButton(u'*')
+    self.presets2Label = QLabel('Presets:')
+    self.GBSButton = QPushButton('GBS')
+    self.BWButton = QPushButton('B&&W')
+    self.RGBButton = QPushButton('RGB')
+    self.CMYButton = QPushButton('CMY')
+
+    grid = QGridLayout()
+    grid.addWidget(self.ambientLabel, 0, 0)
+    grid.addWidget(self.ambientSlider, 0, 1)
+    grid.addWidget(self.ambientBox, 0, 2)
+    grid.addWidget(self.diffuseLabel, 1, 0)
+    grid.addWidget(self.diffuseSlider, 1, 1)
+    grid.addWidget(self.diffuseBox, 1, 2)
+    grid.addWidget(self.specularLabel, 2, 0)
+    grid.addWidget(self.specularSlider, 2, 1)
+    grid.addWidget(self.specularBox, 2, 2)
+    grid.addWidget(self.powerLabel, 3, 0)
+    grid.addWidget(self.powerSlider, 3, 1)
+    grid.addWidget(self.powerBox, 3, 2)
+
+    hbox1 = QHBoxLayout()
+    hbox1.addWidget(self.presetsLabel)
+    hbox1.addWidget(self.matteButton)
+    hbox1.addWidget(self.metalButton)
+    hbox1.addWidget(self.plasticButton)
+    hbox1.addWidget(self.cartoonButton)
+    hbox1.setAlignment(Qt.AlignLeft)
+
+    box = QVBoxLayout()
+    box.addLayout(grid)
+    box.addLayout(hbox1)
+    textureGroup = QGroupBox()
+    textureGroup.setLayout(box)
+
+    hbox2 = QHBoxLayout()
+    hbox2.addWidget(self.interpolationLabel)
+    hbox2.addWidget(self.interpolationButton)
+    hbox2.setAlignment(Qt.AlignLeft)
+    hbox3 = QHBoxLayout()
+    hbox3.addWidget(self.representationLabel)
+    hbox3.addWidget(self.representationButton)
+    hbox3.addWidget(self.sizeLabel)
+    hbox3.addWidget(self.sizeBox)
+    hbox3.setAlignment(Qt.AlignLeft)
+
+    hbox4 = QHBoxLayout()
+    hbox4.addWidget(self.colorsLabel)
+    hbox4.addWidget(self.negColorButton)
+    hbox4.addWidget(self.zeroColorButton)
+    hbox4.addWidget(self.posColorButton)
+    hbox4.addWidget(self.specColorButton)
+    hbox4.setAlignment(Qt.AlignLeft)
+
+    hbox5 = QHBoxLayout()
+    hbox5.addWidget(self.presets2Label)
+    hbox5.addWidget(self.GBSButton)
+    hbox5.addWidget(self.BWButton)
+    hbox5.addWidget(self.RGBButton)
+    hbox5.addWidget(self.CMYButton)
+    hbox5.setAlignment(Qt.AlignLeft)
+
+    box = QVBoxLayout()
+    box.addLayout(hbox4)
+    box.addLayout(hbox5)
+    colorsGroup = QGroupBox()
+    colorsGroup.setLayout(box)
+
+    vbox = QVBoxLayout()
+    vbox.setAlignment(Qt.AlignTop)
+    vbox.addWidget(textureGroup)
+    vbox.addLayout(hbox2)
+    vbox.addLayout(hbox3)
+    vbox.addWidget(colorsGroup)
+
+    _widget = QWidget()
+    _widget.setLayout(vbox)
+
+    self.setWidget(_widget)
+
+    self.ambientSlider.setRange(0, 100)
+    self.diffuseSlider.setRange(0, 100)
+    self.specularSlider.setRange(0, 100)
+    self.powerSlider.setRange(0, 1000)
+
+    self.negColorButton.setAutoFillBackground(True)
+    self.negColorButton.setFlat(True)
+    self.posColorButton.setAutoFillBackground(True)
+    self.posColorButton.setFlat(True)
+    self.zeroColorButton.setAutoFillBackground(True)
+    self.zeroColorButton.setFlat(True)
+    self.specColorButton.setAutoFillBackground(True)
+    self.specColorButton.setFlat(True)
+
+    self.ambientSlider.setToolTip('Amount of "ambient" illumination, independent of lighting')
+    self.ambientSlider.setWhatsThis('This gives the amount of the surface color that will show up regardless of its orientation with respect to the light sources.')
+    self.ambientBox.setToolTip(self.ambientSlider.toolTip())
+    self.diffuseSlider.setToolTip('Amount of "diffuse" illumination, basic light and shadows')
+    self.diffuseSlider.setWhatsThis('This gives the amount of surface color due to diffuse light reflection, it is brighter where the surface faces the light sources.')
+    self.diffuseBox.setToolTip(self.diffuseSlider.toolTip())
+    self.specularSlider.setToolTip('Amount of "specular" illumination, which gives the highlights')
+    self.specularSlider.setWhatsThis('This gives the amount of specular color that shows in the highlights.')
+    self.specularBox.setToolTip(self.specularSlider.toolTip())
+    self.powerSlider.setToolTip('Size of the highlights: the higher, the smaller')
+    self.powerSlider.setWhatsThis('This controls the size of the highlights, the higher the power the smaller and brighter the highlights.')
+    self.powerBox.setToolTip(self.powerSlider.toolTip())
+    self.matteButton.setToolTip('A matte texture with no highlights')
+    self.matteButton.setWhatsThis('Loads the default matte texture.')
+    self.metalButton.setToolTip('A sort of metallic texture')
+    self.metalButton.setWhatsThis('Loads the metal texture.')
+    self.plasticButton.setToolTip('A sort of plastic texture with tight highlights')
+    self.plasticButton.setWhatsThis('Loads the plastic texture.')
+    self.cartoonButton.setToolTip('A cartoon-like texture with flat colors')
+    self.cartoonButton.setWhatsThis('Loads the cartoon texture.')
+    self.interpolationButton.setToolTip('Choose interpolation method for the surface normals')
+    self.interpolationButton.setWhatsThis('Selects between different types on interpolation for the surface normal: flat (no interpolation), Gouraud and Phong (both give the same smooth result).')
+    self.representationButton.setToolTip('Choose the type of representation for the isosurface')
+    self.representationButton.setWhatsThis('Selects between different types of representation: points, wireframe or surface.')
+    self.sizeBox.setToolTip('Point or line width for points and wireframe representations')
+    self.sizeBox.setWhatsThis('Size for the points in the point representation or width for the lines in wireframe representation.')
+    self.negColorButton.setToolTip('Color used for the negative parts of the isosurfaces')
+    self.negColorButton.setWhatsThis('When an isosurface has (or can have) both negative and positive parts, the negative parts are drawn with this color.')
+    self.zeroColorButton.setToolTip('Color used for unsigned isosurfaces (density')
+    self.zeroColorButton.setWhatsThis('When an isosurface is unsigned (the electron density), it is drawn with this color.')
+    self.posColorButton.setToolTip('Color used for the positive parts of the isosurfaces')
+    self.posColorButton.setWhatsThis('When an isosurface has (or can have) both negative and positive parts, the positive parts are drawn with this color.')
+    self.specColorButton.setToolTip('Color of the highlights')
+    self.specColorButton.setWhatsThis('This is the color used for the specular highlights. Ambient and diffuse use the surface color.')
+    self.GBSButton.setToolTip('Gold, bronze and silver colors')
+    self.GBSButton.setWhatsThis('Loads a preset with gold color for positive, bronze color for negative and silver color for unsigned.')
+    self.BWButton.setToolTip('Black, grey and white colors')
+    self.BWButton.setWhatsThis('Loads a preset with white for positive, black for negative and grey for unsigned.')
+    self.RGBButton.setToolTip('Red, green and blue colors')
+    self.RGBButton.setWhatsThis('Loads a preset with green for positive, red for negative and blue for unsigned.')
+    self.CMYButton.setToolTip('Cyan, magenta and yellow colors')
+    self.CMYButton.setWhatsThis('Loads a preset with yellow for positive, magenta for negative and cyan for unsigned.')
+
+    self.ambientSlider.valueChanged.connect(self.ambientSlider_changed)
+    self.ambientBox.editingFinished.connect(self.ambientBox_changed)
+    self.diffuseSlider.valueChanged.connect(self.diffuseSlider_changed)
+    self.diffuseBox.editingFinished.connect(self.diffuseBox_changed)
+    self.specularSlider.valueChanged.connect(self.specularSlider_changed)
+    self.specularBox.editingFinished.connect(self.specularBox_changed)
+    self.powerSlider.valueChanged.connect(self.powerSlider_changed)
+    self.powerBox.editingFinished.connect(self.powerBox_changed)
+    self.matteButton.clicked.connect(partial(self.preset, 'matte'))
+    self.metalButton.clicked.connect(partial(self.preset, 'metal'))
+    self.plasticButton.clicked.connect(partial(self.preset, 'plastic'))
+    self.cartoonButton.clicked.connect(partial(self.preset, 'cartoon'))
+    self.interpolationButton.currentIndexChanged.connect(self.interpolation_changed)
+    self.representationButton.currentIndexChanged.connect(self.representation_changed)
+    self.sizeBox.valueChanged.connect(self.sizeBox_changed)
+    self.posColorButton.clicked.connect(partial(self.choose_color, 'pos'))
+    self.negColorButton.clicked.connect(partial(self.choose_color, 'neg'))
+    self.zeroColorButton.clicked.connect(partial(self.choose_color, 'zero'))
+    self.specColorButton.clicked.connect(partial(self.choose_color, 'spec'))
+    self.GBSButton.clicked.connect(partial(self.color_preset, 'GBS'))
+    self.BWButton.clicked.connect(partial(self.color_preset, 'B&W'))
+    self.RGBButton.clicked.connect(partial(self.color_preset, 'RGB'))
+    self.CMYButton.clicked.connect(partial(self.color_preset, 'CMY'))
+
+    self.interpolationButton.setCurrentIndex(1) # Gouraud
+    self.representationButton.setCurrentIndex(2) # Surface
+    self.sizeBox.setValue(1)
+    self.preset('metal')
+    self.color_preset('GBS')
+
+  def set_pos(self):
+    if (not self.pos):
+      self.move(self.parent().frameGeometry().topLeft() + self.parent().rect().center() - self.rect().center())
+      self.pos = True
+
+  @property
+  def ambient(self):
+    return self._ambient
+
+  @ambient.setter
+  def ambient(self, value):
+    old = self._ambient
+    self._ambient = value
+    self._ambient_changed(value, old)
+
+  @property
+  def diffuse(self):
+    return self._diffuse
+
+  @diffuse.setter
+  def diffuse(self, value):
+    old = self._diffuse
+    self._diffuse = value
+    self._diffuse_changed(value, old)
+
+  @property
+  def specular(self):
+    return self._specular
+
+  @specular.setter
+  def specular(self, value):
+    old = self._specular
+    self._specular = value
+    self._specular_changed(value, old)
+
+  @property
+  def power(self):
+    return self._power
+
+  @power.setter
+  def power(self, value):
+    old = self._power
+    self._power = value
+    self._power_changed(value, old)
+
+  @property
+  def interpolation(self):
+    return self._interpolation
+
+  @interpolation.setter
+  def interpolation(self, value):
+    old = self._interpolation
+    self._interpolation = value
+    self._interpolation_changed(value, old)
+
+  @property
+  def representation(self):
+    return self._representation
+
+  @representation.setter
+  def representation(self, value):
+    old = self._representation
+    self._representation = value
+    self._representation_changed(value, old)
+
+  @property
+  def size(self):
+    return self._size
+
+  @size.setter
+  def size(self, value):
+    old = self._size
+    self._size = value
+    self._size_changed(value, old)
+
+  @property
+  def negcolor(self):
+    return self._negcolor
+
+  @negcolor.setter
+  def negcolor(self, value):
+    old = self._negcolor
+    self._negcolor = value
+    self.color_changed('neg', value, old)
+
+  @property
+  def zerocolor(self):
+    return self._zerocolor
+
+  @zerocolor.setter
+  def zerocolor(self, value):
+    old = self._zerocolor
+    self._zerocolor = value
+    self.color_changed('zero', value, old)
+
+  @property
+  def poscolor(self):
+    return self._poscolor
+
+  @poscolor.setter
+  def poscolor(self, value):
+    old = self._poscolor
+    self._poscolor = value
+    self.color_changed('pos', value, old)
+
+  @property
+  def specularcolor(self):
+    return self._specularcolor
+
+  @specularcolor.setter
+  def specularcolor(self, value):
+    old = self._specularcolor
+    self._specularcolor = value
+    self.color_changed('spec', value, old)
+
+  def _ambient_changed(self, new, old):
+    if (new == old):
+      return
+    slider_value = round(self.ambientSlider.minimum() + new * (self.ambientSlider.maximum() + self.ambientSlider.minimum()))
+    self.ambientSlider.blockSignals(True)
+    self.ambientSlider.setValue(slider_value)
+    self.ambientSlider.blockSignals(False)
+    if (self.parent().surface is None):
+      return
+    self.parent().surface.GetProperty().SetAmbient(new)
+    self.parent().vtk_update()
+
+  def ambientSlider_changed(self, value):
+    new = (value - self.ambientSlider.minimum())/(self.ambientSlider.maximum() - self.ambientSlider.minimum())
+    self.ambientBox.setText('{:.2f}'.format(new))
+    self.ambient = new
+
+  def ambientBox_changed(self):
+    try:
+      value = float(self.ambientBox.text())
+      assert 0.0 <= value <= 1.0
+      self.ambient = value
+    except:
+      self.ambientBox.setText('{:.2f}'.format(self.ambient))
+
+  def _diffuse_changed(self, new, old):
+    if (new == old):
+      return
+    slider_value = round(self.diffuseSlider.minimum() + new * (self.diffuseSlider.maximum() + self.diffuseSlider.minimum()))
+    self.diffuseSlider.blockSignals(True)
+    self.diffuseSlider.setValue(slider_value)
+    self.diffuseSlider.blockSignals(False)
+    if (self.parent().surface is None):
+      return
+    self.parent().surface.GetProperty().SetDiffuse(new)
+    self.parent().vtk_update()
+
+  def diffuseSlider_changed(self, value):
+    new = (value - self.diffuseSlider.minimum())/(self.diffuseSlider.maximum() - self.diffuseSlider.minimum())
+    self.diffuseBox.setText('{:.2f}'.format(new))
+    self.diffuse = new
+
+  def diffuseBox_changed(self):
+    try:
+      value = float(self.diffuseBox.text())
+      assert 0.0 <= value <= 1.0
+      self.diffuse = value
+    except:
+      self.diffuseBox.setText('{:.2f}'.format(self.diffuse))
+
+  def _specular_changed(self, new, old):
+    if (new == old):
+      return
+    slider_value = round(self.specularSlider.minimum() + new * (self.specularSlider.maximum() + self.specularSlider.minimum()))
+    self.specularSlider.blockSignals(True)
+    self.specularSlider.setValue(slider_value)
+    self.specularSlider.blockSignals(False)
+    if (self.parent().surface is None):
+      return
+    self.parent().surface.GetProperty().SetSpecular(new)
+    self.parent().vtk_update()
+
+  def specularSlider_changed(self, value):
+    new = (value - self.specularSlider.minimum())/(self.specularSlider.maximum() - self.specularSlider.minimum())
+    self.specularBox.setText('{:.2f}'.format(new))
+    self.specular = new
+
+  def specularBox_changed(self):
+    try:
+      value = float(self.specularBox.text())
+      assert 0.0 <= value <= 1.0
+      self.specular = value
+    except:
+      self.specularBox.setText('{:.2f}'.format(self.specular))
+
+  def _power_changed(self, new, old):
+    if (new == old):
+      return
+    logrange = np.log(300/0.03)
+    reldist = np.log(new/0.03)/logrange
+    slider_value = round(self.powerSlider.minimum() + reldist * (self.powerSlider.maximum() + self.powerSlider.minimum()))
+    self.powerSlider.blockSignals(True)
+    self.powerSlider.setValue(slider_value)
+    self.powerSlider.blockSignals(False)
+    if (self.parent().surface is None):
+      return
+    self.parent().surface.GetProperty().SetSpecularPower(new)
+    self.parent().vtk_update()
+
+  def powerSlider_changed(self, value):
+    logrange = np.log(300/0.03)
+    reldist = (value - self.powerSlider.minimum())/(self.powerSlider.maximum() - self.powerSlider.minimum())
+    new = 0.03*np.exp(reldist*logrange)
+    self.powerBox.setText('{:.2f}'.format(new))
+    self.power = new
+
+  def powerBox_changed(self):
+    try:
+      value = float(self.powerBox.text())
+      assert 0.03 <= value <= 300
+      self.power = value
+    except:
+      self.powerBox.setText('{:.2f}'.format(self.power))
+
+  def _interpolation_changed(self, new, old):
+    if (new == old):
+      return
+    self.interpolationButton.blockSignals(True)
+    self.interpolationButton.setCurrentIndex(new)
+    self.interpolationButton.blockSignals(False)
+    if (self.parent().surface is None):
+      return
+    self.parent().surface.GetProperty().SetInterpolation(new)
+    self.parent().vtk_update()
+
+  def interpolation_changed(self, new):
+    try:
+      self.interpolation = new
+    except:
+      pass
+
+  def _representation_changed(self, new, old):
+    if (new == old):
+      return
+    self.representationButton.blockSignals(True)
+    self.representationButton.setCurrentIndex(new)
+    self.representationButton.blockSignals(False)
+    if (self.parent().surface is None):
+      return
+    self.parent().surface.GetProperty().SetRepresentation(new)
+    self.parent().vtk_update()
+
+  def representation_changed(self, new):
+    try:
+      self.representation = new
+    except:
+      pass
+
+  def _size_changed(self, new, old):
+    if (new == old):
+      return
+    if (self.parent().surface is None):
+      return
+    self.parent().surface.GetProperty().SetLineWidth(new)
+    self.parent().surface.GetProperty().SetPointSize(new)
+    self.parent().vtk_update()
+
+  def sizeBox_changed(self, value):
+    try:
+      value = float(value)
+      assert 0.0 <= value
+      self.size = value
+    except:
+      self.sizeBox.setValue(self.size)
+
+  def color_changed(self, which, new, old):
+    if (new == old):
+      return
+    if (which == 'neg'):
+      try:
+        self.parent().lut.SetTableValue(0, *new)
+      except AttributeError:
+        pass
+    elif (which == 'zero'):
+      try:
+        self.parent().lut.SetTableValue(1, *new)
+        if (self.parent().surface is not None):
+          self.parent().surface.GetProperty().SetAmbientColor(new)
+          self.parent().surface.GetProperty().SetDiffuseColor(new)
+      except AttributeError:
+        pass
+    elif (which == 'pos'):
+      try:
+        self.parent().lut.SetTableValue(2, *new)
+      except AttributeError:
+        pass
+    elif (which == 'spec'):
+      try:
+        if (self.parent().surface is not None):
+          self.parent().surface.GetProperty().SetSpecularColor(new)
+      except AttributeError:
+        pass
+    self.parent().vtk_update()
+
+  def preset(self, preset):
+    if (preset == 'matte'):
+      self.ambientBox.setText('0.0')
+      self.diffuseBox.setText('1.0')
+      self.specularBox.setText('0.0')
+      self.powerBox.setText('1.0')
+    elif (preset == 'metal'):
+      self.ambientBox.setText('0.0')
+      self.diffuseBox.setText('0.7')
+      self.specularBox.setText('0.7')
+      self.powerBox.setText('3.0')
+    elif (preset == 'plastic'):
+      self.ambientBox.setText('0.1')
+      self.diffuseBox.setText('0.9')
+      self.specularBox.setText('1.0')
+      self.powerBox.setText('50')
+    elif (preset == 'cartoon'):
+      self.ambientBox.setText('0.7')
+      self.diffuseBox.setText('0.0')
+      self.specularBox.setText('0.2')
+      self.powerBox.setText('0.03')
+    ready = self.parent().ready
+    self.parent().ready = False
+    self.ambientBox.editingFinished.emit()
+    self.diffuseBox.editingFinished.emit()
+    self.specularBox.editingFinished.emit()
+    self.powerBox.editingFinished.emit()
+    self.parent().ready = ready
+    self.parent().vtk_update()
+
+  def choose_color(self, which, _color=None):
+    color = QColor()
+    if (not _color):
+      if (which == 'neg'):
+        color.setRgbF(*self.negcolor)
+      elif (which == 'zero'):
+        color.setRgbF(*self.zerocolor)
+      elif (which == 'pos'):
+        color.setRgbF(*self.poscolor)
+      elif (which == 'spec'):
+        color.setRgbF(*self.specularcolor)
+      color = QColorDialog().getColor(color, self)
+    else:
+      color.setRgbF(*_color)
+    if (not color.isValid()):
+      return
+    pal = QPalette()
+    pal.setColor(QPalette.Button, color)
+    if (which == 'neg'):
+      self.negcolor = color.getRgbF()[0:3]
+      self.negColorButton.setPalette(pal)
+    elif (which == 'zero'):
+      self.zerocolor = color.getRgbF()[0:3]
+      self.zeroColorButton.setPalette(pal)
+    elif (which == 'pos'):
+      self.poscolor = color.getRgbF()[0:3]
+      self.posColorButton.setPalette(pal)
+    elif (which == 'spec'):
+      self.specularcolor = color.getRgbF()[0:3]
+      self.specColorButton.setPalette(pal)
+
+  def color_preset(self, preset):
+    ready = self.parent().ready
+    self.parent().ready = False
+    if (preset == 'GBS'):
+      self.choose_color('neg',  (222/255, 119/255,  61/255))
+      self.choose_color('zero', (172/255, 189/255, 208/255))
+      self.choose_color('pos',  (204/255, 222/255,  61/255))
+      self.choose_color('spec', (172/255, 189/255, 208/255))
+    elif (preset == 'B&W'):
+      self.choose_color('neg',  ( 20/255,  20/255,  20/255))
+      self.choose_color('zero', (128/255, 128/255, 128/255))
+      self.choose_color('pos',  (235/255, 235/255, 235/255))
+      self.choose_color('spec', (255/255, 255/255, 255/255))
+    elif (preset == 'RGB'):
+      self.choose_color('neg',  (200/255,  20/255,  20/255))
+      self.choose_color('zero', ( 20/255, 100/255, 200/255))
+      self.choose_color('pos',  ( 20/255, 200/255,  20/255))
+      self.choose_color('spec', (200/255, 200/255, 200/255))
+    elif (preset == 'CMY'):
+      self.choose_color('neg',  (220/255,   0/255, 220/255))
+      self.choose_color('zero', (  0/255, 220/255, 220/255))
+      self.choose_color('pos',  (220/255, 220/255,   0/255))
+      self.choose_color('spec', (128/255, 220/255, 128/255))
+    self.parent().ready = ready
+    self.parent().vtk_update()
+
+  def closeEvent(self, *args):
+    self.parent().textureButton.setChecked(False)
     super().closeEvent(*args)
 
 app = QApplication(sys.argv)
