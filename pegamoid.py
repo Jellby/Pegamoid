@@ -5410,15 +5410,16 @@ class TextureDock(QDockWidget):
     self.sizeBox = QSpinBox()
     self.sizeBox.setMinimum(0)
     self.colorsLabel = QLabel('Colors:')
-    self.negColorButton = QPushButton(u'−')
-    self.zeroColorButton = QPushButton(u'0')
-    self.posColorButton = QPushButton(u'+')
-    self.specColorButton = QPushButton(u'*')
+    self.negColorButton = QPushButton(u'⊖')
+    self.zeroColorButton = QPushButton(u'⊗')
+    self.posColorButton = QPushButton(u'⊕')
+    self.specColorButton = QPushButton(u'⊙')
     self.presets2Label = QLabel('Presets:')
     self.GBSButton = QPushButton('GBS')
     self.BWButton = QPushButton('B&&W')
     self.RGBButton = QPushButton('RGB')
     self.CMYButton = QPushButton('CMY')
+    self.OBGButton = QPushButton('OBG')
 
     grid = QGridLayout()
     grid.addWidget(self.ambientLabel, 0, 0)
@@ -5473,6 +5474,7 @@ class TextureDock(QDockWidget):
     hbox5.addWidget(self.BWButton)
     hbox5.addWidget(self.RGBButton)
     hbox5.addWidget(self.CMYButton)
+    hbox5.addWidget(self.OBGButton)
     hbox5.setAlignment(Qt.AlignLeft)
 
     box = QVBoxLayout()
@@ -5549,6 +5551,8 @@ class TextureDock(QDockWidget):
     self.RGBButton.setWhatsThis('Loads a preset with green for positive, red for negative and blue for unsigned.')
     self.CMYButton.setToolTip('Cyan, magenta and yellow colors')
     self.CMYButton.setWhatsThis('Loads a preset with yellow for positive, magenta for negative and cyan for unsigned.')
+    self.OBGButton.setToolTip('Orange, blue and grey colors')
+    self.OBGButton.setWhatsThis('Loads a preset with orange for positive, blue for negative and grey for unsigned.')
 
     self.ambientSlider.valueChanged.connect(self.ambientSlider_changed)
     self.ambientBox.editingFinished.connect(self.ambientBox_changed)
@@ -5573,6 +5577,7 @@ class TextureDock(QDockWidget):
     self.BWButton.clicked.connect(partial(self.color_preset, 'B&W'))
     self.RGBButton.clicked.connect(partial(self.color_preset, 'RGB'))
     self.CMYButton.clicked.connect(partial(self.color_preset, 'CMY'))
+    self.OBGButton.clicked.connect(partial(self.color_preset, 'OBG'))
 
     self.interpolationButton.setCurrentIndex(1) # Gouraud
     self.representationButton.setCurrentIndex(2) # Surface
@@ -5963,6 +5968,11 @@ class TextureDock(QDockWidget):
       self.choose_color('zero', (  0/255, 220/255, 220/255))
       self.choose_color('pos',  (220/255, 220/255,   0/255))
       self.choose_color('spec', (128/255, 220/255, 128/255))
+    elif (preset == 'OBG'):
+      self.choose_color('neg',  (  0/255,   0/255, 220/255))
+      self.choose_color('zero', (160/255, 160/255, 160/255))
+      self.choose_color('pos',  (220/255, 110/255,   0/255))
+      self.choose_color('spec', (220/255, 200/255, 220/255))
     self.parent().ready = ready
     self.parent().vtk_update()
 
