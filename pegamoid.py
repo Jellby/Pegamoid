@@ -14,7 +14,7 @@ import sys
 try:
   from qtpy.QtCore import Qt, QObject, QThread, QEvent
   from qtpy.QtWidgets import *
-  from qtpy.QtGui import QPixmap, QIcon, QKeySequence
+  from qtpy.QtGui import QPixmap, QIcon, QKeySequence, QColor, QPalette
   import qtpy
   v = qtpy.PYQT_VERSION
   if (v is None):
@@ -24,7 +24,7 @@ except:
   try:
     from PyQt5.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
     from PyQt5.QtWidgets import *
-    from PyQt5.QtGui import QPixmap, QIcon, QKeySequence
+    from PyQt5.QtGui import QPixmap, QIcon, QKeySequence, QColor, QPalette
     QtVersion = 'PyQt5 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
   except ImportError:
     from PyQt4.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
