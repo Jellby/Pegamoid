@@ -1353,6 +1353,7 @@ class Grid(object):
       for i in range(abs(num)):
         q, _, x, y, z = str(f.readline().decode('ascii')).split()
         self.centers.append({'name':'{0}'.format(i), 'Z':int(q), 'xyz':np.array([float(x), float(y), float(z)])})
+      self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
       # Compute full volume size
       self.ngrid = [ngridx, ngridy, ngridz]
       self.orig = np.array([0.0, 0.0, 0.0])
@@ -1387,6 +1388,7 @@ class Grid(object):
       for i in range(num):
         l, x, y, z = str(f.readline().decode('ascii')).split()
         self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array([float(x), float(y), float(z)])})
+      self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
       # Read number of orbitals and block size
       f.readline()
       f.readline()
@@ -1461,6 +1463,7 @@ class Grid(object):
       for i in range(num):
         l, x, y, z = str(f.readline().decode('ascii')).split()
         self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array([float(x), float(y), float(z)])/angstrom})
+      self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
       # Read number of orbitals and block size
       f.readline()
       data = f.readline().split()
@@ -3854,6 +3857,27 @@ class MainWindow(QMainWindow):
       ngrid = self.orbitals.ngrid
       boxSize = lims[1,:]-lims[0,:]
       matrix = self.orbitals.transform.flatten()
+      # Fill up the box size and transformation boxes with the values that would reproduce this grid
+      # Since the number of grid points is controlled by a single parameter,
+      # we have to scale the axes according to the number of grid divisions
+      # and modify the transformation accordingly; out of the infinite
+      # possible scalings, we chose the one that will make the determinant
+      # of the transformation equal to 1.
+      t = vtk.vtkTransform()
+      t.SetMatrix(matrix)
+      ng = [n-1 for n in ngrid]
+      f = np.cbrt(abs(t.GetMatrix().Determinant())*np.prod(boxSize)/np.prod(ng))
+      bSize = [np.round(f*n, decimals=2) for n in ng]
+      m = np.copy(matrix).reshape(4, 4)
+      m[0:3,0] *= boxSize[0]/bSize[0]
+      m[0:3,1] *= boxSize[1]/bSize[1]
+      m[0:3,2] *= boxSize[2]/bSize[2]
+      midpoint = 0.5*(lims[0,:]+lims[1,:])
+      m[0:3,3] = t.TransformPoint(midpoint)-self.orbitals.geomcenter
+      self.transformDock.set_boxes(np.round(m.flatten(), decimals=6))
+      self.boxSizeBox.blockSignals(True)
+      self.boxSizeBox.setText('{0}, {1}, {2}'.format(*bSize))
+      self.boxSizeBox.blockSignals(False)
     else:
       if (self.boxSize is None):
         return
@@ -3869,6 +3893,10 @@ class MainWindow(QMainWindow):
       matrix[3]  += self.orbitals.geomcenter[0]
       matrix[7]  += self.orbitals.geomcenter[1]
       matrix[11] += self.orbitals.geomcenter[2]
+      self.transformDock.set_boxes()
+    self.gridPointsBox.blockSignals(True)
+    self.gridPointsBox.setText('{0}'.format(np.max(ngrid)))
+    self.gridPointsBox.blockSignals(False)
     self.update_cache(ngrid)
     grid = vtk.vtkImageData()
     grid.SetOrigin(lims[0,:])
@@ -3911,7 +3939,6 @@ class MainWindow(QMainWindow):
     ny = (oy-o)/(ngrid[1]-1)
     nz = (oz-o)/(ngrid[2]-1)
     axisX = vtk.vtkAxisActor()
-    axisZ = vtk.vtkAxisActor()
     axisX.SetAxisBaseForX(nx)
     axisX.SetAxisBaseForY(ny)
     axisX.SetAxisBaseForZ(nz)
@@ -4043,21 +4070,21 @@ class MainWindow(QMainWindow):
       self.ready = False
       self._newgrid = False
       transform = self.xyz.GetTransform()
+      t = vtk.vtkTransformFilter()
+      t.SetTransform(transform)
+      try:
+        t.SetInputData(points)
+      except AttributeError:
+        t.SetInput(points)
       # Create the isosurface
       c = vtk.vtkContourFilter()
-      try:
-        c.SetInputData(points)
-      except AttributeError:
-        c.SetInput(points)
-      t = vtk.vtkTransformPolyDataFilter()
-      t.SetTransform(transform)
-      t.SetInputConnection(c.GetOutputPort())
+      c.SetInputConnection(t.GetOutputPort())
       # split positive and negative parts to get good normals
       pos = vtk.vtkClipPolyData()
-      pos.SetInputConnection(t.GetOutputPort())
+      pos.SetInputConnection(c.GetOutputPort())
       neg = vtk.vtkClipPolyData()
       neg.InsideOutOn()
-      neg.SetInputConnection(t.GetOutputPort())
+      neg.SetInputConnection(c.GetOutputPort())
       rvneg = vtk.vtkReverseSense()
       rvneg.SetInputConnection(neg.GetOutputPort())
       rvneg.ReverseCellsOn()
@@ -4087,17 +4114,11 @@ class MainWindow(QMainWindow):
       self.surface.GetProperty().SetPointSize(self.textureDock.size)
       # Create the nodal surface
       cn = vtk.vtkContourFilter()
-      try:
-        cn.SetInputData(points)
-      except AttributeError:
-        cn.SetInput(points)
+      cn.SetInputConnection(t.GetOutputPort())
       cn.SetNumberOfContours(1)
       cn.SetValue(0, 0.0)
-      tn = vtk.vtkTransformPolyDataFilter()
-      tn.SetTransform(transform)
-      tn.SetInputConnection(cn.GetOutputPort())
       rvn = vtk.vtkReverseSense()
-      rvn.SetInputConnection(tn.GetOutputPort())
+      rvn.SetInputConnection(cn.GetOutputPort())
       rvn.SetReverseCells(transform.GetMatrix().Determinant() < 0)
       mn = vtk.vtkPolyDataMapper()
       mn.SetInputConnection(rvn.GetOutputPort())
@@ -5933,9 +5954,9 @@ class TextureDock(QDockWidget):
       self.choose_color('pos',  (235/255, 235/255, 235/255))
       self.choose_color('spec', (255/255, 255/255, 255/255))
     elif (preset == 'RGB'):
-      self.choose_color('neg',  (200/255,  20/255,  20/255))
-      self.choose_color('zero', ( 20/255, 100/255, 200/255))
-      self.choose_color('pos',  ( 20/255, 200/255,  20/255))
+      self.choose_color('neg',  (200/255,  60/255,  60/255))
+      self.choose_color('zero', ( 60/255, 120/255, 200/255))
+      self.choose_color('pos',  ( 60/255, 200/255,  60/255))
       self.choose_color('spec', (200/255, 200/255, 200/255))
     elif (preset == 'CMY'):
       self.choose_color('neg',  (220/255,   0/255, 220/255))
