@@ -67,8 +67,8 @@ For any orbital or density, gradient lines can be computed and displayed
 for reduced subsets of orbitals (for instance, only for the active orbitals),
 and the user can write arbitrary notes for each orbital.
 
-The value and opacity used to display isurfaces can be adjusted and the display
-of the following elements can be toggled:
+The value, opacity, colors and texture properties used to display isurfaces can
+be adjusted and the display of the following elements can be toggled:
 
 * Positive and negative parts of the isosurface.
 
