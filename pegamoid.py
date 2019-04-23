@@ -4048,7 +4048,7 @@ class MainWindow(QMainWindow):
     if (dt == 'Detachment density'):
       dens_type.append('d')
     self._computeVolumeThread = ComputeVolume(self, cache=self._cache_file, dens_type=dens_type)
-    self._computeVolumeThread.disable_list = [self.scratchAction, self.irrepGroup, self.orbitalGroup, self.boxSizeGroup, self.gridPointsGroup, self.gradientBox, self.gradientGroup]
+    self._computeVolumeThread.disable_list = [self.scratchAction, self.densityTypeGroup, self.rootGroup, self.irrepGroup, self.orbitalGroup, self.boxSizeGroup, self.gridPointsGroup, self.gradientBox, self.gradientGroup, self.transformDock]
     self._computeVolumeThread.finished.connect(self.volume_computed)
     self._computeVolumeThread.start()
 
