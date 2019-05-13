@@ -180,3 +180,16 @@ work through a remote connection. We have had success running Pegamoid with
 session opened directly from an ssh connection. The specific needs and working
 solution will probably depend on the hardware and software available in the
 remote computer.
+
+Known problems
+--------------
+
+In some systems there are display issues in the 3D window, where some elements
+are wrongly drawn "on top" of others (this does not refer to the atom names,
+which are always on top). This problem has been seen with PyQt 5, and it's
+usually solved by switching to PyQt 4 or installing QtOpenGL support (in the
+"About" dialog, check if the "Qt API" line says "with QtOpenGL").
+
+Issues with the "Transform" and "Texture" windows not appearing have also been
+reported in some PyQt 4 versions. It is unclear at the moment what is the
+reason for this.

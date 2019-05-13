@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.2'
+__version__ = '2.2.1'
 
 import sys
 try:
@@ -30,9 +30,16 @@ except:
     from PyQt4.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
     from PyQt4.QtGui import *
     QtVersion = 'PyQt4 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
+import vtk.qt
+try:
+  vtk.qt.QVTKRWIBase = "QGLWidget"
+  from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+  QtVersion += ' with QtOpenGL'
+except ImportError:
+  vtk.qt.QVTKRWIBase = "QWidget"
+  from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 from vtk.util import numpy_support
-from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 import h5py
 import numpy as np
