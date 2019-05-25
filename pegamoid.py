@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.2.1'
+__version__ = '2.2.2'
 
 import sys
 try:
@@ -1104,7 +1104,7 @@ class Orbitals(object):
         data[:,:,k] = None
       else:
         data[:,:,k] += (field[:,:,k-1]+field[:,:,k+1])*g[2,2]
-    return data
+    return data.flatten()
 
   # Returns binomial coefficient as a fraction
   # Easy overflow for large arguments, but we are interested in relatively small arguments
@@ -4077,21 +4077,21 @@ class MainWindow(QMainWindow):
       self.ready = False
       self._newgrid = False
       transform = self.xyz.GetTransform()
-      t = vtk.vtkTransformFilter()
-      t.SetTransform(transform)
-      try:
-        t.SetInputData(points)
-      except AttributeError:
-        t.SetInput(points)
       # Create the isosurface
       c = vtk.vtkContourFilter()
-      c.SetInputConnection(t.GetOutputPort())
+      try:
+        c.SetInputData(points)
+      except AttributeError:
+        c.SetInput(points)
+      t = vtk.vtkTransformPolyDataFilter()
+      t.SetTransform(transform)
+      t.SetInputConnection(c.GetOutputPort())
       # split positive and negative parts to get good normals
       pos = vtk.vtkClipPolyData()
-      pos.SetInputConnection(c.GetOutputPort())
+      pos.SetInputConnection(t.GetOutputPort())
       neg = vtk.vtkClipPolyData()
       neg.InsideOutOn()
-      neg.SetInputConnection(c.GetOutputPort())
+      neg.SetInputConnection(t.GetOutputPort())
       rvneg = vtk.vtkReverseSense()
       rvneg.SetInputConnection(neg.GetOutputPort())
       rvneg.ReverseCellsOn()
@@ -4121,11 +4121,17 @@ class MainWindow(QMainWindow):
       self.surface.GetProperty().SetPointSize(self.textureDock.size)
       # Create the nodal surface
       cn = vtk.vtkContourFilter()
-      cn.SetInputConnection(t.GetOutputPort())
+      try:
+        cn.SetInputData(points)
+      except AttributeError:
+        cn.SetInput(points)
       cn.SetNumberOfContours(1)
       cn.SetValue(0, 0.0)
+      tn = vtk.vtkTransformPolyDataFilter()
+      tn.SetTransform(transform)
+      tn.SetInputConnection(cn.GetOutputPort())
       rvn = vtk.vtkReverseSense()
-      rvn.SetInputConnection(cn.GetOutputPort())
+      rvn.SetInputConnection(tn.GetOutputPort())
       rvn.SetReverseCells(transform.GetMatrix().Determinant() < 0)
       mn = vtk.vtkPolyDataMapper()
       mn.SetInputConnection(rvn.GetOutputPort())
@@ -4558,7 +4564,7 @@ class MainWindow(QMainWindow):
 
   def boxSizeBox_changed(self):
     try:
-      value = [float(i) for i in re.split(r'[ ,]*', str(self.boxSizeBox.text()).strip())]
+      value = [float(i) for i in re.split(r'[ ,]+', str(self.boxSizeBox.text()).strip())]
       assert (len(value) == 3) and all([i > 0 for i in value])
       self.boxSize = value
       self.boxSizeBox.blockSignals(True)
