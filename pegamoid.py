@@ -171,7 +171,7 @@ background_color = {
   '?': (0.466, 0.466, 0.466)  # CIELab(50,0,0)
 }
 
-angstrom = 0.52917721067
+angstrom = 1.88972612462 # = 1 / 0.529177210904
 
 #===============================================================================
 # Class for orbitals defined in term of basis functions, which can be computed
@@ -476,7 +476,7 @@ class Orbitals(object):
         elif re.search(r'\[ATOMS\]', line, re.IGNORECASE):
           unit = 1
           if (re.search(r'Angs', line, re.IGNORECASE)):
-            unit = 1/0.52917721092
+            unit = angstrom
           self.centers = []
           for i in range(num):
             l, _, q, x, y, z = f.readline().split()
@@ -1469,7 +1469,7 @@ class Grid(object):
       self.centers = []
       for i in range(num):
         l, x, y, z = str(f.readline().decode('ascii')).split()
-        self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array([float(x), float(y), float(z)])/angstrom})
+        self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array([float(x), float(y), float(z)])*angstrom})
       self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
       # Read number of orbitals and block size
       f.readline()
@@ -3794,9 +3794,9 @@ class MainWindow(QMainWindow):
     pd.GetPointData().AddArray(vtkl)
     # Add actor for molecule
     mol = vtk.vtkMolecule()
-    # Change coordinates in angstrom for setting bonds
+    # Change coordinates to angstrom for setting bonds
     for i,c in enumerate(self.orbitals.centers):
-      xyz = c['xyz']*angstrom
+      xyz = c['xyz']/angstrom
       mol.AppendAtom(c['Z'], *xyz)
     bp = vtk.vtkSimpleBondPerceiver()
     bp.SetInputData(mol)
@@ -3805,7 +3805,7 @@ class MainWindow(QMainWindow):
     molb.DeepCopy(bp.GetOutput())
     # Change coordinates back to bohr
     for i in range(molb.GetNumberOfAtoms()):
-      xyz = np.array(molb.GetAtomPosition(i))/angstrom
+      xyz = np.array(molb.GetAtomPosition(i))*angstrom
       molb.SetAtomPosition(i, *xyz)
     # Remove (hide) bonds with ghost atoms
     for i in range(molb.GetNumberOfBonds()):
