@@ -457,7 +457,7 @@ class Orbitals(object):
             self.tdm = tdm
       # Read the optional notes
       if ('Pegamoid_notes' in f):
-        self.notes = f['Pegamoid_notes'][:]
+        self.notes = [str(i.decode('ascii')) for i in f['Pegamoid_notes'][:]]
 
   # Read basis set from a Molden file
   def read_molden_basis(self):
@@ -1178,17 +1178,27 @@ class Orbitals(object):
 
   # Writes a new HDF5 file
   def write_hdf5(self, filename):
-    with h5py.File(self.h5file, 'r') as fi, h5py.File(filename, 'w') as fo:
-      fo.attrs['Pegamoid_version'] = '{0} {1}'.format(__name__, __version__)
-      # Copy some data from the original file
+    attrs = {}
+    dsets = {}
+    # First read stuff to be copied
+    with h5py.File(self.h5file, 'r') as fi:
       for a in ['NSYM', 'NBAS', 'NPRIM', 'IRREP_LABELS', 'NATOMS_ALL', 'NATOMS_UNIQUE']:
         if (a in fi.attrs):
-          fo.attrs[a] = fi.attrs[a]
+          attrs[a] = fi.attrs[a]
       for d in ['CENTER_LABELS', 'CENTER_CHARGES', 'CENTER_COORDINATES', 'BASIS_FUNCTION_IDS',
                 'DESYM_CENTER_LABELS', 'DESYM_CENTER_CHARGES', 'DESYM_CENTER_COORDINATES', 'DESYM_BASIS_FUNCTION_IDS', 'DESYM_MATRIX',
                 'PRIMITIVES', 'PRIMITIVE_IDS']:
         if (d in fi):
-          fi.copy(d, fo)
+          dsets[d] = [fi[d][:], fi[d].attrs.items()]
+    # Then write in a new file, this allows overwriting the input file
+    with h5py.File(filename, 'w') as fo:
+      fo.attrs['Pegamoid_version'] = '{0} {1}'.format(__name__, __version__)
+      for a in attrs.keys():
+        fo.attrs[a] = attrs[a]
+      for d in dsets.keys():
+        fo.create_dataset(d, data=dsets[d][0])
+        for i in dsets[d][1]:
+          fo[d].attrs[i[0]] = i[1]
       if (len(self.N_bas) > 1):
         sym = np.linalg.inv(self.mat)
       else:
@@ -1216,12 +1226,12 @@ class Orbitals(object):
         for i,o in enumerate(self.MO_a):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o['occup'] > 0.5) else 'S'
-        fo.create_dataset('MO_ALPHA_TYPEINDICES', data=np.string_(tp))
+        fo.create_dataset('MO_ALPHA_TYPEINDICES', data=np.array(tp, dtype=np.string_))
         tp = [o.get('newtype', o['type'])for o in self.MO_b]
         for i,o in enumerate(self.MO_b):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o['occup'] > 0.5) else 'S'
-        fo.create_dataset('MO_BETA_TYPEINDICES', data=np.string_(tp))
+        fo.create_dataset('MO_BETA_TYPEINDICES', data=np.array(tp, dtype=np.string_))
       else:
         cff = []
         for i,j in nMO:
@@ -1234,9 +1244,9 @@ class Orbitals(object):
         for i,o in enumerate(self.MO):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o.get('root_occup', o['occup']) > 1.0) else 'S'
-        fo.create_dataset('MO_TYPEINDICES', data=np.string_(tp))
+        fo.create_dataset('MO_TYPEINDICES', data=np.array(tp, dtype=np.string_))
       if (self.notes is not None):
-        fo.create_dataset('Pegamoid_notes', data=np.string_(self.notes))
+        fo.create_dataset('Pegamoid_notes', data=np.array(self.notes, dtype=np.string_))
 
   # Creates an InpOrb file from scratch
   def create_inporb(self, filename, MO=None):
