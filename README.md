@@ -144,18 +144,20 @@ Pegamoid uses some scratch disk space to store the computed basis functions. A
 file named ``pegamoid.cache`` will be created in a temporary location (typically
 inside the ``/tmp`` directory). For grids with many points and with many basis
 functions, this file could grow very large and even use up all available disk
-space. The maximum scratch size is by default 1 GiB, it can be changed through
-the environment variable ``PEGAMOID_MAXSCRATCH``, e.g.:
+space. The maximum scratch size is by default 1 GiB, but it can be configured in
+"File > Set scratch", or through the environment variable
+``PEGAMOID_MAXSCRATCH``, e.g.:
 
     PEGAMOID_MAXSCRATCH=100MB ./pegamoid.py
 
 for a maximum size of 100 MB. If the scratch size is not enough to hold all
 basis functions at the current resolution, it will only be used when computing
-the densities. In the "About" window you can find the instance-specific
-temporary path, as well as the maximum cache size, the scratch size currently in
-use, and the recommended size to allow keeping a cache all basis functions. The
-scratch file and directory are removed on a clean exit, but if the program
-crashes or is otherwise abnormally interrupted, they may be left behind.
+the densities. In the "Set scratch" window you can also find the
+instance-specific temporary path, as well as the maximum cache size, the scratch
+size currently in use, and the recommended size to allow keeping a cache all
+basis functions. The scratch file and directory are removed on a clean exit, but
+if the program crashes or is otherwise abnormally interrupted, they may be left
+behind.
 
 Use with a remote connection
 ----------------------------

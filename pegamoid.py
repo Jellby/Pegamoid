@@ -1668,6 +1668,9 @@ def name_to_Z(name):
   except:
     return 0
 
+#===============================================================================
+
+# Convert a string into a bool, according to its value
 def str_to_bool(string):
   return string.lower() in ['true', '1', 'yes', 'on']
 
@@ -1939,7 +1942,9 @@ class TakeScreenshot(QDialog):
     self.transparentBox.setChecked(True)
     self.panelBox = QCheckBox('Show text &panel:')
     self.panelBox.setLayoutDirection(Qt.RightToLeft)
-    self.saveButton = QPushButton('&Save')
+    bbox = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+    self.saveButton = bbox.button(QDialogButtonBox.Save)
+    self.saveButton.setEnabled(False)
     hbox1 = QHBoxLayout()
     hbox1.addWidget(self.fileLabel)
     hbox1.addWidget(self.fileBox)
@@ -1950,18 +1955,17 @@ class TakeScreenshot(QDialog):
     hbox3 = QHBoxLayout()
     hbox3.addWidget(self.panelBox)
     hbox3.addStretch(1)
-    hbox4 = QHBoxLayout()
-    hbox4.addStretch(1)
-    hbox4.addWidget(self.saveButton)
     vbox = QVBoxLayout()
     vbox.addLayout(hbox1)
     vbox.addLayout(hbox2)
     vbox.addLayout(hbox3)
     vbox.addStretch(1)
-    vbox.addLayout(hbox4)
+    vbox.addWidget(bbox)
     self.setLayout(vbox)
+    self.fileBox.textChanged.connect(self.toggle_state)
     self.fileButton.clicked.connect(self.select_file)
-    self.saveButton.clicked.connect(self.save_screenshot)
+    bbox.accepted.connect(self.save_screenshot)
+    bbox.rejected.connect(self.close)
     self.fileBox.setToolTip('Filename for the saved image')
     self.fileBox.setWhatsThis('Type the filename for the saved image, or select it using the button to the right. The file. The file will be overwritten.')
     self.fileButton.setToolTip('Select saved file')
@@ -1970,8 +1974,9 @@ class TakeScreenshot(QDialog):
     self.transparentBox.setWhatsThis('If checked, the saved image will have transparent background.')
     self.panelBox.setToolTip('Show or hide the text panel')
     self.panelBox.setWhatsThis('If checked, the text panel with orbital information will be included in the saved image.')
-    self.saveButton.setToolTip('Save the image file')
-    self.saveButton.setWhatsThis('Write the image to the specified file. The file will be overwritten.')
+
+  def toggle_state(self, text):
+    self.saveButton.setEnabled(bool(text))
 
   def select_file(self):
     result = QFileDialog.getSaveFileName(self, 'Save image')
@@ -2190,6 +2195,7 @@ class MainWindow(QMainWindow):
     self.bothButton.setChecked(True)
 
     self.interrupt = MutableBool()
+    self.use_scratch = True
     self.scratchsize = {'max':parse_size(os.environ.get('PEGAMOID_MAXSCRATCH')), 'rec':None}
     if (self.scratchsize['max'] is None):
       self.scratchsize['max'] = parse_size('1GiB')
@@ -2218,9 +2224,7 @@ class MainWindow(QMainWindow):
     self.saveMenu.addSeparator()
     self.screenshotAction = self.saveMenu.addAction('Save &PNG image...')
     self.fileMenu.addSeparator()
-    self.scratchAction = self.fileMenu.addAction('Use scratch')
-    self.scratchAction.setCheckable(True)
-    self.scratchAction.setChecked(True)
+    self.setScratchAction = self.fileMenu.addAction('Set scra&tch...')
     self.fileMenu.addSeparator()
     self.clearAction = self.fileMenu.addAction('&Clear')
     self.quitAction = self.fileMenu.addAction('&Quit')
@@ -2358,7 +2362,7 @@ class MainWindow(QMainWindow):
     self.saveInpOrbAction.setToolTip('Save current orbitals in InpOrb format')
     self.saveCubeAction.setToolTip('Save current volume in cube format')
     self.screenshotAction.setToolTip('Save the current view as an image')
-    self.scratchAction.setToolTip('Use a scratch file for caching basis functions (faster, but uses disk space)')
+    self.setScratchAction.setToolTip('View and configure scratch settings')
     self.clearAction.setToolTip('Clear the currently loaded file')
     self.quitAction.setToolTip('Quit {}'.format(__name__))
     self.orthographicAction.setToolTip('Toggle the use of an orthographic projection (perspective if disabled)')
@@ -2668,7 +2672,7 @@ class MainWindow(QMainWindow):
     self.saveCubeAction.triggered.connect(self.write_cube)
     self.screenshotAction.triggered.connect(self.show_screenshot)
     self.clearAction.triggered.connect(self.clear)
-    self.scratchAction.triggered.connect(self.toggle_cache)
+    self.setScratchAction.triggered.connect(self.config_scratch)
     self.quitAction.triggered.connect(self.close)
     self.keysAction.triggered.connect(self.show_keys)
     self.aboutAction.triggered.connect(self.show_about)
@@ -3587,7 +3591,8 @@ class MainWindow(QMainWindow):
     self.settings.setValue('size', self.size())
     self.settings.setValue('state', self.saveState())
     self.settings.setValue('orthographic', self.orthographicAction.isChecked())
-    self.settings.setValue('use_scratch', self.scratchAction.isChecked())
+    self.settings.setValue('use_scratch', self.use_scratch)
+    self.settings.setValue('scratch_size', str(self.scratchsize['max']))
     self.settings.setValue('molecule_type', self.moleculeButton.currentText())
     self.settings.setValue('names', self.namesBox.isChecked())
     self.settings.setValue('opacity', self.opacity)
@@ -3607,35 +3612,30 @@ class MainWindow(QMainWindow):
     self.settings.setValue('poscolor', ' '.join([str(i) for i in self.textureDock.poscolor]))
     self.settings.setValue('specularcolor', ' '.join([str(i) for i in self.textureDock.specularcolor]))
     self.settings.endGroup()
+    if (self.screenshot):
+      self.settings.beginGroup('Screenshots')
+      self.settings.setValue('transparent', self.screenshot.transparentBox.isChecked())
+      self.settings.setValue('panel', self.screenshot.panelBox.isChecked())
+      self.settings.endGroup()
 
   def restore_settings(self):
-    try:
-      # PyQt4, PyQt5
-      self.orthographicAction.setChecked(self.settings.value('orthographic', False, type=bool))
-    except TypeError:
-      # PySide
-      self.orthographicAction.setChecked(str_to_bool(self.settings.value('orthographic', 'false')))
+    # PySide does not support the "type" option for QSettings.value()
+    self.orthographicAction.setChecked(str_to_bool(self.settings.value('orthographic', 'false')))
     self.orthographic(self.orthographicAction.isChecked())
-    try:
-      self.scratchAction.setChecked(self.settings.value('use_scratch', True, type=bool))
-    except TypeError:
-      self.scratchAction.setChecked(str_to_bool(self.settings.value('use_scratch', 'false')))
-    self.toggle_cache(self.scratchAction.isChecked())
+    self.use_scratch = str_to_bool(self.settings.value('use_scratch', 'true'))
+    self.scratchsize['max'] = int(self.settings.value('scratch_size', '1073741824')) # 1GiB
+    maxscratch = parse_size(os.environ.get('PEGAMOID_MAXSCRATCH'))
+    if (maxscratch is not None):
+      self.scratchsize['max'] = maxscratch
+    self.toggle_cache(self.use_scratch)
     index = self.moleculeButton.findText(self.settings.value('molecule_type', ''))
     if (index >=0):
       self.moleculeButton.setCurrentIndex(index)
-    try:
-      self.namesBox.setChecked(self.settings.value('names', False, type=bool))
-    except TypeError:
-      self.namesBox.setChecked(str_to_bool(self.settings.value('names', 'false')))
+    self.namesBox.setChecked(str_to_bool(self.settings.value('names', 'false')))
     self.opacityBox.setText(self.settings.value('opacity', '1'))
     self.opacityBox.editingFinished.emit()
-    try:
-      self.nodesBox.setChecked(self.settings.value('nodal_surface', False, type=bool))
-      self.boxBox.setChecked(self.settings.value('box', False, type=bool))
-    except TypeError:
-      self.nodesBox.setChecked(str_to_bool(self.settings.value('nodal_surface', 'false')))
-      self.boxBox.setChecked(str_to_bool(self.settings.value('box', 'false')))
+    self.nodesBox.setChecked(str_to_bool(self.settings.value('nodal_surface', 'false')))
+    self.boxBox.setChecked(str_to_bool(self.settings.value('box', 'false')))
     self.gridPointsBox.setText(self.settings.value('grid_points', '30'))
     self.gridPointsBox.editingFinished.emit()
     self.settings.beginGroup('Texture')
@@ -3653,10 +3653,7 @@ class MainWindow(QMainWindow):
     index = self.textureDock.representationButton.findText(self.settings.value('representation', ''))
     if (index >=0):
       self.textureDock.representationButton.setCurrentIndex(index)
-    try:
-      self.textureDock.sizeBox.setValue(self.settings.value('size', 1, type=int))
-    except TypeError:
-      self.textureDock.sizeBox.setValue(int(self.settings.value('size', 1)))
+    self.textureDock.sizeBox.setValue(int(self.settings.value('size', 1)))
     negcolor = self.settings.value('negcolor')
     if (negcolor):
       self.textureDock.choose_color('neg', tuple(map(float, negcolor.split())))
@@ -4117,7 +4114,7 @@ class MainWindow(QMainWindow):
       return
     if (self._cache_file is not None):
       del self._cache_file
-    if (not self.scratchAction.isChecked()):
+    if (not self.use_scratch):
       return
     if (self.isGrid):
       self._cache_file = None
@@ -4141,6 +4138,71 @@ class MainWindow(QMainWindow):
           return
       self._cache_file = np.memmap(os.path.join(self._tmpdir, '{0}.cache'.format(__name__.lower())), dtype=dtype, mode='w+', shape=(sum(self.orbitals.N_bas), npoints))
       self._cache_file[:,0] = np.nan
+
+  def scratchstring(self):
+    if (self._cache_file is None):
+      s_act = 0
+    else:
+      s_act = self._cache_file.nbytes / 2**20
+    s_max = 0
+    if (self.scratchsize['max'] is not None):
+      s_max = self.scratchsize['max'] / 2**20
+    s_rec = 0
+    if (self.scratchsize['rec'] is not None):
+      s_rec = np.ceil(self.scratchsize['rec'] / 2**20)
+    return 'max: {0:.2f}, used: {1:.2f}, rec: {2:.0f}, in MiB'.format(s_max, s_act, s_rec)
+
+  def config_scratch(self):
+    dialog = QDialog(self)
+    dialog.setWindowTitle('Configure scratch')
+    dialog.scratchBox = QCheckBox('&Use scratch:')
+    dialog.scratchBox.setLayoutDirection(Qt.RightToLeft)
+    dialog.scratchBox.setChecked(self.use_scratch)
+    dialog.sizeLabel = QLabel('&Maximum size:')
+    dialog.sizeBox = QLineEdit()
+    dialog.sizeBox.setMinimumWidth(200)
+    dialog.sizeBox.setText(str(self.scratchsize['max']))
+    dialog.sizeLabel.setBuddy(dialog.sizeBox)
+    dialog.unitLabel = QLabel('bytes')
+    dialog.tmpLabel = QLabel('Location: {}'.format(self._tmpdir))
+    dialog.stringLabel = QLabel(self.scratchstring())
+    bbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    hbox1 = QHBoxLayout()
+    hbox1.addWidget(dialog.scratchBox)
+    hbox1.addStretch(1)
+    hbox2 = QHBoxLayout()
+    hbox2.addWidget(dialog.sizeLabel)
+    hbox2.addWidget(dialog.sizeBox)
+    hbox2.addWidget(dialog.unitLabel)
+    vbox = QVBoxLayout()
+    vbox.addLayout(hbox1)
+    vbox.addLayout(hbox2)
+    vbox.addWidget(dialog.tmpLabel)
+    vbox.addWidget(dialog.stringLabel)
+    vbox.addStretch(1)
+    vbox.addWidget(bbox)
+    dialog.setLayout(vbox)
+    bbox.accepted.connect(partial(self.set_scratch, dialog))
+    bbox.rejected.connect(dialog.close)
+    dialog.sizeBox.setToolTip('Maximum size for the scratch file (in bytes, accepts MB, GB... suffix)')
+    dialog.sizeBox.setWhatsThis('The maximum size for the scratch file, common units are accepted: KB, KiB, MB, MiB, GB, GiB, TB, TiB.')
+    dialog.scratchBox.setToolTip('Use a scratch file for caching basis functions (faster, but uses disk space)')
+    dialog.scratchBox.setWhatsThis('Enable or disable the usage of a scratch file. Switching orbitals and computing densities is considerably faster with a scratch file.')
+    dialog.tmpLabel.setToolTip('Location of the scratch file for the current instance')
+    dialog.tmpLabel.setWhatsThis('The scratch file, if enabled, will be created in this directory, and removed when quitting.')
+    dialog.stringLabel.setToolTip('Maximum, current, recommended sizes')
+    dialog.stringLabel.setWhatsThis('Maximum scratch size, current scratch usage, and recommended scratch size for the current view.')
+    dialog.exec_()
+
+  def set_scratch(self, dialog):
+    size = parse_size(dialog.sizeBox.text())
+    if (size is None):
+      self.show_error('Invalid size')
+    else:
+      self.use_scratch = dialog.scratchBox.isChecked()
+      self.scratchsize['max'] = size
+      self.toggle_cache(self.use_scratch)
+      dialog.accept()
 
   def toggle_cache(self, enabled):
     if (enabled):
@@ -4179,7 +4241,7 @@ class MainWindow(QMainWindow):
     if (dt == 'Detachment density'):
       dens_type.append('d')
     self._computeVolumeThread = ComputeVolume(self, cache=self._cache_file, dens_type=dens_type)
-    self._computeVolumeThread.disable_list = [self.scratchAction, self.densityTypeGroup, self.rootGroup, self.irrepGroup, self.orbitalGroup, self.boxSizeGroup, self.gridPointsGroup, self.gradientBox, self.gradientGroup, self.transformDock]
+    self._computeVolumeThread.disable_list = [self.setScratchAction, self.densityTypeGroup, self.rootGroup, self.irrepGroup, self.orbitalGroup, self.boxSizeGroup, self.gridPointsGroup, self.gradientBox, self.gradientGroup, self.transformDock]
     self._computeVolumeThread.finished.connect(self.volume_computed)
     self._computeVolumeThread.start()
 
@@ -5082,17 +5144,6 @@ class MainWindow(QMainWindow):
   def show_about(self):
     python_version = sys.version
     vtk_version = vtk.vtkVersion.GetVTKVersion()
-    if (self._cache_file is None):
-      s_act = 0
-    else:
-      s_act = self._cache_file.nbytes / 2**20
-    s_max = 0
-    if (self.scratchsize['max'] is not None):
-      s_max = self.scratchsize['max'] / 2**20
-    s_rec = 0
-    if (self.scratchsize['rec'] is not None):
-      s_rec = np.ceil(self.scratchsize['rec'] / 2**20)
-    scratchstring = 'max: {0:.2f}, used: {1:.2f}, rec: {2:.0f}, in MiB'.format(s_max, s_act, s_rec)
     QMessageBox.about(self, 'About {0}'.format(__name__),
                       u'''<h2>{0} v{1}</h2>
                       <p>An orbital viewer ideal for OpenMolcas.<br>
@@ -5104,13 +5155,14 @@ class MainWindow(QMainWindow):
                       <p><b>python</b>: {4}<br>
                       <b>Qt API</b>: {5}<br>
                       <b>VTK</b>: {6}</p>
-                      <p>Scratch space: {7}<br>({8})</p>
-                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version, self._tmpdir, scratchstring)
+                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version)
                       )
 
   def show_screenshot(self):
     if (self.screenshot is None):
       self.screenshot = TakeScreenshot(self)
+      self.screenshot.transparentBox.setChecked(str_to_bool(self.settings.value('Screenshots/transparent', 'true')))
+      self.screenshot.panelBox.setChecked(str_to_bool(self.settings.value('Screenshots/panel', 'false')))
     self.screenshot.show()
     self.screenshot.activateWindow()
 
