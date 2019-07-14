@@ -12,7 +12,7 @@ __version__ = '2.3beta'
 
 import sys
 try:
-  from qtpy.QtCore import Qt, QObject, QThread, QEvent
+  from qtpy.QtCore import Qt, QObject, QThread, QEvent, QSettings
   from qtpy.QtWidgets import *
   from qtpy.QtGui import QPixmap, QIcon, QKeySequence, QColor, QPalette
   import qtpy
@@ -25,13 +25,13 @@ try:
     sys.exit(1)
 except:
   try:
-    from PyQt5.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
+    from PyQt5.QtCore import Qt, QObject, QThread, QEvent, QSettings, PYQT_VERSION_STR, QT_VERSION_STR
     from PyQt5.QtWidgets import *
     from PyQt5.QtGui import QPixmap, QIcon, QKeySequence, QColor, QPalette
     QtVersion = 'PyQt5 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
   except ImportError:
     try:
-      from PyQt4.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
+      from PyQt4.QtCore import Qt, QObject, QThread, QEvent, QSettings, PYQT_VERSION_STR, QT_VERSION_STR
       from PyQt4.QtGui import *
       QtVersion = 'PyQt4 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
     except ImportError:
@@ -1668,6 +1668,9 @@ def name_to_Z(name):
   except:
     return 0
 
+def str_to_bool(string):
+  return string.lower() in ['true', '1', 'yes', 'on']
+
 #===============================================================================
 
 # Return a list, each element containing at most n items each with format f
@@ -2086,12 +2089,17 @@ class MainWindow(QMainWindow):
     self.init_UI()
     self.init_properties()
     self.init_VTK()
+    self.set_scale()
+
+    self.settings = QSettings('Pegamoid', 'Pegamoid')
+    self.restore_settings()
 
     screen = QApplication.desktop().screenNumber(QApplication.desktop().cursor().pos())
     self.setGeometry(QStyle.alignedRect(Qt.LeftToRight, Qt.AlignCenter, self.size(), QApplication.desktop().availableGeometry(screen)))
 
     self.vtkWidget.setFocus()
     self.show()
+    self.ready = True
     self.vtk_update()
 
   # Clean up when exiting
@@ -2102,6 +2110,7 @@ class MainWindow(QMainWindow):
       self.message.close()
     except:
       pass
+    self.save_settings()
     self.deltmp()
     event.accept()
 
@@ -2545,17 +2554,22 @@ class MainWindow(QMainWindow):
     _widget.setLayout(vbox)
 
     self.listDock = ListDock(self)
+    self.listDock.setObjectName('List')
     self.listDock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
     self.addDockWidget(Qt.RightDockWidgetArea, self.listDock)
     self.listDock.hide()
     self.listDock.setWhatsThis('This is a detachable window that shows all orbitals in the file. For each orbital you can add a custom note and specify whether it should be included in the electron and spin density. This information is not saved.<br>Key: <b>Ctrl+L</b>')
 
     self.transformDock = TransformDock(self)
+    self.transformDock.setObjectName('Transform')
+    self.addDockWidget(Qt.RightDockWidgetArea, self.transformDock)
     self.transformDock.setFloating(True)
     self.transformDock.hide()
     self.transformDock.setWhatsThis('This is a detachable window that allows setting a transformation (rotation, scaling, shearing, translation) for the grid box. This is only possible if the current file is not a precomputed grid. The transformation affects the display and any grid saved in the cube format.')
 
     self.textureDock = TextureDock(self)
+    self.textureDock.setObjectName('Texture')
+    self.addDockWidget(Qt.RightDockWidgetArea, self.textureDock)
     self.textureDock.setFloating(True)
     self.textureDock.hide()
     self.textureDock.setWhatsThis('This is a detachable window that allows modifying the color and texture/shading properties for the isosurfaces.')
@@ -2758,8 +2772,6 @@ class MainWindow(QMainWindow):
       self.monoFont = registry.fontFile('Droid Sans Mono')
     except (NameError, KeyError):
       self.monoFont = None
-
-    self.ready = True
 
   def deltmp(self):
     try:
@@ -3571,6 +3583,106 @@ class MainWindow(QMainWindow):
 
   #=========
 
+  def save_settings(self):
+    self.settings.setValue('size', self.size())
+    self.settings.setValue('state', self.saveState())
+    self.settings.setValue('orthographic', self.orthographicAction.isChecked())
+    self.settings.setValue('use_scratch', self.scratchAction.isChecked())
+    self.settings.setValue('molecule_type', self.moleculeButton.currentText())
+    self.settings.setValue('names', self.namesBox.isChecked())
+    self.settings.setValue('opacity', self.opacity)
+    self.settings.setValue('nodal_surface', self.nodesBox.isChecked())
+    self.settings.setValue('box', self.boxBox.isChecked())
+    self.settings.setValue('grid_points', str(self.gridPoints))
+    self.settings.beginGroup('Texture')
+    self.settings.setValue('ambient', self.textureDock.ambient)
+    self.settings.setValue('diffuse', self.textureDock.diffuse)
+    self.settings.setValue('specular', self.textureDock.specular)
+    self.settings.setValue('power', self.textureDock.power)
+    self.settings.setValue('interpolation', self.textureDock.interpolationButton.currentText())
+    self.settings.setValue('representation', self.textureDock.representationButton.currentText())
+    self.settings.setValue('size', self.textureDock.size)
+    self.settings.setValue('negcolor', ' '.join([str(i) for i in self.textureDock.negcolor]))
+    self.settings.setValue('zerocolor', ' '.join([str(i) for i in self.textureDock.zerocolor]))
+    self.settings.setValue('poscolor', ' '.join([str(i) for i in self.textureDock.poscolor]))
+    self.settings.setValue('specularcolor', ' '.join([str(i) for i in self.textureDock.specularcolor]))
+    self.settings.endGroup()
+
+  def restore_settings(self):
+    try:
+      # PyQt4, PyQt5
+      self.orthographicAction.setChecked(self.settings.value('orthographic', False, type=bool))
+    except TypeError:
+      # PySide
+      self.orthographicAction.setChecked(str_to_bool(self.settings.value('orthographic', 'false')))
+    self.orthographic(self.orthographicAction.isChecked())
+    try:
+      self.scratchAction.setChecked(self.settings.value('use_scratch', True, type=bool))
+    except TypeError:
+      self.scratchAction.setChecked(str_to_bool(self.settings.value('use_scratch', 'false')))
+    self.toggle_cache(self.scratchAction.isChecked())
+    index = self.moleculeButton.findText(self.settings.value('molecule_type', ''))
+    if (index >=0):
+      self.moleculeButton.setCurrentIndex(index)
+    try:
+      self.namesBox.setChecked(self.settings.value('names', False, type=bool))
+    except TypeError:
+      self.namesBox.setChecked(str_to_bool(self.settings.value('names', 'false')))
+    self.opacityBox.setText(self.settings.value('opacity', '1'))
+    self.opacityBox.editingFinished.emit()
+    try:
+      self.nodesBox.setChecked(self.settings.value('nodal_surface', False, type=bool))
+      self.boxBox.setChecked(self.settings.value('box', False, type=bool))
+    except TypeError:
+      self.nodesBox.setChecked(str_to_bool(self.settings.value('nodal_surface', 'false')))
+      self.boxBox.setChecked(str_to_bool(self.settings.value('box', 'false')))
+    self.gridPointsBox.setText(self.settings.value('grid_points', '30'))
+    self.gridPointsBox.editingFinished.emit()
+    self.settings.beginGroup('Texture')
+    self.textureDock.ambientBox.setText(self.settings.value('ambient', '0.0'))
+    self.textureDock.ambientBox.editingFinished.emit()
+    self.textureDock.diffuseBox.setText(self.settings.value('diffuse', '0.7'))
+    self.textureDock.diffuseBox.editingFinished.emit()
+    self.textureDock.specularBox.setText(self.settings.value('specular', '0.7'))
+    self.textureDock.specularBox.editingFinished.emit()
+    self.textureDock.powerBox.setText(self.settings.value('power', '3.0'))
+    self.textureDock.powerBox.editingFinished.emit()
+    index = self.textureDock.interpolationButton.findText(self.settings.value('interpolation', ''))
+    if (index >=0):
+      self.textureDock.interpolationButton.setCurrentIndex(index)
+    index = self.textureDock.representationButton.findText(self.settings.value('representation', ''))
+    if (index >=0):
+      self.textureDock.representationButton.setCurrentIndex(index)
+    try:
+      self.textureDock.sizeBox.setValue(self.settings.value('size', 1, type=int))
+    except TypeError:
+      self.textureDock.sizeBox.setValue(int(self.settings.value('size', 1)))
+    negcolor = self.settings.value('negcolor')
+    if (negcolor):
+      self.textureDock.choose_color('neg', tuple(map(float, negcolor.split())))
+    zerocolor = self.settings.value('zerocolor')
+    if (zerocolor):
+      self.textureDock.choose_color('zero', tuple(map(float, zerocolor.split())))
+    poscolor = self.settings.value('poscolor')
+    if (poscolor):
+      self.textureDock.choose_color('pos', tuple(map(float, poscolor.split())))
+    specularcolor = self.settings.value('specularcolor')
+    if (specularcolor):
+      self.textureDock.choose_color('specular', tuple(map(float, specularcolor.split())))
+    self.settings.endGroup()
+    size = self.settings.value('size')
+    if (size):
+      self.resize(size)
+    state = self.settings.value('state')
+    if (state):
+      self.restoreState(state)
+    self.show()
+    self.listButton.setChecked(self.listDock.isVisible())
+    self.transformButton.setChecked(self.transformDock.isVisible())
+    self.transformDock.pos = self.transformDock.isVisible()
+    self.textureButton.setChecked(self.textureDock.isVisible())
+    self.textureDock.pos = self.textureDock.isVisible()
+
   def light_pos(self, elevation, azimuth):
     e = np.deg2rad(elevation)
     a = np.deg2rad(azimuth)
@@ -4032,6 +4144,8 @@ class MainWindow(QMainWindow):
 
   def toggle_cache(self, enabled):
     if (enabled):
+      if self.xyz is None:
+        return
       try:
         ngrid = self.xyz.GetInput().GetDimensions()
         self.update_cache(ngrid)
