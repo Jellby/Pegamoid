@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.2.2'
+__version__ = '2.3beta'
 
 import sys
 try:
@@ -20,6 +20,9 @@ try:
   if (v is None):
     v = qtpy.PYSIDE_VERSION
   QtVersion = '{0} {1} (Qt {2})'.format(qtpy.API_NAME, v, qtpy.QT_VERSION)
+  if (qtpy.API in qtpy.PYSIDE2_API):
+    print('Unfortunately, VTK does not support PySide2 yet')
+    sys.exit(1)
 except:
   try:
     from PyQt5.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
@@ -27,9 +30,15 @@ except:
     from PyQt5.QtGui import QPixmap, QIcon, QKeySequence, QColor, QPalette
     QtVersion = 'PyQt5 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
   except ImportError:
-    from PyQt4.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
-    from PyQt4.QtGui import *
-    QtVersion = 'PyQt4 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
+    try:
+      from PyQt4.QtCore import Qt, QObject, QThread, QEvent, PYQT_VERSION_STR, QT_VERSION_STR
+      from PyQt4.QtGui import *
+      QtVersion = 'PyQt4 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
+    except ImportError:
+      print('Pegamoid needs python Qt bindings.')
+      print('Please install at least one of: PyQt4, PyQt5, PySide')
+      sys.exit(1)
+
 import vtk.qt
 try:
   vtk.qt.QVTKRWIBase = "QGLWidget"
@@ -3752,6 +3761,7 @@ class MainWindow(QMainWindow):
     self.notes = notes
 
   def initial_orbital(self):
+    thr = 1e-6
     if (len(self.orbitals.MO_b) > 0):
       maxocc = 1.0
     else:
@@ -3763,7 +3773,7 @@ class MainWindow(QMainWindow):
     else:
       MO = self.MO
     for i,o in enumerate(MO):
-      if ((o['occup'] >= maxocc/2) and (o['ene'] >= minene)):
+      if ((o['occup']+thr >= maxocc/2) and (o['ene'] >= minene)):
         orb = i+1
         minene = o['ene']
     if (orb < 0):
@@ -4218,6 +4228,7 @@ class MainWindow(QMainWindow):
       self.surface.GetProperty().SetColor(1.0, 0.8, 1.0)
     else:
       self.surface.GetMapper().SetScalarVisibility(self.orbital != 0)
+      self.surface.GetProperty().SetColor(self.textureDock.zerocolor)
     self.update_range()
     self.toggle_surface()
     self.toggle_nodes()
@@ -4975,6 +4986,7 @@ class MainWindow(QMainWindow):
                       <p>{0} can open files in <i>HDF5</i>, <i>Molden</i>, <i>Luscus</i>, <i>grid</i> (ascii) and <i>cube</i> (formatted) formats;
                       after loading an HDF5 file, it can also read files in <i>InpOrb</i> format.<br>
                       It can modify orbital types and save the result in <i>HDF5</i> and <i>InpOrb</i> formats, or save the volume data in <i>cube</i> format.</p>
+                      <p>Use and redistribute under the terms of the GNU General Public License.</p>
                       <p><b>python</b>: {4}<br>
                       <b>Qt API</b>: {5}<br>
                       <b>VTK</b>: {6}</p>
@@ -5004,10 +5016,10 @@ class MainWindow(QMainWindow):
     else:
       self._prevscale = camera.GetDistance()
 
-  def orthographic(self):
+  def orthographic(self, enabled):
     camera = self.ren.GetActiveCamera()
     # Set the orthographic or perspective projection, trying to keep the same scale factor
-    if (self.orthographicAction.isChecked()):
+    if (enabled):
       # Zooming in perspective projection changes distance
       scale = camera.GetDistance()/self._prevscale * camera.GetParallelScale()
       camera.SetParallelScale(scale)
