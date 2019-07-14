@@ -1723,6 +1723,7 @@ def parse_size(size):
 
 def group_widgets(*args):
   layout = QHBoxLayout()
+  layout.setSpacing(0)
   layout.setContentsMargins(0, 0, 0, 0)
   for w in args:
     layout.addWidget(w)
@@ -1736,9 +1737,11 @@ def get_input_type(mapper, algtype):
     obj = obj.GetInputAlgorithm()
   return obj
 
+
 class Initializer(QThread):
   def run(self):
     self.parent().vtkWidget.Initialize()
+
 
 class Worker(QThread):
   def __init__(self, *args, **kwargs):
@@ -1758,6 +1761,7 @@ class Worker(QThread):
       i.setEnabled(s)
     if ((self.qApp.focusWidget() is None) and (self.selected is not None)):
       self.selected.setFocus(Qt.OtherFocusReason)
+
 
 class FileRead(Worker):
   def __init__(self, *args, **kwargs):
@@ -1786,6 +1790,7 @@ class FileRead(Worker):
       except Exception as e:
         self.error = 'Error processing {0} file {1}:\n{2}'.format(self.ftype, self.filename, e)
         traceback.print_exc()
+
 
 class ComputeVolume(Worker):
   def __init__(self, *args, **kwargs):
@@ -1858,6 +1863,7 @@ class ComputeVolume(Worker):
       self.data = data
     else:
       self.data = self.parent().orbitals.mo(orb-1, x, y, z, spin, self.cache, callback=print_func, interrupt=self.parent().interrupt)
+
 
 class ScrollMessageBox(QDialog):
   def __init__(self, *args, **kwargs):
@@ -1935,6 +1941,7 @@ class ScrollMessageBox(QDialog):
     vbox.addWidget(bbox)
     self.setLayout(vbox)
     bbox.accepted.connect(self.accept)
+
 
 class TakeScreenshot(QDialog):
 
@@ -2064,6 +2071,7 @@ class TakeScreenshot(QDialog):
     oi.GetPointData().SetScalars(numpy_support.numpy_to_vtk(output, 1, vtk.VTK_UNSIGNED_CHAR))
     return oi
 
+
 class SimpleVTK(QVTKRenderWindowInteractor):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
@@ -2071,6 +2079,7 @@ class SimpleVTK(QVTKRenderWindowInteractor):
     pass
   def keyReleaseEvent(self, event):
     pass
+
 
 # A menu with tooltips
 class MenuTT(QMenu):
@@ -2086,6 +2095,7 @@ class MenuTT(QMenu):
       QToolTip.hideText()
     return super().event(e)
 
+
 # A fake mutable boolean type, to pass as reference
 class MutableBool(object):
   def __init__(self):
@@ -2095,6 +2105,7 @@ class MutableBool(object):
   def __bool__(self):
     return self.value
   __nonzero__ = __bool__
+
 
 class MainWindow(QMainWindow):
 
@@ -2322,6 +2333,7 @@ class MainWindow(QMainWindow):
     self.transformButton.setIcon(self.boxicon)
 
     self.frame = QFrame()
+    self.frame.setMinimumSize(400, 300)
 
     # display properties
     self.mainMenu.setNativeMenuBar(False)
@@ -2499,6 +2511,7 @@ class MainWindow(QMainWindow):
     hbox4.addWidget(self.typeLabel)
     hbox4.addSpacing(10)
     activeLayout = QHBoxLayout()
+    activeLayout.setSpacing(0)
     activeLayout.addWidget(group_widgets(self.RAS1Button, self.RAS2Button, self.RAS3Button))
     activeFrame.setLayout(activeLayout)
     self.typeGroup = group_widgets(self.frozenButton, self.inactiveButton, activeFrame, self.secondaryButton, self.deletedButton)
@@ -2554,7 +2567,6 @@ class MainWindow(QMainWindow):
 
     vbox = QVBoxLayout()
     vbox.setSpacing(10)
-    vbox.addWidget(self.frame, stretch=1)
     vbox.addLayout(hbox1)
     vbox.addWidget(line)
     vbox.addLayout(hbox2)
@@ -2567,12 +2579,36 @@ class MainWindow(QMainWindow):
     _widget = QWidget()
     _widget.setLayout(vbox)
 
+    self.optionsDock = QDockWidget(self)
+    self.optionsDock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+    self.optionsDock.setWindowTitle('Options')
+    self.optionsDock.setObjectName('Options')
+    self.addDockWidget(Qt.BottomDockWidgetArea, self.optionsDock)
+    self.optionsDock.dockButton = QToolButton()
+    self.optionsDock.dockButton.setText(u'✻')
+    self.optionsDock.dockButton.setText('Collapse')
+    self.optionsDock.dockButton.setCheckable(True)
+    self.optionsDock.dockButton.setFixedHeight(20)
+    self.optionsDock.dockButton.setAutoRaise(True)
+    self.optionsDock.dockButton.setToolTip('Collapse or expand the options panel')
+    self.optionsDock.dockButton.setWhatsThis('Collapse or expand the options panel, the panel can also be detached by draggin the top area, next to this button')
+    self.optionsDock.dockButton.toggled.connect(self.collapse_options)
+    tbox = QHBoxLayout()
+    tbox.addStretch(1)
+    tbox.addWidget(self.optionsDock.dockButton)
+    titleBar = QWidget()
+    titleBar.setLayout(tbox)
+    self.optionsDock.setTitleBarWidget(titleBar)
+    self.optionsDock.setWidget(_widget)
+    _widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+    self.optionsDock.setWhatsThis('This panel contains the main options for the display window. The panel can be collapsed, or detached by dragging the top part, to increase the size of the viewing area.')
+
     self.listDock = ListDock(self)
     self.listDock.setObjectName('List')
     self.listDock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
     self.addDockWidget(Qt.RightDockWidgetArea, self.listDock)
     self.listDock.hide()
-    self.listDock.setWhatsThis('This is a detachable window that shows all orbitals in the file. For each orbital you can add a custom note and specify whether it should be included in the electron and spin density. This information is not saved.<br>Key: <b>Ctrl+L</b>')
+    self.listDock.setWhatsThis('This is a detachable window that shows all orbitals in the file. For each orbital you can add a custom note and specify whether it should be included in the electron and spin density. The notes are saved in HDF5 format.<br>Key: <b>Ctrl+L</b>')
 
     self.transformDock = TransformDock(self)
     self.transformDock.setObjectName('Transform')
@@ -2591,7 +2627,7 @@ class MainWindow(QMainWindow):
     self.screenshot = None
     self.keymess = None
 
-    self.setCentralWidget(_widget)
+    self.setCentralWidget(self.frame)
     self.statusBar().addWidget(self.statusLabel)
     self.statusBar().addPermanentWidget(self.cancelButton)
     self.statusBar().setStyleSheet('QStatusBar::item{border:0};')
@@ -3600,6 +3636,7 @@ class MainWindow(QMainWindow):
   def save_settings(self):
     self.settings.setValue('size', self.size())
     self.settings.setValue('state', self.saveState())
+    self.settings.setValue('collapsed_options', self.optionsDock.dockButton.isChecked())
     self.settings.setValue('orthographic', self.orthographicAction.isChecked())
     self.settings.setValue('use_scratch', self.use_scratch)
     self.settings.setValue('scratch_size', str(self.scratchsize['max']))
@@ -3630,6 +3667,7 @@ class MainWindow(QMainWindow):
 
   def restore_settings(self):
     # PySide does not support the "type" option for QSettings.value()
+    self.optionsDock.dockButton.setChecked(str_to_bool(self.settings.value('collapsed_options', 'false')))
     self.orthographicAction.setChecked(str_to_bool(self.settings.value('orthographic', 'false')))
     self.orthographic(self.orthographicAction.isChecked())
     self.use_scratch = str_to_bool(self.settings.value('use_scratch', 'true'))
@@ -4174,7 +4212,9 @@ class MainWindow(QMainWindow):
     dialog.sizeBox.setText(str(self.scratchsize['max']))
     dialog.sizeLabel.setBuddy(dialog.sizeBox)
     dialog.unitLabel = QLabel('bytes')
-    dialog.tmpLabel = QLabel('Location: {}'.format(self._tmpdir))
+    dialog.locationLabel = QLabel('Location:')
+    dialog.tmpLabel = QLabel(self._tmpdir)
+    dialog.tmpLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
     dialog.stringLabel = QLabel(self.scratchstring())
     bbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
     hbox1 = QHBoxLayout()
@@ -4184,10 +4224,14 @@ class MainWindow(QMainWindow):
     hbox2.addWidget(dialog.sizeLabel)
     hbox2.addWidget(dialog.sizeBox)
     hbox2.addWidget(dialog.unitLabel)
+    hbox3 = QHBoxLayout()
+    hbox3.addWidget(dialog.locationLabel)
+    hbox3.addWidget(dialog.tmpLabel)
+    hbox3.addStretch(1)
     vbox = QVBoxLayout()
     vbox.addLayout(hbox1)
     vbox.addLayout(hbox2)
-    vbox.addWidget(dialog.tmpLabel)
+    vbox.addLayout(hbox3)
     vbox.addWidget(dialog.stringLabel)
     vbox.addStretch(1)
     vbox.addWidget(bbox)
@@ -4523,6 +4567,14 @@ class MainWindow(QMainWindow):
       self.opacity = value
     except:
       self.opacityBox.setText('{:.2f}'.format(self.opacity))
+
+  def collapse_options(self):
+    if (self.optionsDock.dockButton.isChecked()):
+      self.optionsDock.widget().setMaximumHeight(0)
+      self.optionsDock.dockButton.setText('Show options')
+    else:
+      self.optionsDock.widget().setMaximumHeight(self.height())
+      self.optionsDock.dockButton.setText('Collapse')
 
   def show_list(self):
     if (self.listButton.isChecked()):
@@ -5165,7 +5217,8 @@ class MainWindow(QMainWindow):
                       <p><b>python</b>: {4}<br>
                       <b>Qt API</b>: {5}<br>
                       <b>VTK</b>: {6}</p>
-                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version)
+                      <p>Settings stored in: {7}</p>
+                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version, self.settings.fileName())
                       )
 
   def show_screenshot(self):
@@ -5221,6 +5274,7 @@ class MainWindow(QMainWindow):
     if (self.ready):
       self.ren.ResetCameraClippingRange()
       self.vtkWidget.GetRenderWindow().Render()
+
 
 class ListDock(QDockWidget):
 
@@ -5378,6 +5432,7 @@ class ListDock(QDockWidget):
   def closeEvent(self, *args):
     self.parent().listButton.setChecked(False)
     super().closeEvent(*args)
+
 
 class TransformDock(QDockWidget):
 
@@ -5555,6 +5610,7 @@ class TransformDock(QDockWidget):
   def closeEvent(self, *args):
     self.parent().transformButton.setChecked(False)
     super().closeEvent(*args)
+
 
 class TextureDock(QDockWidget):
 
