@@ -125,8 +125,8 @@ However, the script has some requirements (this should be taken care of by
 
 * Python 2 or python 3 (at least versions 2.7 and 3.4 have been tested).
 
-* Qt with python bindings. PyQt 4, PyQt 5 and Pyside have been tested. It is
-  recommended to install the python module qtpy (needed for Pyside).
+* Qt with python bindings. PyQt 4, PyQt 5 and PySide have been tested. It is
+  recommended to install the python module qtpy (needed for PySide).
 
 * VTK with python bindings. Version 8.1.0 has been tested, earlier versions
   will most likely not work.
@@ -154,7 +154,7 @@ for a maximum size of 100 MB. If the scratch size is not enough to hold all
 basis functions at the current resolution, it will only be used when computing
 the densities. In the "Set scratch" window you can also find the
 instance-specific temporary path, as well as the maximum cache size, the scratch
-size currently in use, and the recommended size to allow keeping a cache all
+size currently in use, and the recommended size to allow keeping a cache of all
 basis functions. The scratch file and directory are removed on a clean exit, but
 if the program crashes or is otherwise abnormally interrupted, they may be left
 behind.
@@ -172,7 +172,7 @@ are some difficulties that make this nontrivial.
 First, the different requirements may not be installed in the remote system. A
 possible solution is installing them for the user account with e.g.
 ``pip install --user``. In this case it will probably be easier to install qtpy
-and Pyside instead of PyQt.
+and PySide instead of PyQt.
 
 Then, the VTK visualization uses some advanced OpenGL features that may not be
 available with all graphical drivers and it could be challenging to make it

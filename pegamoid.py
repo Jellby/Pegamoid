@@ -2264,6 +2264,8 @@ class MainWindow(QMainWindow):
     self.fileLabel = QLabel('File:')
     self.filenameLabel = QLabel('')
     self.fileButton = QPushButton('Load file...')
+    self.collapseButton = QToolButton()
+    self.collapseButton.setText('Collapse')
     self.densityTypeLabel = QLabel('Density:')
     self.densityTypeButton = QComboBox()
     self.rootLabel = QLabel('Root:')
@@ -2339,6 +2341,8 @@ class MainWindow(QMainWindow):
     self.mainMenu.setNativeMenuBar(False)
     self.frame.setFrameStyle(QFrame.Shape(QFrame.Panel | QFrame.Sunken))
     self.filenameLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    self.collapseButton.setCheckable(True)
+    self.collapseButton.setAutoRaise(True)
     self.listButton.setCheckable(True)
     self.orbitalButton.setSizeAdjustPolicy(QComboBox.AdjustToContents)
     activeFrame.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
@@ -2393,7 +2397,11 @@ class MainWindow(QMainWindow):
     self.keysAction.setToolTip('Show list of hotkeys')
     self.aboutAction.setToolTip('Show information about {} and environment'.format(__name__))
     self.filenameLabel.setToolTip('Currently loaded filename')
+    self.filenameLabel.setWhatsThis('The name and path of the file that is currently being displayed.')
     self.fileButton.setToolTip('Load a file in any supported format')
+    self.fileButton.setWhatsThis('Select a file to load, the format is auto-detected.')
+    self.collapseButton.setToolTip('Collapse or expand the options panel')
+    self.collapseButton.setWhatsThis('Toggle between the collapsed and expanded views of the options panel')
     self.densityTypeButton.setToolTip('Select type of density for natural orbitals')
     self.densityTypeButton.setWhatsThis('Select the type of density to compute natural orbitals for, out of those available.<br>Keys: <b>Alt+PgUp</b>, <b>Alt+PgDown</b>')
     self.rootButton.setToolTip('Select root for natural active orbitals')
@@ -2489,6 +2497,8 @@ class MainWindow(QMainWindow):
     hbox1.addWidget(self.fileButton)
     hbox1.addWidget(self.fileLabel)
     hbox1.addWidget(self.filenameLabel, stretch=1)
+    hbox1.addStretch(1)
+    hbox1.addWidget(self.collapseButton)
 
     hbox2 = QHBoxLayout()
     self.densityTypeGroup = group_widgets(self.densityTypeLabel, self.densityTypeButton)
@@ -2565,41 +2575,32 @@ class MainWindow(QMainWindow):
     line = QFrame()
     line.setFrameShape(QFrame.Shape(QFrame.HLine | QFrame.Sunken))
 
-    vbox = QVBoxLayout()
-    vbox.setSpacing(10)
-    vbox.addLayout(hbox1)
-    vbox.addWidget(line)
-    vbox.addLayout(hbox2)
-    vbox.addLayout(hbox3)
-    vbox.addLayout(hbox4)
-    vbox.addLayout(hbox5)
-    vbox.addLayout(hbox6)
-    vbox.addLayout(hbox7)
+    vbox1 = QVBoxLayout()
+    vbox1.addLayout(hbox1)
+    vbox1.addWidget(line)
+    vbox1.addLayout(hbox2)
+    vbox1.addLayout(hbox3)
+
+    vbox2 = QVBoxLayout()
+    vbox2.addLayout(hbox4)
+    vbox2.addLayout(hbox5)
+    vbox2.addLayout(hbox6)
+    vbox2.addLayout(hbox7)
+
+    titleBar = QWidget()
+    titleBar.setLayout(vbox1)
 
     _widget = QWidget()
-    _widget.setLayout(vbox)
+    _widget.setLayout(vbox2)
 
     self.optionsDock = QDockWidget(self)
     self.optionsDock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
     self.optionsDock.setWindowTitle('Options')
     self.optionsDock.setObjectName('Options')
     self.addDockWidget(Qt.BottomDockWidgetArea, self.optionsDock)
-    self.optionsDock.dockButton = QToolButton()
-    self.optionsDock.dockButton.setText(u'✻')
-    self.optionsDock.dockButton.setText('Collapse')
-    self.optionsDock.dockButton.setCheckable(True)
-    self.optionsDock.dockButton.setFixedHeight(20)
-    self.optionsDock.dockButton.setAutoRaise(True)
-    self.optionsDock.dockButton.setToolTip('Collapse or expand the options panel')
-    self.optionsDock.dockButton.setWhatsThis('Collapse or expand the options panel, the panel can also be detached by draggin the top area, next to this button')
-    self.optionsDock.dockButton.toggled.connect(self.collapse_options)
-    tbox = QHBoxLayout()
-    tbox.addStretch(1)
-    tbox.addWidget(self.optionsDock.dockButton)
-    titleBar = QWidget()
-    titleBar.setLayout(tbox)
     self.optionsDock.setTitleBarWidget(titleBar)
     self.optionsDock.setWidget(_widget)
+    self.optionsDock.collapse_list = [_widget, self.densityTypeGroup]
     _widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
     self.optionsDock.setWhatsThis('This panel contains the main options for the display window. The panel can be collapsed, or detached by dragging the top part, to increase the size of the viewing area.')
 
@@ -2726,6 +2727,7 @@ class MainWindow(QMainWindow):
     self.fitViewAction.triggered.connect(self.reset_camera)
     self.resetCameraAction.triggered.connect(partial(self.reset_camera, True))
     self.fileButton.clicked.connect(self.load_file)
+    self.collapseButton.toggled.connect(self.collapse_options)
     self.densityTypeButton.currentIndexChanged.connect(self.densityTypeButton_changed)
     self.rootButton.currentIndexChanged.connect(self.rootButton_changed)
     self.irrepButton.currentIndexChanged.connect(self.irrepButton_changed)
@@ -3636,7 +3638,7 @@ class MainWindow(QMainWindow):
   def save_settings(self):
     self.settings.setValue('size', self.size())
     self.settings.setValue('state', self.saveState())
-    self.settings.setValue('collapsed_options', self.optionsDock.dockButton.isChecked())
+    self.settings.setValue('collapsed_options', self.collapseButton.isChecked())
     self.settings.setValue('orthographic', self.orthographicAction.isChecked())
     self.settings.setValue('use_scratch', self.use_scratch)
     self.settings.setValue('scratch_size', str(self.scratchsize['max']))
@@ -3667,7 +3669,7 @@ class MainWindow(QMainWindow):
 
   def restore_settings(self):
     # PySide does not support the "type" option for QSettings.value()
-    self.optionsDock.dockButton.setChecked(str_to_bool(self.settings.value('collapsed_options', 'false')))
+    self.collapseButton.setChecked(str_to_bool(self.settings.value('collapsed_options', 'false')))
     self.orthographicAction.setChecked(str_to_bool(self.settings.value('orthographic', 'false')))
     self.orthographic(self.orthographicAction.isChecked())
     self.use_scratch = str_to_bool(self.settings.value('use_scratch', 'true'))
@@ -4569,12 +4571,14 @@ class MainWindow(QMainWindow):
       self.opacityBox.setText('{:.2f}'.format(self.opacity))
 
   def collapse_options(self):
-    if (self.optionsDock.dockButton.isChecked()):
-      self.optionsDock.widget().setMaximumHeight(0)
-      self.optionsDock.dockButton.setText('Show options')
+    if (self.collapseButton.isChecked()):
+      for widget in self.optionsDock.collapse_list:
+        widget.setMaximumHeight(0)
+      self.collapseButton.setText('Show options')
     else:
-      self.optionsDock.widget().setMaximumHeight(self.height())
-      self.optionsDock.dockButton.setText('Collapse')
+      for widget in self.optionsDock.collapse_list:
+        widget.setMaximumHeight(16777215)
+      self.collapseButton.setText('Collapse')
 
   def show_list(self):
     if (self.listButton.isChecked()):
