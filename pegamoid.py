@@ -1893,6 +1893,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>{1}</b>: Clear orbitals</p>
                    <p><b>{2}</b>: Quit</p>
                    <p><b>{3}</b>: Show this window</p>
+                   <p><b>Ctrl+_</b>: Collapse/expand options panel</p>
                    <p><b>PgUp</b>/<b>PgDown</b>: Switch to previous/next orbital</p>
                    <p><b>Alt+PgUp</b>/<b>Alt+PgDown</b>: Switch to previous/next density type</p>
                    <p><b>Shift+PgUp</b>/<b>Shift+PgDown</b>: Switch to previous/next root</p>
@@ -2401,7 +2402,7 @@ class MainWindow(QMainWindow):
     self.fileButton.setToolTip('Load a file in any supported format')
     self.fileButton.setWhatsThis('Select a file to load, the format is auto-detected.')
     self.collapseButton.setToolTip('Collapse or expand the options panel')
-    self.collapseButton.setWhatsThis('Toggle between the collapsed and expanded views of the options panel')
+    self.collapseButton.setWhatsThis('Toggle between the collapsed and expanded views of the options panel.<br>Key: <b>Ctrl+_</b>')
     self.densityTypeButton.setToolTip('Select type of density for natural orbitals')
     self.densityTypeButton.setWhatsThis('Select the type of density to compute natural orbitals for, out of those available.<br>Keys: <b>Alt+PgUp</b>, <b>Alt+PgDown</b>')
     self.rootButton.setToolTip('Select root for natural active orbitals')
@@ -2647,6 +2648,7 @@ class MainWindow(QMainWindow):
     self.orthographicAction.setShortcut(QKeySequence('P'))
     self.fitViewAction.setShortcut(QKeySequence('R'))
     self.resetCameraAction.setShortcut(QKeySequence('Shift+R'))
+    self.collapseButton.setShortcut(QKeySequence('Ctrl+_'))
     self.listButton.setShortcut('Ctrl+L')
     self.prevDensShortcut = QShortcut(QKeySequence('Alt+PgUp'), self)
     self.prevDensShortcut.activated.connect(self.prev_dens)
@@ -4458,9 +4460,11 @@ class MainWindow(QMainWindow):
     if (self.interrupt):
       self.surface.GetMapper().SetScalarVisibility(False)
       self.surface.GetProperty().SetColor(1.0, 0.8, 1.0)
+      self.surface.GetProperty().SetSpecularColor(self.textureDock.specularcolor)
     else:
       self.surface.GetMapper().SetScalarVisibility(self.orbital != 0)
       self.surface.GetProperty().SetColor(self.textureDock.zerocolor)
+      self.surface.GetProperty().SetSpecularColor(self.textureDock.specularcolor)
     self.update_range()
     self.toggle_surface()
     self.toggle_nodes()
@@ -4574,11 +4578,15 @@ class MainWindow(QMainWindow):
     if (self.collapseButton.isChecked()):
       for widget in self.optionsDock.collapse_list:
         widget.setMaximumHeight(0)
+      shortcut = self.collapseButton.shortcut()
       self.collapseButton.setText('Show options')
+      self.collapseButton.setShortcut(shortcut)
     else:
       for widget in self.optionsDock.collapse_list:
         widget.setMaximumHeight(16777215)
+      shortcut = self.collapseButton.shortcut()
       self.collapseButton.setText('Collapse')
+      self.collapseButton.setShortcut(shortcut)
 
   def show_list(self):
     if (self.listButton.isChecked()):
@@ -5800,7 +5808,7 @@ class TextureDock(QDockWidget):
     self.sizeBox.setWhatsThis('Size for the points in the point representation or width for the lines in wireframe representation.')
     self.negColorButton.setToolTip('Color used for the negative parts of the isosurfaces')
     self.negColorButton.setWhatsThis('When an isosurface has (or can have) both negative and positive parts, the negative parts are drawn with this color.')
-    self.zeroColorButton.setToolTip('Color used for unsigned isosurfaces (density')
+    self.zeroColorButton.setToolTip('Color used for unsigned isosurfaces (density)')
     self.zeroColorButton.setWhatsThis('When an isosurface is unsigned (the electron density), it is drawn with this color.')
     self.posColorButton.setToolTip('Color used for the positive parts of the isosurfaces')
     self.posColorButton.setWhatsThis('When an isosurface has (or can have) both negative and positive parts, the positive parts are drawn with this color.')
@@ -6153,12 +6161,12 @@ class TextureDock(QDockWidget):
     elif (preset == 'metal'):
       self.ambientBox.setText('0.0')
       self.diffuseBox.setText('0.7')
-      self.specularBox.setText('0.7')
+      self.specularBox.setText('0.5')
       self.powerBox.setText('3.0')
     elif (preset == 'plastic'):
       self.ambientBox.setText('0.1')
       self.diffuseBox.setText('0.9')
-      self.specularBox.setText('1.0')
+      self.specularBox.setText('0.7')
       self.powerBox.setText('50')
     elif (preset == 'cartoon'):
       self.ambientBox.setText('0.7')
