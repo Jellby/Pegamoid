@@ -5723,8 +5723,8 @@ class TextureDock(QDockWidget):
     self.presetsLabel = QLabel('Presets:')
     self.matteButton = QPushButton('Matte')
     self.metalButton = QPushButton('Metal')
-    self.plasticButton = QPushButton('Plastic')
     self.cartoonButton = QPushButton('Cartoon')
+    self.plasticButton = QPushButton('Plastic')
     self.cloudButton = QPushButton('Cloud')
     self.ghostButton = QPushButton('Ghost')
     self.interpolationLabel = QLabel('Interpolation:')
@@ -5745,6 +5745,7 @@ class TextureDock(QDockWidget):
     self.posColorButton.setText(u'⊕')
     self.specColorButton = QToolButton()
     self.specColorButton.setText(u'⊙')
+    self.invertButton = QPushButton('Invert')
     self.presets2Label = QLabel('Presets:')
     self.GBSButton = QPushButton('GBS')
     self.BWButton = QPushButton('B&&W')
@@ -5772,15 +5773,14 @@ class TextureDock(QDockWidget):
     hbox1.addWidget(self.presetsLabel, 0, 0)
     hbox1.addWidget(self.matteButton, 0, 1)
     hbox1.addWidget(self.metalButton, 0, 2)
-    hbox1.addWidget(self.plasticButton, 0, 3)
-    hbox1.addWidget(self.cartoonButton, 1, 1)
+    hbox1.addWidget(self.cartoonButton, 0, 3)
+    hbox1.addWidget(self.plasticButton, 1, 1)
     hbox1.addWidget(self.cloudButton, 1, 2)
     hbox1.addWidget(self.ghostButton, 1, 3)
     hbox1.setColumnStretch(0, 0)
     hbox1.setColumnStretch(1, 1)
     hbox1.setColumnStretch(2, 1)
     hbox1.setColumnStretch(3, 1)
-    #hbox1.setAlignment(Qt.AlignLeft)
 
     box = QVBoxLayout()
     box.addLayout(grid)
@@ -5805,6 +5805,7 @@ class TextureDock(QDockWidget):
     hbox4.addWidget(self.zeroColorButton)
     hbox4.addWidget(self.posColorButton)
     hbox4.addWidget(self.specColorButton)
+    hbox4.addWidget(self.invertButton)
     hbox4.setAlignment(Qt.AlignLeft)
 
     hbox5 = QHBoxLayout()
@@ -5867,10 +5868,10 @@ class TextureDock(QDockWidget):
     self.matteButton.setWhatsThis('Loads the default matte texture.')
     self.metalButton.setToolTip('A sort of metallic texture')
     self.metalButton.setWhatsThis('Loads the metal texture.')
-    self.plasticButton.setToolTip('A sort of plastic texture with tight highlights and some transparency')
-    self.plasticButton.setWhatsThis('Loads the plastic texture.')
     self.cartoonButton.setToolTip('A cartoon-like texture with flat colors')
     self.cartoonButton.setWhatsThis('Loads the cartoon texture.')
+    self.plasticButton.setToolTip('A sort of plastic texture with tight highlights and some transparency')
+    self.plasticButton.setWhatsThis('Loads the plastic texture.')
     self.cloudButton.setToolTip('A fuzzy cloud- or smoke-like texture')
     self.cloudButton.setWhatsThis('Loads the cloud texture.')
     self.ghostButton.setToolTip('An almost transparent texture, with edges')
@@ -5889,6 +5890,8 @@ class TextureDock(QDockWidget):
     self.posColorButton.setWhatsThis('When an isosurface has (or can have) both negative and positive parts, the positive parts are drawn with this color.')
     self.specColorButton.setToolTip('Color of the highlights')
     self.specColorButton.setWhatsThis('This is the color used for the specular highlights. Ambient and diffuse use the surface color.')
+    self.invertButton.setToolTip('Invert positive and negative colors')
+    self.invertButton.setWhatsThis('Exchange the colors used for the positive and negative parts')
     self.GBSButton.setToolTip('Gold, bronze and silver colors')
     self.GBSButton.setWhatsThis('Loads a preset with gold color for positive, bronze color for negative and silver color for unsigned.')
     self.BWButton.setToolTip('Black, grey and white colors')
@@ -5915,8 +5918,8 @@ class TextureDock(QDockWidget):
     self.fresnelBox.editingFinished.connect(partial(self.fresnelBox_changed, True))
     self.matteButton.clicked.connect(partial(self.preset, 'matte'))
     self.metalButton.clicked.connect(partial(self.preset, 'metal'))
-    self.plasticButton.clicked.connect(partial(self.preset, 'plastic'))
     self.cartoonButton.clicked.connect(partial(self.preset, 'cartoon'))
+    self.plasticButton.clicked.connect(partial(self.preset, 'plastic'))
     self.cloudButton.clicked.connect(partial(self.preset, 'cloud'))
     self.ghostButton.clicked.connect(partial(self.preset, 'ghost'))
     self.interpolationButton.currentIndexChanged.connect(self.interpolation_changed)
@@ -5926,6 +5929,7 @@ class TextureDock(QDockWidget):
     self.negColorButton.clicked.connect(partial(self.choose_color, 'neg'))
     self.zeroColorButton.clicked.connect(partial(self.choose_color, 'zero'))
     self.specColorButton.clicked.connect(partial(self.choose_color, 'spec'))
+    self.invertButton.clicked.connect(self.invert_colors)
     self.GBSButton.clicked.connect(partial(self.color_preset, 'GBS'))
     self.BWButton.clicked.connect(partial(self.color_preset, 'B&W'))
     self.RGBButton.clicked.connect(partial(self.color_preset, 'RGB'))
@@ -6311,18 +6315,18 @@ class TextureDock(QDockWidget):
       self.specular = 0.5
       self.power    = 3.0
       self.fresnel  = 0.0
-    elif (preset == 'plastic'):
-      self.ambient  = 0.1
-      self.diffuse  = 0.9
-      self.specular = 0.7
-      self.power    = 50.0
-      self.fresnel  = 0.3
     elif (preset == 'cartoon'):
       self.ambient  = 0.7
       self.diffuse  = 0.0
       self.specular = 0.2
       self.power    = 0.03
       self.fresnel  = 0.0
+    elif (preset == 'plastic'):
+      self.ambient  = 0.1
+      self.diffuse  = 0.9
+      self.specular = 0.7
+      self.power    = 50.0
+      self.fresnel  = 0.3
     elif (preset == 'cloud'):
       self.ambient  = 0.6
       self.diffuse  = 0.0
@@ -6392,6 +6396,15 @@ class TextureDock(QDockWidget):
       self.choose_color('zero', (  0/255, 220/255, 220/255))
       self.choose_color('pos',  (220/255, 220/255,   0/255))
       self.choose_color('spec', (128/255, 220/255, 128/255))
+    self.parent().ready = ready
+    self.parent().vtk_update()
+
+  def invert_colors(self):
+    ready = self.parent().ready
+    self.parent().ready = False
+    negcolor = self.negcolor
+    self.choose_color('neg', self.poscolor)
+    self.choose_color('pos', negcolor)
     self.parent().ready = ready
     self.parent().vtk_update()
 
