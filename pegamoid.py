@@ -2108,11 +2108,57 @@ class MutableBool(object):
   __nonzero__ = __bool__
 
 
+# A shader with angle-of-incidence (aoi) dependent transparency
+class AOIMapper(vtk.vtkOpenGLPolyDataMapper):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.AddShaderReplacement(vtk.vtkShader.Fragment,
+      '//VTK::Color::Dec\n', True,
+      '//VTK::Color::Dec\n'
+      '  uniform float aoiPowerUniform;\n'
+      '  float x, p, aoi_opacity;\n',
+      False
+    )
+    self.AddShaderReplacement(vtk.vtkShader.Fragment,
+      '//VTK::Normal::Impl\n', True,
+      '//VTK::Normal::Impl\n'
+      '  #define PI2 1.57079632679\n'
+      '  x = min(1.0, max(0.0, abs(acos(normalVCVSOutput.z)/PI2)));\n'
+      '  p = min(2.0, max(0.0, abs(aoiPowerUniform)));\n'
+      '  if (p < 1e-20) {\n'
+      '    aoi_opacity = 1.0;\n'
+      '  } else {\n'
+      '    if (p > 1.0) {\n'
+      '      p = 1.0/(2.0-p);\n'
+      '    }\n'
+      '    if (aoiPowerUniform < 0.0) {;\n'
+      '      p = 1.0/p;\n'
+      '      aoi_opacity = 1.0-x/(p-(p-1.0)*x);\n'
+      '    } else {\n'
+      '      aoi_opacity = x/(p-(p-1.0)*x);\n'
+      '    }\n'
+      '  }\n'
+      '  aoi_opacity = min(1.0, max(0.0, aoi_opacity));\n',
+      False
+    )
+    self.AddShaderReplacement(vtk.vtkShader.Fragment,
+      '//VTK::Light::Impl\n', True,
+      '//VTK::Light::Impl\n'
+      'if (abs(aoiPowerUniform) >= 1e-20) {\n'
+      '  gl_FragData[0] = vec4(ambientColor + diffuse + specular, aoi_opacity);\n'
+      '  gl_FragData[0] += (1-aoi_opacity)*vec4(specular, dot(specular, vec3(0.299, 0.587, 0.114)));\n'
+      '  gl_FragData[0].a *= opacity;\n'
+      '}\n',
+      False
+    )
+
+
 class MainWindow(QMainWindow):
 
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self._ready = False
+    self.init_priv_properties()
     self.init_UI()
     self.init_properties()
     self.init_VTK()
@@ -2141,7 +2187,7 @@ class MainWindow(QMainWindow):
     self.deltmp()
     event.accept()
 
-  def init_properties(self):
+  def init_priv_properties(self):
     self._filename = None
     self._orbitals = None
     self._MO = None
@@ -2183,6 +2229,7 @@ class MainWindow(QMainWindow):
     self._cache_file = None
     self._timestamp = time.time()
 
+  def init_properties(self):
     self.orbitals = None
     self.orbital = None
     self.MO = None
@@ -3529,7 +3576,7 @@ class MainWindow(QMainWindow):
     self.opacitySlider.blockSignals(False)
     if (self.surface is None):
       return
-    self.surface.GetProperty().SetOpacity(new)
+    self.surface.GetProperty().SetOpacity(min(1-1e-6, new))
     self.vtk_update()
 
   @property
@@ -3655,6 +3702,7 @@ class MainWindow(QMainWindow):
     self.settings.setValue('diffuse', self.textureDock.diffuse)
     self.settings.setValue('specular', self.textureDock.specular)
     self.settings.setValue('power', self.textureDock.power)
+    self.settings.setValue('fresnel', self.textureDock.fresnel)
     self.settings.setValue('interpolation', self.textureDock.interpolationButton.currentText())
     self.settings.setValue('representation', self.textureDock.representationButton.currentText())
     self.settings.setValue('size', self.textureDock.size)
@@ -3691,14 +3739,11 @@ class MainWindow(QMainWindow):
     self.gridPointsBox.setText(self.settings.value('grid_points', '30'))
     self.gridPointsBox.editingFinished.emit()
     self.settings.beginGroup('Texture')
-    self.textureDock.ambientBox.setText(self.settings.value('ambient', '0.0'))
-    self.textureDock.ambientBox.editingFinished.emit()
-    self.textureDock.diffuseBox.setText(self.settings.value('diffuse', '0.7'))
-    self.textureDock.diffuseBox.editingFinished.emit()
-    self.textureDock.specularBox.setText(self.settings.value('specular', '0.7'))
-    self.textureDock.specularBox.editingFinished.emit()
-    self.textureDock.powerBox.setText(self.settings.value('power', '3.0'))
-    self.textureDock.powerBox.editingFinished.emit()
+    self.textureDock.ambient = float(self.settings.value('ambient', '0.0'))
+    self.textureDock.diffuse = float(self.settings.value('diffuse', '0.7'))
+    self.textureDock.specular = float(self.settings.value('specular', '0.7'))
+    self.textureDock.power = float(self.settings.value('power', '3.0'))
+    self.textureDock.fresnel = float(self.settings.value('fresnel', '0.0'))
     index = self.textureDock.interpolationButton.findText(self.settings.value('interpolation', ''))
     if (index >=0):
       self.textureDock.interpolationButton.setCurrentIndex(index)
@@ -4346,14 +4391,15 @@ class MainWindow(QMainWindow):
       rv = vtk.vtkReverseSense()
       rv.SetInputConnection(tot.GetOutputPort())
       rv.SetReverseCells(transform.GetMatrix().Determinant() < 0)
-      m = vtk.vtkPolyDataMapper()
+      m = AOIMapper()
       m.SetInputConnection(rv.GetOutputPort())
       m.UseLookupTableScalarRangeOn()
       m.SetLookupTable(self.lut)
+      m.AddObserver(vtk.vtkCommand.UpdateShaderEvent, self.update_shader)
       self.surface = vtk.vtkActor()
       self.surface.SetMapper(m)
       self.surface.GetProperty().SetColor(self.textureDock.zerocolor)
-      self.surface.GetProperty().SetOpacity(self.opacity)
+      self.surface.GetProperty().SetOpacity(min(1-1e-6, self.opacity))
       self.surface.GetProperty().SetAmbient(self.textureDock.ambient)
       self.surface.GetProperty().SetDiffuse(self.textureDock.diffuse)
       self.surface.GetProperty().SetSpecular(self.textureDock.specular)
@@ -4479,6 +4525,11 @@ class MainWindow(QMainWindow):
       self.setStatus('Interrupted.', force=True)
     else:
       self.setStatus('Ready.', force=True)
+
+  @vtk.calldata_type(vtk.VTK_OBJECT)
+  def update_shader(self, caller, event, program):
+    if program is not None:
+      program.SetUniformf("aoiPowerUniform", self.textureDock.fresnel)
 
   def set_gradient_source(self):
     if (self.gradient is None):
@@ -5632,6 +5683,7 @@ class TextureDock(QDockWidget):
     self._diffuse = None
     self._specular = None
     self._power = None
+    self._fresnel = None
     self._interpolation = None
     self._representation = None
     self._size = None
@@ -5664,11 +5716,17 @@ class TextureDock(QDockWidget):
     self.powerBox = QLineEdit()
     self.powerBox.setFixedWidth(60)
     self.powerLabel.setBuddy(self.powerBox)
+    self.fresnelLabel = QLabel('Fresnel:')
+    self.fresnelSlider = QSlider(Qt.Horizontal)
+    self.fresnelBox = QLineEdit()
+    self.fresnelBox.setFixedWidth(60)
     self.presetsLabel = QLabel('Presets:')
     self.matteButton = QPushButton('Matte')
     self.metalButton = QPushButton('Metal')
     self.plasticButton = QPushButton('Plastic')
     self.cartoonButton = QPushButton('Cartoon')
+    self.cloudButton = QPushButton('Cloud')
+    self.ghostButton = QPushButton('Ghost')
     self.interpolationLabel = QLabel('Interpolation:')
     self.interpolationButton = QComboBox()
     self.interpolationButton.addItems([u'Flat', u'Gouraud', u'Phong'])
@@ -5706,14 +5764,23 @@ class TextureDock(QDockWidget):
     grid.addWidget(self.powerLabel, 3, 0)
     grid.addWidget(self.powerSlider, 3, 1)
     grid.addWidget(self.powerBox, 3, 2)
+    grid.addWidget(self.fresnelLabel, 4, 0)
+    grid.addWidget(self.fresnelSlider, 4, 1)
+    grid.addWidget(self.fresnelBox, 4, 2)
 
-    hbox1 = QHBoxLayout()
-    hbox1.addWidget(self.presetsLabel)
-    hbox1.addWidget(self.matteButton)
-    hbox1.addWidget(self.metalButton)
-    hbox1.addWidget(self.plasticButton)
-    hbox1.addWidget(self.cartoonButton)
-    hbox1.setAlignment(Qt.AlignLeft)
+    hbox1 = QGridLayout()
+    hbox1.addWidget(self.presetsLabel, 0, 0)
+    hbox1.addWidget(self.matteButton, 0, 1)
+    hbox1.addWidget(self.metalButton, 0, 2)
+    hbox1.addWidget(self.plasticButton, 0, 3)
+    hbox1.addWidget(self.cartoonButton, 1, 1)
+    hbox1.addWidget(self.cloudButton, 1, 2)
+    hbox1.addWidget(self.ghostButton, 1, 3)
+    hbox1.setColumnStretch(0, 0)
+    hbox1.setColumnStretch(1, 1)
+    hbox1.setColumnStretch(2, 1)
+    hbox1.setColumnStretch(3, 1)
+    #hbox1.setAlignment(Qt.AlignLeft)
 
     box = QVBoxLayout()
     box.addLayout(grid)
@@ -5770,6 +5837,7 @@ class TextureDock(QDockWidget):
     self.diffuseSlider.setRange(0, 100)
     self.specularSlider.setRange(0, 100)
     self.powerSlider.setRange(0, 1000)
+    self.fresnelSlider.setRange(0, 1000)
 
     self.negColorButton.setAutoFillBackground(True)
     self.negColorButton.setToolButtonStyle(Qt.ToolButtonTextOnly)
@@ -5792,14 +5860,21 @@ class TextureDock(QDockWidget):
     self.powerSlider.setToolTip('Size of the highlights: the higher, the smaller')
     self.powerSlider.setWhatsThis('This controls the size of the highlights, the higher the power the smaller and brighter the highlights.')
     self.powerBox.setToolTip(self.powerSlider.toolTip())
+    self.fresnelSlider.setToolTip('Amount of Fresnel (angle-dependent) transparency')
+    self.fresnelSlider.setWhatsThis('This controls the amount and type of angle-dependent transparency, positive values make the "center" transparent, negative values make the "edges" transparent.')
+    self.fresnelBox.setToolTip(self.fresnelSlider.toolTip())
     self.matteButton.setToolTip('A matte texture with no highlights')
     self.matteButton.setWhatsThis('Loads the default matte texture.')
     self.metalButton.setToolTip('A sort of metallic texture')
     self.metalButton.setWhatsThis('Loads the metal texture.')
-    self.plasticButton.setToolTip('A sort of plastic texture with tight highlights')
+    self.plasticButton.setToolTip('A sort of plastic texture with tight highlights and some transparency')
     self.plasticButton.setWhatsThis('Loads the plastic texture.')
     self.cartoonButton.setToolTip('A cartoon-like texture with flat colors')
     self.cartoonButton.setWhatsThis('Loads the cartoon texture.')
+    self.cloudButton.setToolTip('A fuzzy cloud- or smoke-like texture')
+    self.cloudButton.setWhatsThis('Loads the cloud texture.')
+    self.ghostButton.setToolTip('An almost transparent texture, with edges')
+    self.ghostButton.setWhatsThis('Loads the ghost texture.')
     self.interpolationButton.setToolTip('Choose interpolation method for the surface normals')
     self.interpolationButton.setWhatsThis('Selects between different types on interpolation for the surface normal: flat (no interpolation), Gouraud and Phong (both give the same smooth result).')
     self.representationButton.setToolTip('Choose the type of representation for the isosurface')
@@ -5824,17 +5899,26 @@ class TextureDock(QDockWidget):
     self.CMYButton.setWhatsThis('Loads a preset with yellow for positive, magenta for negative and cyan for unsigned.')
 
     self.ambientSlider.valueChanged.connect(self.ambientSlider_changed)
-    self.ambientBox.editingFinished.connect(self.ambientBox_changed)
+    self.ambientBox.textChanged.connect(partial(self.ambientBox_changed, False))
+    self.ambientBox.editingFinished.connect(partial(self.ambientBox_changed, True))
     self.diffuseSlider.valueChanged.connect(self.diffuseSlider_changed)
-    self.diffuseBox.editingFinished.connect(self.diffuseBox_changed)
+    self.diffuseBox.textChanged.connect(partial(self.diffuseBox_changed, False))
+    self.diffuseBox.editingFinished.connect(partial(self.diffuseBox_changed, True))
     self.specularSlider.valueChanged.connect(self.specularSlider_changed)
-    self.specularBox.editingFinished.connect(self.specularBox_changed)
+    self.specularBox.textChanged.connect(partial(self.specularBox_changed, False))
+    self.specularBox.editingFinished.connect(partial(self.specularBox_changed, True))
     self.powerSlider.valueChanged.connect(self.powerSlider_changed)
-    self.powerBox.editingFinished.connect(self.powerBox_changed)
+    self.powerBox.textChanged.connect(partial(self.powerBox_changed, False))
+    self.powerBox.editingFinished.connect(partial(self.powerBox_changed, True))
+    self.fresnelSlider.valueChanged.connect(self.fresnelSlider_changed)
+    self.fresnelBox.textChanged.connect(partial(self.fresnelBox_changed, False))
+    self.fresnelBox.editingFinished.connect(partial(self.fresnelBox_changed, True))
     self.matteButton.clicked.connect(partial(self.preset, 'matte'))
     self.metalButton.clicked.connect(partial(self.preset, 'metal'))
     self.plasticButton.clicked.connect(partial(self.preset, 'plastic'))
     self.cartoonButton.clicked.connect(partial(self.preset, 'cartoon'))
+    self.cloudButton.clicked.connect(partial(self.preset, 'cloud'))
+    self.ghostButton.clicked.connect(partial(self.preset, 'ghost'))
     self.interpolationButton.currentIndexChanged.connect(self.interpolation_changed)
     self.representationButton.currentIndexChanged.connect(self.representation_changed)
     self.sizeBox.valueChanged.connect(self.sizeBox_changed)
@@ -5897,6 +5981,16 @@ class TextureDock(QDockWidget):
     old = self._power
     self._power = value
     self._power_changed(value, old)
+
+  @property
+  def fresnel(self):
+    return self._fresnel
+
+  @fresnel.setter
+  def fresnel(self, value):
+    old = self._fresnel
+    self._fresnel = value
+    self._fresnel_changed(value, old)
 
   @property
   def interpolation(self):
@@ -5968,6 +6062,11 @@ class TextureDock(QDockWidget):
     self._specularcolor = value
     self.color_changed('spec', value, old)
 
+  def fix_box(self, box, text):
+    box.blockSignals(True)
+    box.setText(text)
+    box.blockSignals(False)
+
   def _ambient_changed(self, new, old):
     if (new == old):
       return
@@ -5975,6 +6074,8 @@ class TextureDock(QDockWidget):
     self.ambientSlider.blockSignals(True)
     self.ambientSlider.setValue(slider_value)
     self.ambientSlider.blockSignals(False)
+    if (not self.ambientBox.hasFocus()):
+      self.fix_box(self.ambientBox, '{:.2f}'.format(new))
     if (self.parent().surface is None):
       return
     self.parent().surface.GetProperty().SetAmbient(new)
@@ -5982,16 +6083,18 @@ class TextureDock(QDockWidget):
 
   def ambientSlider_changed(self, value):
     new = (value - self.ambientSlider.minimum())/(self.ambientSlider.maximum() - self.ambientSlider.minimum())
-    self.ambientBox.setText('{:.2f}'.format(new))
     self.ambient = new
 
-  def ambientBox_changed(self):
+  def ambientBox_changed(self, fix=False):
     try:
       value = float(self.ambientBox.text())
       assert 0.0 <= value <= 1.0
-      self.ambient = value
+      if (not fix):
+        self.ambient = value
     except:
-      self.ambientBox.setText('{:.2f}'.format(self.ambient))
+      pass
+    if (fix):
+      self.fix_box(self.ambientBox, '{:.2f}'.format(self.ambient))
 
   def _diffuse_changed(self, new, old):
     if (new == old):
@@ -6000,6 +6103,8 @@ class TextureDock(QDockWidget):
     self.diffuseSlider.blockSignals(True)
     self.diffuseSlider.setValue(slider_value)
     self.diffuseSlider.blockSignals(False)
+    if (not self.diffuseBox.hasFocus()):
+      self.fix_box(self.diffuseBox, '{:.2f}'.format(new))
     if (self.parent().surface is None):
       return
     self.parent().surface.GetProperty().SetDiffuse(new)
@@ -6007,16 +6112,18 @@ class TextureDock(QDockWidget):
 
   def diffuseSlider_changed(self, value):
     new = (value - self.diffuseSlider.minimum())/(self.diffuseSlider.maximum() - self.diffuseSlider.minimum())
-    self.diffuseBox.setText('{:.2f}'.format(new))
     self.diffuse = new
 
-  def diffuseBox_changed(self):
+  def diffuseBox_changed(self, fix=False):
     try:
       value = float(self.diffuseBox.text())
       assert 0.0 <= value <= 1.0
-      self.diffuse = value
+      if (not fix):
+        self.diffuse = value
     except:
-      self.diffuseBox.setText('{:.2f}'.format(self.diffuse))
+      pass
+    if (fix):
+      self.fix_box(self.diffuseBox, '{:.2f}'.format(self.diffuse))
 
   def _specular_changed(self, new, old):
     if (new == old):
@@ -6025,6 +6132,8 @@ class TextureDock(QDockWidget):
     self.specularSlider.blockSignals(True)
     self.specularSlider.setValue(slider_value)
     self.specularSlider.blockSignals(False)
+    if (not self.specularBox.hasFocus()):
+      self.fix_box(self.specularBox, '{:.2f}'.format(new))
     if (self.parent().surface is None):
       return
     self.parent().surface.GetProperty().SetSpecular(new)
@@ -6032,26 +6141,31 @@ class TextureDock(QDockWidget):
 
   def specularSlider_changed(self, value):
     new = (value - self.specularSlider.minimum())/(self.specularSlider.maximum() - self.specularSlider.minimum())
-    self.specularBox.setText('{:.2f}'.format(new))
     self.specular = new
 
-  def specularBox_changed(self):
+  def specularBox_changed(self, fix=False):
     try:
       value = float(self.specularBox.text())
       assert 0.0 <= value <= 1.0
-      self.specular = value
+      if (not fix):
+        self.specular = value
     except:
-      self.specularBox.setText('{:.2f}'.format(self.specular))
+      pass
+    if (fix):
+      self.fix_box(self.specularBox, '{:.2f}'.format(self.specular))
 
   def _power_changed(self, new, old):
     if (new == old):
       return
     logrange = np.log(300/0.03)
     reldist = np.log(new/0.03)/logrange
+    reldist = np.clip(reldist, 0, 1)
     slider_value = round(self.powerSlider.minimum() + reldist * (self.powerSlider.maximum() + self.powerSlider.minimum()))
     self.powerSlider.blockSignals(True)
     self.powerSlider.setValue(slider_value)
     self.powerSlider.blockSignals(False)
+    if (not self.powerBox.hasFocus()):
+      self.fix_box(self.powerBox, '{:.2f}'.format(new))
     if (self.parent().surface is None):
       return
     self.parent().surface.GetProperty().SetSpecularPower(new)
@@ -6061,16 +6175,46 @@ class TextureDock(QDockWidget):
     logrange = np.log(300/0.03)
     reldist = (value - self.powerSlider.minimum())/(self.powerSlider.maximum() - self.powerSlider.minimum())
     new = 0.03*np.exp(reldist*logrange)
-    self.powerBox.setText('{:.2f}'.format(new))
-    self.power = new
+    self.power = float(new)
 
-  def powerBox_changed(self):
+  def powerBox_changed(self, fix=False):
     try:
       value = float(self.powerBox.text())
-      assert 0.03 <= value <= 300
-      self.power = value
+      if (not fix):
+        self.power = value
     except:
-      self.powerBox.setText('{:.2f}'.format(self.power))
+      pass
+    if (fix):
+      self.fix_box(self.powerBox, '{:.2f}'.format(self.power))
+
+  def _fresnel_changed(self, new, old):
+    if (new == old):
+      return
+    reldist = (new+2)/4
+    slider_value = round(self.fresnelSlider.minimum() + reldist * (self.fresnelSlider.maximum() + self.fresnelSlider.minimum()))
+    self.fresnelSlider.blockSignals(True)
+    self.fresnelSlider.setValue(slider_value)
+    self.fresnelSlider.blockSignals(False)
+    if (not self.fresnelBox.hasFocus()):
+      self.fix_box(self.fresnelBox, '{:.2f}'.format(new))
+    if (self.parent().surface is None):
+      return
+    self.parent().vtk_update()
+
+  def fresnelSlider_changed(self, value):
+    new = 4*(value - self.fresnelSlider.minimum())/(self.fresnelSlider.maximum() - self.fresnelSlider.minimum())-2
+    self.fresnel = float(new)
+
+  def fresnelBox_changed(self, fix=False):
+    try:
+      value = float(self.fresnelBox.text())
+      assert -2.0 <= value <= 2.0
+      if (not fix):
+        self.fresnel = value
+    except:
+      pass
+    if (fix):
+      self.fix_box(self.fresnelBox, '{:.2f}'.format(self._fresnel))
 
   def _interpolation_changed(self, new, old):
     if (new == old):
@@ -6153,32 +6297,44 @@ class TextureDock(QDockWidget):
     self.parent().vtk_update()
 
   def preset(self, preset):
-    if (preset == 'matte'):
-      self.ambientBox.setText('0.0')
-      self.diffuseBox.setText('1.0')
-      self.specularBox.setText('0.0')
-      self.powerBox.setText('1.0')
-    elif (preset == 'metal'):
-      self.ambientBox.setText('0.0')
-      self.diffuseBox.setText('0.7')
-      self.specularBox.setText('0.5')
-      self.powerBox.setText('3.0')
-    elif (preset == 'plastic'):
-      self.ambientBox.setText('0.1')
-      self.diffuseBox.setText('0.9')
-      self.specularBox.setText('0.7')
-      self.powerBox.setText('50')
-    elif (preset == 'cartoon'):
-      self.ambientBox.setText('0.7')
-      self.diffuseBox.setText('0.0')
-      self.specularBox.setText('0.2')
-      self.powerBox.setText('0.03')
     ready = self.parent().ready
     self.parent().ready = False
-    self.ambientBox.editingFinished.emit()
-    self.diffuseBox.editingFinished.emit()
-    self.specularBox.editingFinished.emit()
-    self.powerBox.editingFinished.emit()
+    if (preset == 'matte'):
+      self.ambient  = 0.0
+      self.diffuse  = 1.0
+      self.specular = 0.0
+      self.power    = 1.0
+      self.fresnel  = 0.0
+    elif (preset == 'metal'):
+      self.ambient  = 0.0
+      self.diffuse  = 0.7
+      self.specular = 0.5
+      self.power    = 3.0
+      self.fresnel  = 0.0
+    elif (preset == 'plastic'):
+      self.ambient  = 0.1
+      self.diffuse  = 0.9
+      self.specular = 0.7
+      self.power    = 50.0
+      self.fresnel  = 0.3
+    elif (preset == 'cartoon'):
+      self.ambient  = 0.7
+      self.diffuse  = 0.0
+      self.specular = 0.2
+      self.power    = 0.03
+      self.fresnel  = 0.0
+    elif (preset == 'cloud'):
+      self.ambient  = 0.6
+      self.diffuse  = 0.0
+      self.specular = 0.5
+      self.power    = 3.0
+      self.fresnel  = -1.7
+    elif (preset == 'ghost'):
+      self.ambient  = 1.0
+      self.diffuse  = 0.5
+      self.specular = 0.1
+      self.power    = 1.0
+      self.fresnel  = 1.95
     self.parent().ready = ready
     self.parent().vtk_update()
 
