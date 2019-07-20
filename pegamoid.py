@@ -2109,6 +2109,24 @@ class MutableBool(object):
 
 
 # A shader with angle-of-incidence (aoi) dependent transparency
+# (not affecting specular highlights)
+#
+# The basic formula here is:
+#
+#   aoi_opacity = x / (p - (p-1)*x)
+#
+# where x is the angle normalized to [0,1] between the surface normal
+# and the camera and p is a parameter. This maps the range [0,1] into
+# [0,1], with the property that the slope at 0 is 1/p and at 1 it is p.
+# It is also a "symmetric" function in the sense that if f(x) = y, then
+# f(1-y) = 1-x.
+#   If abs(aoiPower) = 0, aoi_opacity = 1
+#   If abs(aoiPower) ∈ (0,1], p = aoiPower
+#   If abs(aoiPower) ∈ (1,2], p = 1/(2-aoiPower)
+# This latter part allows mapping the [2,1) range "symmetric" to (0,1],
+# such that if the slopes at 0 and 1 for aoiPower = 1-d are 1/(1-d) and
+# 1-d, the slopes for aoiPower = 1+d are 1-d and 1/(1-d).
+#   If aoiPower < 0, the results are inverted: p -> 1/p, y -> 1-y.
 class AOIMapper(vtk.vtkOpenGLPolyDataMapper):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
@@ -2123,11 +2141,17 @@ class AOIMapper(vtk.vtkOpenGLPolyDataMapper):
       '//VTK::Normal::Impl\n', True,
       '//VTK::Normal::Impl\n'
       '  #define PI2 1.57079632679\n'
-      '  x = min(1.0, max(0.0, abs(acos(normalVCVSOutput.z)/PI2)));\n'
+      '  #define SQ2 0.70710678119\n'
       '  p = min(2.0, max(0.0, abs(aoiPowerUniform)));\n'
       '  if (p < 1e-20) {\n'
       '    aoi_opacity = 1.0;\n'
       '  } else {\n'
+      '    if (abs(normalVCVSOutput.z) > SQ2) {\n'
+      '      x = normalVCVSOutput.x*normalVCVSOutput.x+normalVCVSOutput.y*normalVCVSOutput.y;\n'
+      '      x = min(1.0, max(0.0, abs(asin(sqrt(x))/PI2)));\n'
+      '    } else {\n'
+      '      x = min(1.0, max(0.0, abs(acos(normalVCVSOutput.z)/PI2)));\n'
+      '    }\n'
       '    if (p > 1.0) {\n'
       '      p = 1.0/(2.0-p);\n'
       '    }\n'
