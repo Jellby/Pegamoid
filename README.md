@@ -195,3 +195,11 @@ usually solved by switching to PyQt 4 or installing QtOpenGL support (in the
 Issues with the "Transform" and "Texture" windows not appearing have also been
 reported in some PyQt 4 versions. It is unclear at the moment what is the
 reason for this.
+
+When running in KDE Plasma 5, some shortcuts may not work because KDE tries to
+be smart and overwrites them (see
+[here](https://stackoverflow.com/a/32711483/1538701) for example). To fix this,
+you can add to the ``~/.config/kdeglobals`` file:
+
+    [Development]
+    AutoCheckAccelerators=false
