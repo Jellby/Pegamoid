@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.3beta'
+__version__ = '2.3'
 
 import sys
 try:
