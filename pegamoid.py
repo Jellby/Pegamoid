@@ -5666,6 +5666,7 @@ class TransformDock(QDockWidget):
     self.transYBox = QLineEdit()
     self.transZBox = QLineEdit()
     self.applyButton = QPushButton('Apply')
+    self.alignButton = QPushButton('Align')
     self.resetButton = QPushButton('Reset')
     self.cancelButton = QPushButton('Cancel')
 
@@ -5697,6 +5698,8 @@ class TransformDock(QDockWidget):
     self.transZBox.setWhatsThis(transText)
     self.applyButton.setToolTip('Apply transformation matrix to the box')
     self.applyButton.setWhatsThis('By clicking this button the transformation defined here is applied to the grid box and the display is updated.')
+    self.alignButton.setToolTip('Align box axes with the molecule')
+    self.alignButton.setWhatsThis('Set the transformation to align the box axes with the principal axes of the molecule')
     self.resetButton.setToolTip('Reset to unit matrix')
     self.resetButton.setWhatsThis('Reset the transformation to the identity (do nothing).')
     self.cancelButton.setToolTip('Reset transformation matrix to the current one')
@@ -5721,6 +5724,7 @@ class TransformDock(QDockWidget):
     hbox = QHBoxLayout()
     hbox.addWidget(self.applyButton)
     hbox.addStretch(1)
+    hbox.addWidget(self.alignButton)
     hbox.addWidget(self.resetButton)
     hbox.addWidget(self.cancelButton)
 
@@ -5747,6 +5751,7 @@ class TransformDock(QDockWidget):
     self.transYBox.returnPressed.connect(self.set_transform)
     self.transZBox.returnPressed.connect(self.set_transform)
     self.applyButton.clicked.connect(self.set_transform)
+    self.alignButton.clicked.connect(self.align)
     self.resetButton.clicked.connect(self.reset)
     self.cancelButton.clicked.connect(self.set_boxes)
 
@@ -5791,8 +5796,21 @@ class TransformDock(QDockWidget):
     except:
       self.set_boxes()
 
+  def align(self):
+    orbitals = self.parent().orbitals
+    xyz = np.array([c['xyz'] for c in orbitals.centers if (not isEmpty(c.get('basis', [0])))]) - orbitals.geomcenter
+    ev, vec = np.linalg.eig(np.cov(xyz.T))
+    vec = vec[:,np.argsort(ev)[::-1]]
+    xyz = np.dot(xyz, vec)
+    center = (np.amin(xyz, axis=0) + np.amax(xyz, axis=0))/2
+    value = np.eye(4)
+    value[0:3,0:3] = vec
+    value[0:3,3] = np.dot(vec, center)
+    self.set_boxes(np.round(value,6).flatten().tolist())
 
-
+  def reset(self):
+    value = np.eye(4).flatten().tolist()
+    self.set_boxes(value)
 
   def set_enabled(self, value):
     self.rotLabel.setEnabled(value)
