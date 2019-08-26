@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.3.1'
+__version__ = '2.4'
 
 import sys
 try:
@@ -326,6 +326,11 @@ class Orbitals(object):
       self.bf_sort = np.argsort(bf_id, order=('c', 'l', 'm', 'tl', 's'))
       # And sph_c can be computed
       self.set_sph_c(maxl)
+    # center of atoms with basis
+    nb = [isEmpty(c['basis']) for c in self.centers]
+    if (any(nb) and not all(nb)):
+      xyz = [c['xyz'] for i,c in enumerate(self.centers) if not nb[i]]
+      self.geomcenter = (np.amin(xyz, axis=0) + np.amax(xyz, axis=0))/2
     # Reading the basis set invalidates the orbitals, if any
     self.MO = None
     self.MO_a = None
@@ -622,6 +627,11 @@ class Orbitals(object):
       self.head = f.tell()
       self.N_bas = [len(bf_id)]
       self.set_sph_c(maxl)
+    # center of atoms with basis
+    nb = [isEmpty(c['basis']) for c in self.centers]
+    if (any(nb) and not all(nb)):
+      xyz = [c['xyz'] for i,c in enumerate(self.centers) if not nb[i]]
+      self.geomcenter = (np.amin(xyz, axis=0) + np.amax(xyz, axis=0))/2
     # Reading the basis set invalidates the orbitals, if any
     self.MO = None
     self.MO_a = None
@@ -1755,6 +1765,12 @@ def parse_size(size):
 
 #===============================================================================
 
+# Find out if a list is empty or contains only empty lists
+def isEmpty(a):
+  return all([isEmpty(b) for b in a]) if isinstance(a, list) else False
+
+#===============================================================================
+
 def group_widgets(*args, **kwargs):
   layout = QHBoxLayout()
   layout.setSpacing(kwargs.get('spacing', 0))
@@ -2277,6 +2293,7 @@ class MainWindow(QMainWindow):
     self._surface_actor = None
     self._nodes_actor = None
     self._mol_actor = None
+    self._mol_nb_actor = None
     self._names_actor = None
     self._box_actor = None
     self._axes_actor = None
@@ -2317,6 +2334,7 @@ class MainWindow(QMainWindow):
     self.surface = None
     self.nodes = None
     self.mol = None
+    self.mol_nb = None
     self.names = None
     self.box = None
     self.axes = None
@@ -3227,6 +3245,18 @@ class MainWindow(QMainWindow):
     self.moleculeGroup.setEnabled(enabled)
 
   @property
+  def mol_nb(self):
+    return self._mol_nb_actor
+
+  @mol_nb.setter
+  def mol_nb(self, value):
+    if (self._mol_nb_actor is not None):
+      self.ren.RemoveActor(self._mol_nb_actor)
+    self._mol_nb_actor = value
+    if (self._mol_nb_actor is not None):
+      self.ren.AddActor(self._mol_nb_actor)
+
+  @property
   def names(self):
     return self._names_actor
 
@@ -3884,6 +3914,7 @@ class MainWindow(QMainWindow):
     self.surface = None
     self.nodes = None
     self.mol = None
+    self.mol_nb = None
     self.names = None
     self.box = None
     self.axes = None
@@ -4089,7 +4120,6 @@ class MainWindow(QMainWindow):
       r = np.power(r, 1.0/3)
     r[r<0.5] = 0.5
     # Create VTK objects
-    pt = vtk.vtkPeriodicTable()
     vtkr = numpy_support.numpy_to_vtk(0.1*r, 1, vtk.VTK_DOUBLE)
     vtkr.SetName('radii')
     vtkl = vtk.vtkStringArray()
@@ -4102,12 +4132,21 @@ class MainWindow(QMainWindow):
     pd = vtk.vtkPolyData()
     pd.SetPoints(pts)
     pd.GetPointData().AddArray(vtkl)
-    # Add actor for molecule
+    # Add actor for molecule (nb = no basis)
     mol = vtk.vtkMolecule()
+    mol_nb = vtk.vtkMolecule()
+    vtkr_nb = vtk.vtkDoubleArray()
+    vtkr_nb.SetName('radii')
     # Change coordinates to angstrom for setting bonds
     for i,c in enumerate(self.orbitals.centers):
-      xyz = c['xyz']/angstrom
-      mol.AppendAtom(c['Z'], *xyz)
+      xyz = c['xyz']
+      if (isEmpty(c.get('basis', [0]))):
+        mol.AppendAtom(0, *xyz/angstrom)
+        mol_nb.AppendAtom(c['Z'], *xyz)
+        vtkr_nb.InsertNextValue(vtkr.GetValue(i))
+        vtkr.SetValue(i, 0)
+      else:
+        mol.AppendAtom(c['Z'], *xyz/angstrom)
     bp = vtk.vtkSimpleBondPerceiver()
     bp.SetInputData(mol)
     bp.Update()
@@ -4117,26 +4156,33 @@ class MainWindow(QMainWindow):
     for i in range(molb.GetNumberOfAtoms()):
       xyz = np.array(molb.GetAtomPosition(i))*angstrom
       molb.SetAtomPosition(i, *xyz)
-    # Remove (hide) bonds with ghost atoms
+    # Remove (hide) bonds with ghost and MM atoms
     for i in range(molb.GetNumberOfBonds()):
-      Z1 = molb.GetBond(i).GetBeginAtom().GetAtomicNumber()
-      Z2 = molb.GetBond(i).GetEndAtom().GetAtomicNumber()
+      a1 = molb.GetBond(i).GetBeginAtom()
+      a2 = molb.GetBond(i).GetEndAtom()
+      Z1 = a1.GetAtomicNumber()
+      Z2 = a2.GetAtomicNumber()
       if ((Z1 < 1) or (Z2 < 1)):
         molb.SetBondOrder(i, 0)
     molb.GetVertexData().AddArray(vtkr)
-    mm = vtk.vtkMoleculeMapper()
+    mol_nb.GetVertexData().AddArray(vtkr_nb)
+    mm = vtk.vtkOpenGLMoleculeMapper()
     mm.SetInputData(molb)
     mm.SetRenderAtoms(True)
     mm.SetAtomicRadiusScaleFactor(0.3)
     mm.SetBondRadius(0.075)
-    if (True):
-      mm.SetAtomicRadiusTypeToVDWRadius()
-      mm.SetRenderBonds(True)
-    else:
-      mm.SetAtomicRadiusTypeToCustomArrayRadius()
-      mm.SetRenderBonds(False)
+    mm.SetAtomicRadiusTypeToVDWRadius()
+    mm.SetRenderBonds(True)
+    mm_nb = vtk.vtkOpenGLMoleculeMapper()
+    mm_nb.SetInputData(mol_nb)
+    mm_nb.SetRenderAtoms(True)
+    mm_nb.SetAtomicRadiusScaleFactor(0.3)
+    mm_nb.SetRenderBonds(False)
     self.mol = vtk.vtkActor()
     self.mol.SetMapper(mm)
+    self.mol_nb = vtk.vtkActor()
+    self.mol_nb.SetMapper(mm_nb)
+    self.mol_nb.GetProperty().SetOpacity(0.3)
     self.set_representation(self.moleculeButton.currentIndex())
     # Add actor for names
     l = vtk.vtkLabeledDataMapper()
@@ -4162,7 +4208,7 @@ class MainWindow(QMainWindow):
   def new_box(self):
     # Center molecule and compute max/min extent (with clearance)
     clearance = 4.0
-    xyz = np.array([c['xyz'] for c in self.orbitals.centers])
+    xyz = np.array([c['xyz'] for c in self.orbitals.centers if (not isEmpty(c['basis']))])
     extent = np.array([np.amin(xyz, axis=0), np.amax(xyz, axis=0)])
     self.boxSize = None
     self.boxSize = np.ceil(extent[1]-extent[0]+2*clearance).tolist()
@@ -4776,15 +4822,20 @@ class MainWindow(QMainWindow):
   def set_representation(self, rep):
     if (rep == 2):
       self.mol.VisibilityOff()
+      self.mol_nb.VisibilityOff()
     else:
       self.mol.VisibilityOn()
+      self.mol_nb.VisibilityOn()
       mm = self.mol.GetMapper()
+      mm_nb = self.mol_nb.GetMapper()
       if (rep == 0):
         mm.SetAtomicRadiusTypeToVDWRadius()
         mm.SetRenderBonds(True)
+        mm_nb.SetAtomicRadiusTypeToVDWRadius()
       elif (rep == 1):
         mm.SetAtomicRadiusTypeToCustomArrayRadius()
         mm.SetRenderBonds(False)
+        mm_nb.SetAtomicRadiusTypeToCustomArrayRadius()
 
   def toggle_names(self):
     if (self.names is None):
@@ -5740,10 +5791,8 @@ class TransformDock(QDockWidget):
     except:
       self.set_boxes()
 
-  def reset(self):
-    value = np.eye(4).flatten().tolist()
-    value[15] = 1.0
-    self.set_boxes(value)
+
+
 
   def set_enabled(self, value):
     self.rotLabel.setEnabled(value)
@@ -5761,6 +5810,7 @@ class TransformDock(QDockWidget):
     self.transYBox.setEnabled(value)
     self.transZBox.setEnabled(value)
     self.applyButton.setEnabled(value)
+    self.alignButton.setEnabled(value)
     self.resetButton.setEnabled(value)
     self.cancelButton.setEnabled(value)
 
