@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.3'
+__version__ = '2.3.1'
 
 import sys
 try:
@@ -476,6 +476,7 @@ class Orbitals(object):
       done = True
       if (re.search(r'\[MOLDEN FORMAT\]', f.readline(), re.IGNORECASE)):
         done = False
+        num = None
       line = ' '
       while ((not done) and (line != '')):
         line = f.readline()
@@ -487,9 +488,21 @@ class Orbitals(object):
           if (re.search(r'Angs', line, re.IGNORECASE)):
             unit = angstrom
           self.centers = []
-          for i in range(num):
-            l, _, q, x, y, z = f.readline().split()
-            self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array([float(x), float(y), float(z)])*unit})
+          if (num is None):
+            num = 0
+            while True:
+              save = f.tell()
+              try:
+                l, _, q, x, y, z = f.readline().split()
+                self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array([float(x), float(y), float(z)])*unit})
+                num += 1
+              except:
+                f.seek(save)
+                break
+          else:
+            for i in range(num):
+              l, _, q, x, y, z = f.readline().split()
+              self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array([float(x), float(y), float(z)])*unit})
           self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
         # Read tags for spherical shells
         elif re.search(r'\[5D\]', line, re.IGNORECASE):
@@ -505,18 +518,24 @@ class Orbitals(object):
           cart[3] = False
         elif re.search(r'\[9G\]', line, re.IGNORECASE):
           cart[4] = False
+        # Make sure we read the basis after the Cartesian types are known
+        # (we still assume [MO] will be after all this)
+        elif re.search(r'\[GTO\]', line, re.IGNORECASE):
+          save_GTO = f.tell()
         # Read basis functions: a series of blank-separated blocks
         # starting with center number and followed by all the shells,
         # each is the angular momentum letter and number of primitives,
         # plus this number of exponents and coefficients.
-        elif re.search(r'\[GTO\]', line, re.IGNORECASE):
+        elif re.search(r'\[MO\]', line, re.IGNORECASE):
+          save_MO = f.tell()
+          f.seek(save_GTO)
           bf_id = []
           while (True):
             save = f.tell()
             # First find out if this is another center, or the basis set
             # specification has finished
             try:
-              n = int(f.readline())
+              n = int(f.readline().split()[0])
             except:
               f.seek(save)
               break
@@ -525,7 +544,7 @@ class Orbitals(object):
             # Read the shells for this center
             while (True):
               try:
-                l, nprim = f.readline().split()
+                l, nprim = f.readline().split()[0:2]
                 nprim = int(nprim)
                 # The special label "sp" has the same exponent
                 # but different coefficients for s and p functions
@@ -537,7 +556,7 @@ class Orbitals(object):
                     basis[1] = []
                   basis[1].append([0, []])
                   for i in range(nprim):
-                    e, c1, c2 = (float(i) for i in f.readline().split())
+                    e, c1, c2 = (float(i) for i in f.readline().split()[0:2])
                     basis[0][-1][1].append([e, c1])
                     basis[1][-1][1].append([e, c2])
                   bf_id.append([n, len(basis[0]), 0, 0])
@@ -554,7 +573,7 @@ class Orbitals(object):
                   basis[l].append([0, []])
                   # Read exponents and coefficients
                   for i in range(nprim):
-                    e, c = (float(i) for i in f.readline().split())
+                    e, c = (float(i) for i in f.readline().split()[0:2])
                     basis[l][-1][1].append([e, c])
                   # Set up the basis_id
                   if (cart[l]):
@@ -568,7 +587,10 @@ class Orbitals(object):
                         bf_id.append([n, len(basis[l]), l, -i])
               except:
                 break
-            nl = max(basis.keys())
+            try:
+              nl = max(basis.keys())
+            except ValueError:
+              nl = -1
             maxl = max(maxl, nl)
             self.centers[n-1]['basis'] = [[] for i in range(nl+1)]
             for i in basis.keys():
@@ -577,7 +599,7 @@ class Orbitals(object):
           # each item is a list of shells,
           # each item is [power of r**2, primitives],
           # each "primitives" is a list of [exponent, coefficient]
-        elif re.search(r'\[MO\]', line, re.IGNORECASE):
+          f.seek(save_MO)
           done = True
       # Now get the normalization factors and invert l for Cartesian shells
       # The factor is 1/sqrt(N(lx)*N(ly)*N(lz)), where N(x) is the double factorial of 2*x-1
@@ -4044,16 +4066,16 @@ class MainWindow(QMainWindow):
       maxocc = 1.0
     else:
       maxocc = 2.0
-    minene = -np.inf
+    maxene = -np.inf
     orb = -10
     if (self.MO is None):
       MO = self.orbitals.MO if (self.orbitals.MO) else self.orbitals.MO_a
     else:
       MO = self.MO
     for i,o in enumerate(MO):
-      if ((o['occup']+thr >= maxocc/2) and (o['ene'] >= minene)):
+      if ((o['occup']+thr >= maxocc/2) and (o['ene'] >= maxene)):
         orb = i+1
-        minene = o['ene']
+        maxene = o['ene']
     if (orb < 0):
       orb = 1
     self.orbital = orb
@@ -4518,7 +4540,7 @@ class MainWindow(QMainWindow):
       sl.SetInputConnection(b.GetOutputPort())
       sl.SetIntegratorTypeToRungeKutta45()
       sl.SetInitialIntegrationStep(0.1)
-      sl.SetMinimumIntegrationStep(1e-6) # make it small enough to be able to converge to converge (see below)
+      sl.SetMinimumIntegrationStep(1e-6) # make it small enough to be able to converge (see below)
       sl.SetTerminalSpeed(1e-8)          # affects tails, but also convergence to stationary points
       sl.SetMaximumNumberOfSteps(100)
       sl.SetMaximumPropagation(100)
