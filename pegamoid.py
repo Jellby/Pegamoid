@@ -1999,6 +1999,27 @@ class ScrollMessageBox(QDialog):
     bbox.accepted.connect(self.accept)
 
 
+class LineEditWithButton(QLineEdit):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.button = QToolButton(self)
+    self.button.setCursor(Qt.ArrowCursor)
+    self.button.setStyleSheet('QToolButton {border: none; padding: 0;}')
+    self.button.hide()
+    frameWidth = self.style().pixelMetric(QStyle.PM_DefaultFrameWidth)
+    self.setStyleSheet('QLineEdit {{padding-right: {0}px;}}'.format(self.button.sizeHint().width() + frameWidth + 1))
+    msz = self.minimumSizeHint()
+    self.setMinimumSize(max(msz.width(), self.button.sizeHint().height() + 2*frameWidth + 2),
+                        max(msz.height(), self.button.sizeHint().height() + 2*frameWidth + 2))
+  def resizeEvent(self, event):
+    sz = self.button.sizeHint()
+    frameWidth = self.style().pixelMetric(QStyle.PM_DefaultFrameWidth)
+    self.button.move(self.rect().right() - frameWidth - sz.width(), (self.rect().bottom() + 1 - sz.height())/2)
+  def setButton(self, text):
+    self.button.setText(text)
+    self.button.setVisible(bool(text))
+
+
 class TakeScreenshot(QDialog):
 
   def __init__(self, *args, **kwargs):
@@ -2448,7 +2469,7 @@ class MainWindow(QMainWindow):
     self.namesBox = QCheckBox('Names:')
     self.boxBox = QCheckBox('Box:')
     self.boxSizeLabel = QLabel('&Box size:')
-    self.boxSizeBox = QLineEdit()
+    self.boxSizeBox = LineEditWithButton()
     self.boxSizeLabel.setBuddy(self.boxSizeBox)
     self.transformButton = QPushButton()
     self.gridPointsLabel = QLabel('&Grid points:')
@@ -2511,6 +2532,7 @@ class MainWindow(QMainWindow):
     self.namesBox.setLayoutDirection(Qt.RightToLeft)
     self.boxBox.setLayoutDirection(Qt.RightToLeft)
     self.boxSizeBox.setFixedWidth(120)
+    self.boxSizeBox.setButton(u'⇔')
     self.transformButton.setCheckable(True)
     self.gridPointsBox.setFixedWidth(50)
     self.gradientBox.setLayoutDirection(Qt.RightToLeft)
@@ -2600,6 +2622,8 @@ class MainWindow(QMainWindow):
     self.boxBox.setWhatsThis('If checked, the outline of the current grid box is displayed.<br>Key: <b>Ctrl+B</b>')
     self.boxSizeBox.setToolTip('Set the box size in x, y, z (in bohr)')
     self.boxSizeBox.setWhatsThis('Dimension of the grid box along the x, y and z axes, in bohr. Values can be separated by commas or spaces. Only available if the file is not a precomputed grid.')
+    self.boxSizeBox.button.setToolTip('Fit the box size to the molecule')
+    self.boxSizeBox.button.setWhatsThis('Set an automatic box size to fit the molecule, considering the current transformation and some extra spacing.')
     self.transformButton.setToolTip('Show/hide the transformation matrix for the box')
     self.transformButton.setWhatsThis('Open or close a window where a translation and transformation matrix can be specified for the grid box.<br>Key: <b>Ctrl+T</b>')
     self.gridPointsBox.setToolTip('Set the number of grid points in the largest dimension')
@@ -2898,6 +2922,7 @@ class MainWindow(QMainWindow):
     self.namesBox.stateChanged.connect(self.toggle_names)
     self.boxBox.stateChanged.connect(self.toggle_box)
     self.boxSizeBox.editingFinished.connect(self.boxSizeBox_changed)
+    self.boxSizeBox.button.clicked.connect(self.reset_box)
     self.transformButton.clicked.connect(self.edit_transform)
     self.gridPointsBox.editingFinished.connect(self.gridPointsBox_changed)
     self.gradientBox.stateChanged.connect(self.toggle_gradient)
@@ -4206,12 +4231,33 @@ class MainWindow(QMainWindow):
     self.names.SetMapper(l)
 
   def new_box(self):
-    # Center molecule and compute max/min extent (with clearance)
-    clearance = 4.0
-    xyz = np.array([c['xyz'] for c in self.orbitals.centers if (not isEmpty(c['basis']))])
-    extent = np.array([np.amin(xyz, axis=0), np.amax(xyz, axis=0)])
     self.boxSize = None
-    self.boxSize = np.ceil(extent[1]-extent[0]+2*clearance).tolist()
+    self.boxSize = self.default_box()[0]
+
+  def default_box(self, clearance=4.0):
+    # Center molecule and compute max/min extent
+    # (clearance is only approximate if transform is not orthogonal)
+    xyz = np.array([c['xyz'] for c in self.orbitals.centers if (not isEmpty(c.get('basis', [0])))]) - self.orbitals.geomcenter
+    vec = np.reshape(self.transform, (4,4))[0:3,0:3]
+    xyz = np.dot(xyz, np.linalg.inv(vec).T)
+    extent = np.array([np.amin(xyz, axis=0), np.amax(xyz, axis=0)])
+    center = (np.amin(xyz, axis=0) + np.amax(xyz, axis=0))/2
+    center = np.dot(vec, center)
+    size = extent[1] - extent[0] + 2*clearance/np.linalg.norm(vec, axis=0)
+    return (np.ceil(size).tolist(), center)
+
+  def reset_box(self):
+    box, center = self.default_box()
+    # Force rebuild if center changes
+    c = np.array(self.transform[:])[[3,7,11]]
+    center = np.round(center, 6)
+    if (np.linalg.norm(center-c) > 1e-5):
+      self.transform[3] = center[0]
+      self.transform[7] = center[1]
+      self.transform[11] = center[2]
+      self.boxSize = None
+    self.boxSizeBox.setText('{0}, {1}, {2}'.format(*box)) 
+    self.boxSizeBox.editingFinished.emit()
 
   def build_grid(self):
     if (self.isGrid):
@@ -5801,6 +5847,8 @@ class TransformDock(QDockWidget):
     xyz = np.array([c['xyz'] for c in orbitals.centers if (not isEmpty(c.get('basis', [0])))]) - orbitals.geomcenter
     ev, vec = np.linalg.eig(np.cov(xyz.T))
     vec = vec[:,np.argsort(ev)[::-1]]
+    if (np.linalg.det(vec) < 0):
+      vec[:,2] *= -1
     xyz = np.dot(xyz, vec)
     center = (np.amin(xyz, axis=0) + np.amax(xyz, axis=0))/2
     value = np.eye(4)
