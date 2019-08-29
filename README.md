@@ -103,6 +103,14 @@ manager](https://packaging.python.org/tutorials/installing-packages/#use-pip-for
 
 (you may also want to add the flags `--upgrade` and/or `--user`).
 
+Then you just run:
+
+    pegamoid.py [filename]
+
+where ``[filename]`` is an optional supported file to open. In the case of
+InpOrb files, you can supply two filenames (in any order): the InpOrb file and
+a corresponding HDF5 file.
+
 There are other ways to get Pegamoid. One is cloning the git repository, e.g.
 
     git clone https://gitlab.com/Jellby/Pegamoid.git
@@ -114,11 +122,11 @@ downloading only the script file
 Once the program is fetched, it can be run directly or through a python
 interpreter, no installation is needed, i.e.
 
-    ./pegamoid.py
+    ./pegamoid.py [filename]
 
 or
 
-    python pegamoid.py
+    python pegamoid.py [filename]
 
 However, the script has some requirements (this should be taken care of by
 `pip`, if you use it) that must be installed for it to work:

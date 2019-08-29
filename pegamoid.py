@@ -35,7 +35,7 @@ except:
       from PyQt4.QtGui import *
       QtVersion = 'PyQt4 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
     except ImportError:
-      print('Pegamoid needs python Qt bindings.')
+      print('{0} needs python Qt bindings.'.format(__name__))
       print('Please install at least one of: PyQt4, PyQt5, PySide')
       sys.exit(1)
 
@@ -2348,6 +2348,7 @@ class MainWindow(QMainWindow):
     self._timestamp = time.time()
 
   def init_properties(self):
+    self.otherfile = None
     self.orbitals = None
     self.orbital = None
     self.MO = None
@@ -4018,6 +4019,10 @@ class MainWindow(QMainWindow):
     self._fileReadThread.quit()
     self._fileReadThread.wait()
     self.orbitals = self._fileReadThread.orbitals
+    if (self.otherfile):
+      f = self.otherfile
+      self.otherfile = None
+      self.filename = f
 
   # Return a string with orbital information for the drop-down list
   def orb_to_list(self, n, orb):
@@ -4510,6 +4515,8 @@ class MainWindow(QMainWindow):
 
   def build_surface(self):
     if (self.xyz is None):
+      return
+    if (self.otherfile):
       return
     if (self.isGrid):
       self.setStatus('Reading...')
@@ -6683,9 +6690,22 @@ class TextureDock(QDockWidget):
 app = QApplication(sys.argv)
 win = MainWindow()
 try:
-  win.filename = os.path.abspath(sys.argv[1])
+  f1 = os.path.abspath(sys.argv[1])
+  try:
+    f2 = os.path.abspath(sys.argv[2])
+  except IndexError:
+    f2 = None
 except IndexError:
-  pass
+  f1 = None
+if (f2):
+  if h5py.is_hdf5(f2):
+    win.filename = f2
+    win.otherfile = f1
+  else:
+    win.filename = f1
+    win.otherfile = f2
+else:
+  win.filename = f1
 rc = app.exec_()
 # orderly cleanup
 del win
