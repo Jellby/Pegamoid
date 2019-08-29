@@ -5712,6 +5712,10 @@ class ListDock(QDockWidget):
       self.parent().build_surface()
     self.modified = False
 
+  def showEvent(self, *args):
+    self.parent().listButton.setChecked(True)
+    super().showEvent(*args)
+
   def closeEvent(self, *args):
     self.parent().listButton.setChecked(False)
     super().closeEvent(*args)
@@ -5909,6 +5913,10 @@ class TransformDock(QDockWidget):
     self.alignButton.setEnabled(value)
     self.resetButton.setEnabled(value)
     self.cancelButton.setEnabled(value)
+
+  def showEvent(self, *args):
+    self.parent().transformButton.setChecked(True)
+    super().showEvent(*args)
 
   def closeEvent(self, *args):
     self.parent().transformButton.setChecked(False)
@@ -6705,6 +6713,10 @@ class TextureDock(QDockWidget):
     self.choose_color('pos', negcolor)
     self.parent().ready = ready
     self.parent().vtk_update()
+
+  def showEvent(self, *args):
+    self.parent().textureButton.setChecked(True)
+    super().showEvent(*args)
 
   def closeEvent(self, *args):
     self.parent().textureButton.setChecked(False)
