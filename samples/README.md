@@ -36,6 +36,9 @@ Some of the features to pay attention to:
 * ``O2.scf.h5``:
   Natural UHF orbitals.
 
+* ``QMMM.scf.h5``
+  MM atoms (without basis functions)
+
 * ``uracil.LocOrb``:
   Localized orbitals, easy to choose an active space.
 
