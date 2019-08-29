@@ -1975,6 +1975,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>Ctrl+B</b>: Toggle grid box display</p>
                    <p><b>Alt+B</b>: Set focus to box size</p>
                    <p><b>Ctrl+T</b>: Show/hide grid box transform editor</p>
+                   <p><b>Ctrl+F</b>: Fit the box to the molecule (aling and resize)</p>
                    <p><b>Alt+G</b>: Set focus to grid points</p>
                    <p><b>Ctrl+G</b>: Toggle gradient lines display</p>
                    <p><b>Ctrl+Shift+G</b>: Show/hide gradient lines options</p>
@@ -2416,6 +2417,8 @@ class MainWindow(QMainWindow):
     self.quitAction = self.fileMenu.addAction('&Quit')
     self.viewMenu = MenuTT('Vie&w')
     self.mainMenu.addMenu(self.viewMenu)
+    self.autoAlignAction = self.viewMenu.addAction('&Auto align')
+    self.autoAlignAction.setCheckable(True)
     self.orthographicAction = self.viewMenu.addAction('&Orthographic')
     self.orthographicAction.setCheckable(True)
     self.fitViewAction = self.viewMenu.addAction('&Fit view')
@@ -2558,6 +2561,7 @@ class MainWindow(QMainWindow):
     self.setScratchAction.setToolTip('View and configure scratch settings')
     self.clearAction.setToolTip('Clear the currently loaded file')
     self.quitAction.setToolTip('Quit {}'.format(__name__))
+    self.autoAlignAction.setToolTip('Automatically align the box with the molecule when loading a file')
     self.orthographicAction.setToolTip('Toggle the use of an orthographic projection (perspective if disabled)')
     self.fitViewAction.setToolTip('Fit the currently displayed objects in the view')
     self.resetCameraAction.setToolTip('Reset the camera to the default view')
@@ -2883,6 +2887,10 @@ class MainWindow(QMainWindow):
     self.upButton.setShortcut('Ctrl+Shift+U')
     self.cancelButton.setShortcut('Esc')
 
+    self.fitBoxAction = QAction('Fit box', self)
+    self.fitBoxAction.setShortcut('Ctrl+F')
+    self.addAction(self.fitBoxAction)
+
     # signals
     self.qApp.aboutToQuit.connect(self.deltmp)
     self.loadAction.triggered.connect(self.load_file)
@@ -2933,6 +2941,8 @@ class MainWindow(QMainWindow):
     self.maxStepsBox.editingFinished.connect(self.maxStepsBox_changed)
     self.directionButtonGroup.buttonClicked.connect(self.directionButtonGroup_changed)
     self.cancelButton.clicked.connect(self.cancel)
+
+    self.fitBoxAction.triggered.connect(partial(self.new_box, True))
 
   def init_VTK(self):
     framelayout = QVBoxLayout()
@@ -3235,6 +3245,7 @@ class MainWindow(QMainWindow):
     self.surfaceBox.setEnabled(enabled)
     self.signButton.setEnabled(enabled)
     self.saveCubeAction.setEnabled(enabled)
+    self.screenshotAction.setEnabled(enabled)
 
   @property
   def nodes(self):
@@ -3373,6 +3384,7 @@ class MainWindow(QMainWindow):
     self.boxSizeGroup.setEnabled(value)
     self.transformDock.set_enabled(value)
     self.gridPointsGroup.setEnabled(value)
+    self.fitBoxAction.setEnabled(value)
     if (self.orbitals is None):
       self.gridPointsGroup.setEnabled(True)
 
@@ -3831,6 +3843,7 @@ class MainWindow(QMainWindow):
     self.settings.setValue('size', self.size())
     self.settings.setValue('state', self.saveState())
     self.settings.setValue('collapsed_options', self.collapseButton.isChecked())
+    self.settings.setValue('auto_align', self.autoAlignAction.isChecked())
     self.settings.setValue('orthographic', self.orthographicAction.isChecked())
     self.settings.setValue('use_scratch', self.use_scratch)
     self.settings.setValue('scratch_size', str(self.scratchsize['max']))
@@ -3864,6 +3877,7 @@ class MainWindow(QMainWindow):
   def restore_settings(self):
     # PySide does not support the "type" option for QSettings.value()
     self.collapseButton.setChecked(qt_to_bool(self.settings.value('collapsed_options', 'false')))
+    self.autoAlignAction.setChecked(qt_to_bool(self.settings.value('auto_align', 'false')))
     self.orthographicAction.setChecked(qt_to_bool(self.settings.value('orthographic', 'false')))
     self.orthographic(self.orthographicAction.isChecked())
     self.use_scratch = qt_to_bool(self.settings.value('use_scratch', 'true'))
@@ -4235,7 +4249,11 @@ class MainWindow(QMainWindow):
     self.names = vtk.vtkActor2D()
     self.names.SetMapper(l)
 
-  def new_box(self):
+  def new_box(self, align=False):
+    if (align or self.autoAlignAction.isChecked()):
+      self.align_box()
+    else:
+      self.transform[:] = np.eye(4).flatten().tolist()
     self.boxSize = None
     self.boxSize = self.default_box()[0]
 
@@ -4261,8 +4279,12 @@ class MainWindow(QMainWindow):
       self.transform[7] = center[1]
       self.transform[11] = center[2]
       self.boxSize = None
-    self.boxSizeBox.setText('{0}, {1}, {2}'.format(*box)) 
-    self.boxSizeBox.editingFinished.emit()
+    self.boxSize = box
+
+  def align_box(self):
+    if (self.transformDock.alignButton.isEnabled()):
+      t = self.transformDock.align()
+      self.transform[:] = np.round(t.flatten(), decimals=6).tolist()
 
   def build_grid(self):
     if (self.isGrid):
@@ -4537,7 +4559,7 @@ class MainWindow(QMainWindow):
     if (dt == 'Detachment density'):
       dens_type.append('d')
     self._computeVolumeThread = ComputeVolume(self, cache=self._cache_file, dens_type=dens_type)
-    self._computeVolumeThread.disable_list = [self.setScratchAction, self.densityTypeGroup, self.rootGroup, self.irrepGroup, self.orbitalGroup, self.boxSizeGroup, self.gridPointsGroup, self.gradientBox, self.gradientGroup, self.transformDock]
+    self._computeVolumeThread.disable_list = [self.setScratchAction, self.densityTypeGroup, self.rootGroup, self.irrepGroup, self.orbitalGroup, self.boxSizeGroup, self.gridPointsGroup, self.fitBoxAction, self.gradientBox, self.gradientGroup, self.transformDock]
     self._computeVolumeThread.finished.connect(self.volume_computed)
     self._computeVolumeThread.start()
 
@@ -5861,7 +5883,8 @@ class TransformDock(QDockWidget):
     value = np.eye(4)
     value[0:3,0:3] = vec
     value[0:3,3] = np.dot(vec, center)
-    self.set_boxes(np.round(value,6).flatten().tolist())
+    self.set_boxes(np.round(value.flatten(), decimals=6).tolist())
+    return value
 
   def reset(self):
     value = np.eye(4).flatten().tolist()
@@ -6689,14 +6712,16 @@ class TextureDock(QDockWidget):
 
 app = QApplication(sys.argv)
 win = MainWindow()
+f1 = None
+f2 = None
 try:
   f1 = os.path.abspath(sys.argv[1])
   try:
     f2 = os.path.abspath(sys.argv[2])
   except IndexError:
-    f2 = None
+    pass
 except IndexError:
-  f1 = None
+  pass
 if (f2):
   if h5py.is_hdf5(f2):
     win.filename = f2
