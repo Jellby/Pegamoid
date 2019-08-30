@@ -4259,14 +4259,21 @@ class MainWindow(QMainWindow):
 
   def default_box(self, clearance=4.0):
     # Center molecule and compute max/min extent
-    # (clearance is only approximate if transform is not orthogonal)
     xyz = np.array([c['xyz'] for c in self.orbitals.centers if (not isEmpty(c.get('basis', [0])))]) - self.orbitals.geomcenter
     vec = np.reshape(self.transform, (4,4))[0:3,0:3]
     xyz = np.dot(xyz, np.linalg.inv(vec).T)
     extent = np.array([np.amin(xyz, axis=0), np.amax(xyz, axis=0)])
     center = (np.amin(xyz, axis=0) + np.amax(xyz, axis=0))/2
     center = np.dot(vec, center)
-    size = extent[1] - extent[0] + 2*clearance/np.linalg.norm(vec, axis=0)
+    # To add correct clearance, normalize edges and find angles
+    norm = np.linalg.norm(vec, axis=0)
+    vec = vec/norm
+    ang = np.zeros_like(norm)
+    for i in range(len(ang)):
+      plane = np.cross(vec[:,(i+1)%3], vec[:,(i+2)%3])
+      plane /= np.linalg.norm(plane)
+      ang[i] = abs(np.dot(vec[:,i], plane))
+    size = extent[1] - extent[0] + 2*clearance/ang/norm
     return (np.ceil(size).tolist(), center)
 
   def reset_box(self):
@@ -5871,7 +5878,12 @@ class TransformDock(QDockWidget):
       value[7]  = self.transYBox.text()
       value[11] = self.transZBox.text()
       value[15] = 1.0
-      self.parent().transform = [float(i) for i in value]
+      transform = [float(i) for i in value]
+      vec = np.array(transform).reshape((4,4))[0:3,0:3]
+      if (abs(np.linalg.det(vec)) < 1e-6):
+        self.parent().show_error('The matrix is singular')
+        return
+      self.parent().transform = transform
     except:
       self.set_boxes()
 
