@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.4'
+__version__ = '2.4.1'
 
 import sys
 try:
@@ -646,11 +646,26 @@ class Orbitals(object):
     with open(self.file, 'r') as f:
       f.seek(self.head)
       while (True):
+        sym = '?'
+        ene = 0.0
+        spn = 'a'
+        occ = 0.0
         try:
-          sym = re.sub(r'^\d*', '', f.readline().split()[1])
-          ene = float(f.readline().split()[1])
-          spn = 'b' if (f.readline().split()[1] == 'Beta') else 'a'
-          occ = float(f.readline().split()[1])
+          while(True):
+            save_cff = f.tell()
+            line = f.readline().split()
+            tag = line[0].lower()
+            if (tag == 'sym='):
+              sym = re.sub(r'^\d*', '', line[1])
+            elif (tag == 'ene='):
+              ene = float(line[1])
+            elif (tag == 'spin='):
+              spn = 'b' if (line[1] == 'Beta') else 'a'
+            elif (tag == 'occup='):
+              occ = float(line[1])
+            else:
+              f.seek(save_cff)
+              break
           cff = np.zeros(sum(self.N_bas))
           for i in range(sum(self.N_bas)):
             n, c = f.readline().split()
@@ -2010,8 +2025,7 @@ class LineEditWithButton(QLineEdit):
     frameWidth = self.style().pixelMetric(QStyle.PM_DefaultFrameWidth)
     self.setStyleSheet('QLineEdit {{padding-right: {0}px;}}'.format(self.button.sizeHint().width() + frameWidth + 1))
     msz = self.minimumSizeHint()
-    self.setMinimumSize(max(msz.width(), self.button.sizeHint().height() + 2*frameWidth + 2),
-                        max(msz.height(), self.button.sizeHint().height() + 2*frameWidth + 2))
+    self.setMinimumSize(max(msz.width(), self.button.sizeHint().height() + 2*frameWidth + 2), msz.height())
   def resizeEvent(self, event):
     sz = self.button.sizeHint()
     frameWidth = self.style().pixelMetric(QStyle.PM_DefaultFrameWidth)
@@ -2091,7 +2105,6 @@ class TakeScreenshot(QDialog):
 
     ren = self.parent().ren
     renwin = self.parent().vtkWidget.GetRenderWindow()
-    renwin.SetAlphaBitPlanes(1)
 
     panel_changed = False
     if (not self.panelBox.isChecked()):
@@ -2101,8 +2114,7 @@ class TakeScreenshot(QDialog):
 
     wti = vtk.vtkWindowToImageFilter()
     wti.SetInput(renwin)
-    wti.SetInputBufferTypeToRGBA()
-    wti.ReadFrontBufferOff()
+    wti.SetInputBufferTypeToRGB()
     w = vtk.vtkPNGWriter()
     w.SetFileName(filename)
     w.SetCompressionLevel(9)
@@ -2116,8 +2128,7 @@ class TakeScreenshot(QDialog):
       ren.SetBackground(1,1,1)
       wti = vtk.vtkWindowToImageFilter()
       wti.SetInput(renwin)
-      wti.SetInputBufferTypeToRGBA()
-      wti.ReadFrontBufferOff()
+      wti.SetInputBufferTypeToRGB()
       wti.Update()
       white = vtk.vtkImageData()
       white.ShallowCopy(wti.GetOutput())
@@ -2133,13 +2144,16 @@ class TakeScreenshot(QDialog):
       self.parent().vtk_update()
     w.Write()
 
-  # Getting an image with transparent background does not work within Qt, so we
+  # Getting an image with transparent background may not work within Qt, so we
   # have to use a trick similar to that used in ParaView: get images with black
   # and white backgrounds and figure out the transparency from their difference
   def set_transparency(self, white_background, black_background):
     wdata = numpy_support.vtk_to_numpy(white_background.GetPointData().GetScalars()).astype(float)
     bdata = numpy_support.vtk_to_numpy(black_background.GetPointData().GetScalars()).astype(float)
-    output = deepcopy(bdata)
+    if (bdata.shape[1] == 3):
+      output = np.hstack((bdata, np.ones((bdata.shape[0], 1))))
+    else:
+      output = deepcopy(bdata)
     alpha = 255 - (wdata[:,0:3].max(1) - bdata[:,0:3].max(1))
     mask = alpha > 0
     output[:,0:3] *= 255/np.where(mask[:,np.newaxis], alpha[:,np.newaxis], 255)
@@ -2535,7 +2549,7 @@ class MainWindow(QMainWindow):
     self.moleculeButton.setCurrentIndex(0)
     self.namesBox.setLayoutDirection(Qt.RightToLeft)
     self.boxBox.setLayoutDirection(Qt.RightToLeft)
-    self.boxSizeBox.setFixedWidth(120)
+    self.boxSizeBox.setFixedWidth(140)
     self.boxSizeBox.setButton(u'⇔')
     self.transformButton.setCheckable(True)
     self.gridPointsBox.setFixedWidth(50)
@@ -3910,16 +3924,16 @@ class MainWindow(QMainWindow):
       self.textureDock.representationButton.setCurrentIndex(index)
     self.textureDock.sizeBox.setValue(qt_to_py(self.settings.value('size', 1), int))
     negcolor = qt_to_py(self.settings.value('negcolor'), str)
-    if (negcolor):
+    if (negcolor != 'None'):
       self.textureDock.choose_color('neg', tuple(map(float, negcolor.split())))
     zerocolor = qt_to_py(self.settings.value('zerocolor'), str)
-    if (zerocolor):
+    if (zerocolor != 'None'):
       self.textureDock.choose_color('zero', tuple(map(float, zerocolor.split())))
     poscolor = qt_to_py(self.settings.value('poscolor'), str)
-    if (poscolor):
+    if (poscolor != 'None'):
       self.textureDock.choose_color('pos', tuple(map(float, poscolor.split())))
     specularcolor = qt_to_py(self.settings.value('specularcolor'), str)
-    if (specularcolor):
+    if (specularcolor != 'None'):
       self.textureDock.choose_color('spec', tuple(map(float, specularcolor.split())))
     self.settings.endGroup()
     size = self.settings.value('size')
@@ -5551,11 +5565,18 @@ class MainWindow(QMainWindow):
     self.set_scale()
     self.vtk_update()
 
-  def reset_camera(self, restore=False):
+  def reset_camera(self, restore=False, align=False):
     if (restore):
       self.ren.GetActiveCamera().SetFocalPoint(0, 0, 0)
-      self.ren.GetActiveCamera().SetPosition(0, 0, 10)
-      self.ren.GetActiveCamera().SetViewUp(0, 1, 0)
+      if (align):
+        vec = np.reshape(self.transform, (4,4))[0:3,0:3]
+        norm = np.linalg.norm(vec, axis=0)
+        vec = vec/norm
+        self.ren.GetActiveCamera().SetPosition(*vec[:,2])
+        self.ren.GetActiveCamera().SetViewUp(*vec[:,1])
+      else:
+        self.ren.GetActiveCamera().SetPosition(0, 0, 10)
+        self.ren.GetActiveCamera().SetViewUp(0, 1, 0)
     self.ren.ResetCamera()
     self.set_scale()
     self.vtk_update()

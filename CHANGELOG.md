@@ -1,4 +1,11 @@
-**2.4** (2109-08-30)
+**2.4.1** (2019-09-06)
+
+Bug fixes:
+* Fix reading color settings if not present in configuration file
+* Fix transparency in PNG screenshots (in some Qt versions)
+* Read Molden files with missing tags
+
+**2.4** (2019-08-30)
 
 New features:
 * Display atoms with no basis functions (e.g. MM) as transparent balls and exclude them from box
