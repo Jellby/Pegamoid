@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2019'
 __license__ = 'GPL v3.0'
-__version__ = '2.4.1'
+__version__ = '2.4.2'
 
 import sys
 try:
@@ -1236,7 +1236,7 @@ class Orbitals(object):
                 'DESYM_CENTER_LABELS', 'DESYM_CENTER_CHARGES', 'DESYM_CENTER_COORDINATES', 'DESYM_BASIS_FUNCTION_IDS', 'DESYM_MATRIX',
                 'PRIMITIVES', 'PRIMITIVE_IDS']:
         if (d in fi):
-          dsets[d] = [fi[d][:], fi[d].attrs.items()]
+          dsets[d] = [fi[d][:], dict(fi[d].attrs).items()]
     # Then write in a new file, this allows overwriting the input file
     with h5py.File(filename, 'w') as fo:
       fo.attrs['Pegamoid_version'] = '{0} {1}'.format(__name__, __version__)
@@ -1279,7 +1279,7 @@ class Orbitals(object):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o['occup'] > 0.5) else 'S'
         fo.create_dataset('MO_BETA_TYPEINDICES', data=np.array(tp, dtype=np.string_))
-      else:
+      if (len(self.MO) > 0):
         cff = []
         for i,j in nMO:
           for k in range(i,j):

@@ -1,3 +1,9 @@
+**2.4.2** (2019-09-12)
+
+Bug fix:
+* Fix writing of HDF5
+* Write natural UHF orbitals too (if available)
+
 **2.4.1** (2019-09-06)
 
 Bug fixes:
