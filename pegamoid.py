@@ -1194,7 +1194,7 @@ class Orbitals(object):
 
   # Compute electron density as sum of square of (natural) orbitals times occupation.
   # It can use a cache for MO evaluation and a mask to select only some orbitals.
-  def dens(self, x, y, z, cache=None, mask=None, spin=False, callback=None, interrupt=False):
+  def dens(self, x, y, z, cache=None, mask=None, spin=False, trans=False, callback=None, interrupt=False):
     dens = np.zeros_like(x)
     if (self.MO_b):
       MO_list = [j for i in zip_longest(self.MO_a, self.MO_b) for j in i]
@@ -1218,6 +1218,7 @@ class Orbitals(object):
     for compute in actions:
       if (compute):
         do_list = chunk_list
+        tot = 0
       else:
         do_list = [0]
       for chunk,start in enumerate(do_list):
@@ -1247,6 +1248,8 @@ class Orbitals(object):
               s = 'b'
               if (spin):
                 f = -1.0
+          if (trans and (s == 'b')):
+            continue
           if ((mask is None) or mask[j]):
             occup = f*orb['occup']
             if (abs(occup) > self.eps):
@@ -1257,10 +1260,16 @@ class Orbitals(object):
                     callback('Computing: {0}/{1} (chunk {2}/{3}) ...'.format(num, total, chunk+1, len(do_list)))
                   else:
                     callback('Computing: {0}/{1} ...'.format(num, total))
-                dens[start:start+chunk_size] += occup*self.mo(ii, x_, y_, z_, s, cache, interrupt=interrupt)**2
+                if (trans):
+                  dens[start:start+chunk_size] += occup*(self.mo(ii, x_, y_, z_, 'a', cache, interrupt=interrupt)*
+                                                         self.mo(ii, x_, y_, z_, 'b', cache, interrupt=interrupt))
+                else:
+                  dens[start:start+chunk_size] += occup*self.mo(ii, x_, y_, z_, s, cache, interrupt=interrupt)**2
+                tot += occup
               else:
                 total += 1
           j += 1
+    self.total_occup = tot
     return dens
 
   # Compute the Laplacian of a field by central finite differences
@@ -2042,15 +2051,21 @@ class ComputeVolume(Worker):
         l += 1
     if ((orb in [0, -1]) or (orb <= -3)):
       a_and_b = False
+      trans = False
       if (orb == -1):
         a_and_b = True
+      elif (self.dens_type in ['transition', 'unrelaxed']):
+        mask = [i for j in zip(mask, mask) for i in j]
+        a_and_b = True
+        if (self.dens_type == 'transition'):
+          trans = True
       elif (self.dens_type == 'hole'):
         mask = [i for j in [[False, k] for k in mask] for i in j]
         a_and_b = True
       elif (self.dens_type == 'particle'):
         mask = [i for j in [[k, False] for k in mask] for i in j]
         a_and_b = True
-      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=a_and_b, callback=print_func, interrupt=self.parent().interrupt)
+      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=a_and_b, trans=trans, callback=print_func, interrupt=self.parent().interrupt)
     elif (orb == -2):
       ngrid = self.parent().xyz.GetInput().GetDimensions()
       data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, callback=print_func, interrupt=self.parent().interrupt).reshape(ngrid[::-1])
@@ -2474,6 +2489,7 @@ class MainWindow(QMainWindow):
     self._irrep = None
     self._irreplist = None
     self._spin = None
+    self._prev_spin = None
     self._spinlist = None
     self._haveBasis = None
     self._haveInpOrb = None
@@ -3346,7 +3362,10 @@ class MainWindow(QMainWindow):
     try:
       old_orb = None
       if (self.orbital > 0):
-        old_orb = self.MO[self.orbital-1]['coeff']
+        try:
+          old_orb = self.MO[self.orbital-1]['coeff']
+        except IndexError:
+          pass
     except (TypeError, KeyError):
       pass
     self._MO = value
@@ -3659,6 +3678,8 @@ class MainWindow(QMainWindow):
   @spin.setter
   def spin(self, value):
     self._spin = value
+    if (value):
+      self._prev_spin = value
     self.spin_select(value)
 
   def spin_select(self, value):
@@ -3678,9 +3699,16 @@ class MainWindow(QMainWindow):
   @spinlist.setter
   def spinlist(self, value):
     self._spinlist = value
+    self.spinButton.blockSignals(True)
     self.spinButton.clear()
-    for i in value:
-      self.spinButton.addItem(i)
+    item = 0
+    for i,v in enumerate(value):
+      self.spinButton.addItem(v)
+      if (v == self._prev_spin):
+        item = i
+    self.spinButton.blockSignals(False)
+    self.spinButton.setCurrentIndex(-1)
+    self.spinButton.setCurrentIndex(item)
     enabled = len(value) > 1
     self.spinButton.setEnabled(enabled)
     if (len(value) > 1):
@@ -4100,10 +4128,12 @@ class MainWindow(QMainWindow):
           orblist[-4] = 'Attachment density'
           orblist[-5] = 'Detachment density'
         elif (self.dens == 'Transition'):
+          orblist[-3] = 'Unrelaxed diff. density'
           if (self.spin == 'hole'):
-            orblist[-3] = 'Hole density'
+            orblist[-5] = 'Hole density'
           elif (self.spin == 'particle'):
-            orblist[-3] = 'Particle density'
+            orblist[-4] = 'Particle density'
+          orblist[-6] = 'Transition density'
     else:
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
     for k in sorted(orblist.keys()):
@@ -4111,6 +4141,11 @@ class MainWindow(QMainWindow):
     new = self.orbitalButton.findData(prev)
     if ((new < 0) and (prev < 0)):
       new = self.orbitalButton.findData(0)
+    if ((new < 0) and (prev in [-4, -5])):
+      if (prev == -4):
+        new = self.orbitalButton.findData(-5)
+      elif (prev == -5):
+        new = self.orbitalButton.findData(-4)
     if (new < 0):
       new = self.orbitalButton.findData(-3)
     if (new < 0):
@@ -4575,7 +4610,11 @@ class MainWindow(QMainWindow):
       self._computeVolumeThread.wait()
     dens_type = ''
     dt = self.orbitalButton.currentText()
-    if (dt == 'Hole density'):
+    if (dt == 'Transition density'):
+      dens_type = 'transition'
+    elif (dt == 'Unrelaxed diff. density'):
+      dens_type = 'unrelaxed'
+    elif (dt == 'Hole density'):
       dens_type = 'hole'
     elif (dt == 'Particle density'):
       dens_type = 'particle'
@@ -5072,7 +5111,7 @@ class MainWindow(QMainWindow):
       elif (self.dens == 'Transition'):
         text = 'Transition ({0}) from root {1} to {2}\n'.format(self.spin, *self.rootButton.currentText().split(u' → '))
     if (self.orbital <= 0):
-      text += self.orbitalButton.currentText()
+      text += '{} ({:.2f} electrons)'.format(self.orbitalButton.currentText(), self.orbitals.total_occup)
     else:
       if (self.orbital is not None):
         orb = self.MO[self.orbital-1]
