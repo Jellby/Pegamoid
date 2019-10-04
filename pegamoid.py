@@ -446,6 +446,12 @@ class Orbitals(object):
           tdm = f['TRANSITION_DENSITY_MATRIX']
           if (not np.allclose(tdm, np.zeros_like(tdm))):
             self.tdm = True
+      if ('WFA' in f):
+        self.wfa_orbs = []
+        for i in f['WFA'].keys():
+          match = re.match('DESYM_(.*)_VECTORS', i)
+          if (match):
+            self.wfa_orbs.append(match.group(1))
       # Read the optional notes
       if ('Pegamoid_notes' in f):
         self.notes = [str(i.decode('ascii')) for i in f['Pegamoid_notes'][:]]
@@ -459,12 +465,13 @@ class Orbitals(object):
     if ((density, root) == self.current_orbs):
       return
     # in a PT2 calculation, density matrices include all orbitals (not only active)
+    fix_frozen = False
     if (self.wf == 'PT2'):
-      fix_frozen = True
+      if (density == 'State'):
+        fix_frozen = True
       tp_act = set([o['type'] for o in self.base_MO[0]])
       tp_act -= set(['F', 'D'])
     else:
-      fix_frozen = False
       tp_act = ['1', '2', '3']
     # Depending on the type of density selected, read the matrix
     # and choose the appropriate method to get the orbitals
@@ -499,6 +506,32 @@ class Orbitals(object):
         with h5py.File(self.file, 'r') as f:
           n = r2*(r2-1)//2+r1
           dm = f['TRANSITION_DENSITY_MATRIX'][n,:]
+    elif (density == 'WFA'):
+      algo = 'non'
+      label = self.wfa_orbs[root]
+      new_MO = []
+      with h5py.File(self.h5file, 'r') as f:
+        occ = f['WFA/DESYM_{0}_OCCUPATIONS'.format(label)][:]
+        norb = len(occ)
+        vec = np.reshape(f['WFA/DESYM_{0}_VECTORS'.format(label)], (norb, -1))
+      for i,o in enumerate(occ):
+        new_MO.append({'coeff': vec[i,:], 'occup': o, 'type': '?', 'ene': 0.0})
+      # if these are NTOs, split in hole and particle
+      ntos = '_NTO' in label
+      for i in range(norb/2):
+        if (not np.isclose(occ[i], -occ[-i-1], atol=self.eps)):
+          ntos = False
+          break
+      if (ntos):
+        self.MO = []
+        self.MO_a = sorted(new_MO[int(norb/2):], key=lambda i: i['occup'], reverse=True)
+        self.MO_b = sorted(new_MO[:int(norb/2)], key=lambda i: i['occup'])
+        for o in self.MO_b:
+          o['occup'] *= -1
+      else:
+        self.MO = new_MO
+        self.MO_a = []
+        self.MO_b = []
     # Now obtain the MOs from the density matrix
     mix_threshold = 1.0-1e-4
     # as eigenvectors
@@ -1250,7 +1283,7 @@ class Orbitals(object):
                 f = -1.0
           if (trans and (s == 'b')):
             continue
-          if ((mask is None) or mask[j]):
+          if ((mask is None) or (len(mask) < j+1) or mask[j]):
             occup = f*orb['occup']
             if (abs(occup) > self.eps):
               if (compute):
@@ -1930,6 +1963,13 @@ def isEmpty(a):
 
 #===============================================================================
 
+# Pad a list with additional item up to a minimum length
+def list_pad(a, n, item=None):
+  if (len(a) < n):
+    a.extend([item] * (n-len(a)))
+
+#===============================================================================
+
 def group_widgets(*args, **kwargs):
   layout = QHBoxLayout()
   layout.setSpacing(kwargs.get('spacing', 0))
@@ -2025,33 +2065,25 @@ class ComputeVolume(Worker):
     else:
       spin = 'n'
     mask = [o['density'] for o in self.parent().notes]
-    if (self.dens_type == 'attachment'):
+    if (self.dens_type in ['attachment', 'detachment']):
       l = 0
       if (self.parent().orbitals.MO_b):
         alphaMO = self.parent().orbitals.MO_a
       else:
         alphaMO = self.parent().orbitals.MO
+      list_pad(mask, max(len(alphaMO), len(self.parent().orbitals.MO_b)), True)
       for o in [j for i in zip_longest(alphaMO, self.parent().orbitals.MO_b) for j in i]:
         if (o is None):
           continue
-        if (o['occup'] < 0):
+        if ((self.dens_type == 'attachment') and (o['occup'] < 0)):
           mask[l] = False
-        l += 1
-    elif (self.dens_type == 'detachment'):
-      l = 0
-      if (self.parent().orbitals.MO_b):
-        alphaMO = self.parent().orbitals.MO_a
-      else:
-        alphaMO = self.parent().orbitals.MO
-      for o in [j for i in zip_longest(alphaMO, self.parent().orbitals.MO_b) for j in i]:
-        if (o is None):
-          continue
-        if (o['occup'] > 0):
+        elif ((self.dens_type == 'detachment') and (o['occup'] > 0)):
           mask[l] = False
         l += 1
     if ((orb in [0, -1]) or (orb <= -3)):
       a_and_b = False
       trans = False
+      list_pad(mask, len(self.parent().orbitals.MO_a), True)
       if (orb == -1):
         a_and_b = True
       elif (self.dens_type in ['transition', 'unrelaxed']):
@@ -2677,6 +2709,8 @@ class MainWindow(QMainWindow):
     self.collapseButton.setCheckable(True)
     self.collapseButton.setAutoRaise(True)
     self.listButton.setCheckable(True)
+    self.densityTypeButton.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+    self.rootButton.setSizeAdjustPolicy(QComboBox.AdjustToContents)
     self.orbitalButton.setSizeAdjustPolicy(QComboBox.AdjustToContents)
     activeFrame.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
     self.frozenButton.setLayoutDirection(Qt.RightToLeft)
@@ -2724,14 +2758,14 @@ class MainWindow(QMainWindow):
     self.screenshotAction.setToolTip('Save the current view as an image')
     self.setScratchAction.setToolTip('View and configure scratch settings')
     self.clearAction.setToolTip('Clear the currently loaded file')
-    self.quitAction.setToolTip('Quit {}'.format(__name__))
+    self.quitAction.setToolTip('Quit {0}'.format(__name__))
     self.autoAlignAction.setToolTip('Automatically align the box with the molecule when loading a file')
     self.orthographicAction.setToolTip('Toggle the use of an orthographic projection (perspective if disabled)')
     self.fitViewAction.setToolTip('Fit the currently displayed objects in the view')
     self.resetCameraAction.setToolTip('Reset the camera to the default view')
     self.keysAction.setToolTip('Show list of hotkeys')
     self.widgetHelpAction.setToolTip('Show more help about some particular interface item')
-    self.aboutAction.setToolTip('Show information about {} and environment'.format(__name__))
+    self.aboutAction.setToolTip('Show information about {0} and environment'.format(__name__))
     self.filenameLabel.setToolTip('Currently loaded filename')
     self.filenameLabel.setWhatsThis('The name and path of the file that is currently being displayed.')
     self.fileButton.setToolTip('Load a file in any supported format')
@@ -3267,7 +3301,9 @@ class MainWindow(QMainWindow):
       densities.append('Difference')
       if (self.orbitals.tdm):
         densities.append('Transition')
-    if ((len(roots) > 2) or (enabled and (new.wf == 'PT2'))):
+    if (hasattr(new, 'wfa_orbs') and (len(new.wfa_orbs) > 0)):
+      densities.append('WFA')
+    if ((len(roots) > 2) or (enabled and ((new.wf == 'PT2') or ('WFA' in densities)))):
       self.rootGroup.setEnabled(True)
       self.rootGroup.show()
     else:
@@ -3369,7 +3405,7 @@ class MainWindow(QMainWindow):
     except (TypeError, KeyError):
       pass
     self._MO = value
-    if ((value is None) or (old_orb is None) or not np.allclose(old_orb, self.MO[self.orbital-1]['coeff'])):
+    if ((value is None) or (old_orb is None) or (self.orbital >= len(self.MO)) or not np.allclose(old_orb, self.MO[self.orbital-1]['coeff'])):
       self._tainted = True
     self.populate_orbitals()
     self._tainted = False
@@ -3595,6 +3631,8 @@ class MainWindow(QMainWindow):
       for i,r1 in enumerate(rootids):
         for r2 in rootids[i+1:]:
           items.append(u'{0} → {1}'.format(r1, r2))
+    elif (new == 'WFA'):
+      items = self.orbitals.wfa_orbs
     if (new != old):
       self._tainted = True
     old_root = self.rootButton.currentText()
@@ -3623,6 +3661,8 @@ class MainWindow(QMainWindow):
       return
     self.orbitals.get_orbitals(self.dens, new)
     if (self.dens == 'Transition'):
+      spinlist = ['hole', 'particle']
+    elif ((self.dens == 'WFA') and (len(self.orbitals.MO_a) > 0)):
       spinlist = ['hole', 'particle']
     else:
       try:
@@ -3734,7 +3774,7 @@ class MainWindow(QMainWindow):
     self.isovalueSlider.setValue(slider_value)
     self.isovalueSlider.blockSignals(False)
     if (not self.isovalueBox.hasFocus()):
-      fix_box(self.isovalueBox, '{:.4g}'.format(new))
+      fix_box(self.isovalueBox, '{0:.4g}'.format(new))
     if (self.surface is not None):
       contour = get_input_type(self.surface.GetMapper(), vtk.vtkContourFilter)
       if (self.orbital == 0):
@@ -3774,7 +3814,7 @@ class MainWindow(QMainWindow):
     self.opacitySlider.setValue(slider_value)
     self.opacitySlider.blockSignals(False)
     if (not self.opacityBox.hasFocus()):
-      fix_box(self.opacityBox, '{:.2f}'.format(new))
+      fix_box(self.opacityBox, '{0:.2f}'.format(new))
     if (self.surface is None):
       return
     self.surface.GetProperty().SetOpacity(min(1-1e-6, new))
@@ -4123,29 +4163,32 @@ class MainWindow(QMainWindow):
             orblist[-1] = 'Spin density'
         elif (self.dens == 'Spin'):
           orblist[-3] = 'Spin density'
-        elif (self.dens == 'Difference'):
+        elif ((self.dens == 'Difference') or ((self.dens == 'WFA') and ('_NDO' in self.rootButton.currentText()))):
           orblist[-3] = 'Difference density'
           orblist[-4] = 'Attachment density'
           orblist[-5] = 'Detachment density'
-        elif (self.dens == 'Transition'):
+        elif ('hole' in self.spinlist):
           orblist[-3] = 'Unrelaxed diff. density'
           if (self.spin == 'hole'):
             orblist[-5] = 'Hole density'
           elif (self.spin == 'particle'):
             orblist[-4] = 'Particle density'
           orblist[-6] = 'Transition density'
+        elif ((self.dens == 'WFA') and ('_NO' in self.rootButton.currentText())):
+          orblist[0] = 'Density'
     else:
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
     for k in sorted(orblist.keys()):
       self.orbitalButton.addItem(orblist[k], k)
+    if (prev is None):
+      prev = 1
     new = self.orbitalButton.findData(prev)
-    if ((new < 0) and (prev < 0)):
-      new = self.orbitalButton.findData(0)
     if ((new < 0) and (prev in [-4, -5])):
-      if (prev == -4):
-        new = self.orbitalButton.findData(-5)
-      elif (prev == -5):
-        new = self.orbitalButton.findData(-4)
+      prev = -5 if (prev == -4) else -4
+      new = self.orbitalButton.findData(prev)
+    if (new < 0):
+      prev = 1 if (prev > 0) else 0
+      new = self.orbitalButton.findData(prev)
     if (new < 0):
       new = self.orbitalButton.findData(-3)
     if (new < 0):
@@ -4887,7 +4930,7 @@ class MainWindow(QMainWindow):
     except:
       pass
     if (fix):
-      fix_box(self.isovalueBox, '{:.4g}'.format(self.isovalue))
+      fix_box(self.isovalueBox, '{0:.4g}'.format(self.isovalue))
 
   def opacitySlider_changed(self, value):
     new = (value - self.opacitySlider.minimum())/(self.opacitySlider.maximum() - self.opacitySlider.minimum())
@@ -4902,7 +4945,7 @@ class MainWindow(QMainWindow):
     except:
       pass
     if (fix):
-      fix_box(self.opacityBox, '{:.2f}'.format(self.opacity))
+      fix_box(self.opacityBox, '{0:.2f}'.format(self.opacity))
 
   def collapse_options(self):
     if (self.collapseButton.isChecked()):
@@ -5110,8 +5153,13 @@ class MainWindow(QMainWindow):
         text = 'Difference from root {0} to {1}\n'.format(*self.rootButton.currentText().split(u' → '))
       elif (self.dens == 'Transition'):
         text = 'Transition ({0}) from root {1} to {2}\n'.format(self.spin, *self.rootButton.currentText().split(u' → '))
+      elif (self.dens == 'WFA'):
+        text = 'WFA ({0})'.format(self.rootButton.currentText())
+        if (self.spin):
+          text += ' ({0})'.format(self.spin)
+        text += '\n'
     if (self.orbital <= 0):
-      text += '{} ({:.2f} electrons)'.format(self.orbitalButton.currentText(), self.orbitals.total_occup)
+      text += '{0} ({1:.2f} electrons)'.format(self.orbitalButton.currentText(), self.orbitals.total_occup)
     else:
       if (self.orbital is not None):
         orb = self.MO[self.orbital-1]
@@ -5907,18 +5955,18 @@ class TransformDock(QDockWidget):
   def set_boxes(self, value=None):
     if ((value is None) or (type(value) is bool)):
       value = self.parent().transform
-    self.rotXXBox.setText('{}'.format(value[0]))
-    self.rotXYBox.setText('{}'.format(value[1]))
-    self.rotXZBox.setText('{}'.format(value[2]))
-    self.rotYXBox.setText('{}'.format(value[4]))
-    self.rotYYBox.setText('{}'.format(value[5]))
-    self.rotYZBox.setText('{}'.format(value[6]))
-    self.rotZXBox.setText('{}'.format(value[8]))
-    self.rotZYBox.setText('{}'.format(value[9]))
-    self.rotZZBox.setText('{}'.format(value[10]))
-    self.transXBox.setText('{}'.format(value[3]))
-    self.transYBox.setText('{}'.format(value[7]))
-    self.transZBox.setText('{}'.format(value[11]))
+    self.rotXXBox.setText('{0}'.format(value[0]))
+    self.rotXYBox.setText('{0}'.format(value[1]))
+    self.rotXZBox.setText('{0}'.format(value[2]))
+    self.rotYXBox.setText('{0}'.format(value[4]))
+    self.rotYYBox.setText('{0}'.format(value[5]))
+    self.rotYZBox.setText('{0}'.format(value[6]))
+    self.rotZXBox.setText('{0}'.format(value[8]))
+    self.rotZYBox.setText('{0}'.format(value[9]))
+    self.rotZZBox.setText('{0}'.format(value[10]))
+    self.transXBox.setText('{0}'.format(value[3]))
+    self.transYBox.setText('{0}'.format(value[7]))
+    self.transZBox.setText('{0}'.format(value[11]))
 
   def set_transform(self):
     value = [0]*16
@@ -6418,7 +6466,7 @@ class TextureDock(QDockWidget):
     self.ambientSlider.setValue(slider_value)
     self.ambientSlider.blockSignals(False)
     if (not self.ambientBox.hasFocus()):
-      fix_box(self.ambientBox, '{:.2f}'.format(new))
+      fix_box(self.ambientBox, '{0:.2f}'.format(new))
     if (self.parent().surface is None):
       return
     self.parent().surface.GetProperty().SetAmbient(new)
@@ -6437,7 +6485,7 @@ class TextureDock(QDockWidget):
     except:
       pass
     if (fix):
-      fix_box(self.ambientBox, '{:.2f}'.format(self.ambient))
+      fix_box(self.ambientBox, '{0:.2f}'.format(self.ambient))
 
   def _diffuse_changed(self, new, old):
     if (new == old):
@@ -6447,7 +6495,7 @@ class TextureDock(QDockWidget):
     self.diffuseSlider.setValue(slider_value)
     self.diffuseSlider.blockSignals(False)
     if (not self.diffuseBox.hasFocus()):
-      fix_box(self.diffuseBox, '{:.2f}'.format(new))
+      fix_box(self.diffuseBox, '{0:.2f}'.format(new))
     if (self.parent().surface is None):
       return
     self.parent().surface.GetProperty().SetDiffuse(new)
@@ -6466,7 +6514,7 @@ class TextureDock(QDockWidget):
     except:
       pass
     if (fix):
-      fix_box(self.diffuseBox, '{:.2f}'.format(self.diffuse))
+      fix_box(self.diffuseBox, '{0:.2f}'.format(self.diffuse))
 
   def _specular_changed(self, new, old):
     if (new == old):
@@ -6476,7 +6524,7 @@ class TextureDock(QDockWidget):
     self.specularSlider.setValue(slider_value)
     self.specularSlider.blockSignals(False)
     if (not self.specularBox.hasFocus()):
-      fix_box(self.specularBox, '{:.2f}'.format(new))
+      fix_box(self.specularBox, '{0:.2f}'.format(new))
     if (self.parent().surface is None):
       return
     self.parent().surface.GetProperty().SetSpecular(new)
@@ -6495,7 +6543,7 @@ class TextureDock(QDockWidget):
     except:
       pass
     if (fix):
-      fix_box(self.specularBox, '{:.2f}'.format(self.specular))
+      fix_box(self.specularBox, '{0:.2f}'.format(self.specular))
 
   def _power_changed(self, new, old):
     if (new == old):
@@ -6508,7 +6556,7 @@ class TextureDock(QDockWidget):
     self.powerSlider.setValue(slider_value)
     self.powerSlider.blockSignals(False)
     if (not self.powerBox.hasFocus()):
-      fix_box(self.powerBox, '{:.2f}'.format(new))
+      fix_box(self.powerBox, '{0:.2f}'.format(new))
     if (self.parent().surface is None):
       return
     self.parent().surface.GetProperty().SetSpecularPower(new)
@@ -6529,7 +6577,7 @@ class TextureDock(QDockWidget):
     except:
       pass
     if (fix):
-      fix_box(self.powerBox, '{:.2f}'.format(self.power))
+      fix_box(self.powerBox, '{0:.2f}'.format(self.power))
 
   def _transparency_changed(self, new, old):
     if (new == old):
@@ -6539,7 +6587,7 @@ class TextureDock(QDockWidget):
     self.transparencySlider.setValue(slider_value)
     self.transparencySlider.blockSignals(False)
     if (not self.transparencyBox.hasFocus()):
-      fix_box(self.transparencyBox, '{:.2f}'.format(new))
+      fix_box(self.transparencyBox, '{0:.2f}'.format(new))
     if (self.parent().surface is None):
       return
     self.parent().surface.GetMapper().Transparency = new
@@ -6558,7 +6606,7 @@ class TextureDock(QDockWidget):
     except:
       pass
     if (fix):
-      fix_box(self.transparencyBox, '{:.2f}'.format(self.transparency))
+      fix_box(self.transparencyBox, '{0:.2f}'.format(self.transparency))
 
   def _fresnel_changed(self, new, old):
     if (new == old):
@@ -6569,7 +6617,7 @@ class TextureDock(QDockWidget):
     self.fresnelSlider.setValue(slider_value)
     self.fresnelSlider.blockSignals(False)
     if (not self.fresnelBox.hasFocus()):
-      fix_box(self.fresnelBox, '{:.2f}'.format(new))
+      fix_box(self.fresnelBox, '{0:.2f}'.format(new))
     if (self.parent().surface is None):
       return
     self.parent().surface.GetMapper().Fresnel = new
@@ -6588,7 +6636,7 @@ class TextureDock(QDockWidget):
     except:
       pass
     if (fix):
-      fix_box(self.fresnelBox, '{:.2f}'.format(self._fresnel))
+      fix_box(self.fresnelBox, '{0:.2f}'.format(self._fresnel))
 
   def _interpolation_changed(self, new, old):
     if (new == old):
