@@ -1684,7 +1684,7 @@ class Grid(object):
             self.irrep.append(self.MO[-1]['sym'])
         else:
           name = ' '.join(name.split()[1:])
-          self.MO.append({'label':name, 'ene':0.0, 'occup':0.0, 'type':'?', 'sym':'z', 'num':0, 'idx':i})
+          self.MO.append({'label':name, 'ene':np.finfo(np.float).min, 'occup':0.0, 'type':'?', 'sym':'z', 'num':0, 'idx':i})
           if ('z' not in self.irrep):
             self.irrep.append('z')
       # Sort the orbitals by symmetry and number
@@ -1755,7 +1755,7 @@ class Grid(object):
             self.irrep.append(self.MO[-1]['sym'])
         else:
           name = ' '.join(name.split()[1:])
-          self.MO.append({'label':name, 'ene':0.0, 'occup':0.0, 'type':'?', 'sym':'z', 'num':0, 'idx':i})
+          self.MO.append({'label':name, 'ene':np.finfo(np.float).min, 'occup':0.0, 'type':'?', 'sym':'z', 'num':0, 'idx':i})
           if ('z' not in self.irrep):
             self.irrep.append('z')
       # Sort the orbitals by symmetry and number
@@ -2150,6 +2150,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>Shift+PgUp</b>/<b>Shift+PgDown</b>: Switch to previous/next root</p>
                    <p><b>Ctrl+PgUp</b>/<b>Ctrl+PgDown</b>: Switch to previous/next irrep</p>
                    <p><b>A</b>/<b>B</b>: Switch to alpha/beta or electron/spin orbitals</p>
+                   <p><b>Shift+S</b>: Toggle sorting of orbital list by energy &amp; occupation</p>
                    <p><b>Ctrl+L</b>: Show/hide full list of orbitals</p>
                    <p><b>F</b>: Change orbital type to frozen</p>
                    <p><b>I</b>: Change orbital type to inactive</p>
@@ -2640,6 +2641,7 @@ class MainWindow(QMainWindow):
     self.orbitalLabel = QLabel('Orbital:')
     self.orbitalButton = QComboBox()
     self.spinButton = QComboBox()
+    self.sortedBox = QCheckBox('Sort:')
     self.listButton = QPushButton('List')
     self.typeLabel = QLabel('Type:')
     self.typeButtonGroup = QButtonGroup()
@@ -2712,6 +2714,7 @@ class MainWindow(QMainWindow):
     self.densityTypeButton.setSizeAdjustPolicy(QComboBox.AdjustToContents)
     self.rootButton.setSizeAdjustPolicy(QComboBox.AdjustToContents)
     self.orbitalButton.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+    self.sortedBox.setLayoutDirection(Qt.RightToLeft)
     activeFrame.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
     self.frozenButton.setLayoutDirection(Qt.RightToLeft)
     self.inactiveButton.setLayoutDirection(Qt.RightToLeft)
@@ -2782,6 +2785,8 @@ class MainWindow(QMainWindow):
     self.orbitalButton.setWhatsThis('This shows all the orbitals available in the file, belonging to the selected irrep and spin if applicable. If no irrep is selected ("All") and if the file is not a precomputed grid, the electron density, the spin density and the Laplacian of the electron density may also be available. Selecting an orbital displays it in the 3D view above.<br>Keys: <b>PgUp</b>, <b>PgDown</b>')
     self.spinButton.setToolTip('Select spin for the orbital list')
     self.spinButton.setWhatsThis('Select alpha or beta orbitals. This list is only visible if the file contains spin-orbitals.<br>Keys: <b>A</b>, <b>B</b>')
+    self.sortedBox.setToolTip('Sort orbitals by energy & occupation')
+    self.sortedBox.setWhatsThis('Sort the list of orbitals according the the energy and occupation values. The index still refers to the original order.<br>Key: <b>Shift+S</b>')
     self.listButton.setToolTip('Show/hide full list of orbitals')
     self.listButton.setWhatsThis('Open or close a window showing the list of all orbitals (no restrictions), where custom notes can be added.<br>Key: <b>Shift+L</b>')
     activeFrame.setWhatsThis('RAS1, RAS2 and RAS3 orbitals count as "active"')
@@ -2885,6 +2890,7 @@ class MainWindow(QMainWindow):
     hbox3.addWidget(self.irrepGroup)
     self.orbitalGroup = group_widgets(self.orbitalLabel, self.orbitalButton, self.spinButton)
     hbox3.addWidget(self.orbitalGroup)
+    hbox3.addWidget(self.sortedBox)
     hbox3.addSpacing(10)
     hbox3.addWidget(self.listButton)
     hbox3.addStretch(1)
@@ -3044,6 +3050,7 @@ class MainWindow(QMainWindow):
     self.alphaShortcut.activated.connect(self.select_alpha)
     self.betaShortcut = QShortcut(QKeySequence('B'), self)
     self.betaShortcut.activated.connect(self.select_beta)
+    self.sortedBox.setShortcut('Shift+S')
     self.frozenButton.setShortcut('F')
     self.inactiveButton.setShortcut('I')
     self.RAS1Button.setShortcut('1')
@@ -3112,6 +3119,7 @@ class MainWindow(QMainWindow):
     self.irrepButton.currentIndexChanged.connect(self.irrepButton_changed)
     self.orbitalButton.currentIndexChanged.connect(self.orbitalButton_changed)
     self.spinButton.currentIndexChanged.connect(self.spinButton_changed)
+    self.sortedBox.stateChanged.connect(self.populate_orbitals)
     self.listButton.clicked.connect(self.show_list)
     self.typeButtonGroup.buttonClicked.connect(self.typeButtonGroup_changed)
     self.resetButton.clicked.connect(self.reset_type)
@@ -3659,7 +3667,14 @@ class MainWindow(QMainWindow):
   def _root_changed(self, new, old):
     if (self.MO is None):
       return
-    self.orbitals.get_orbitals(self.dens, new)
+    try:
+      self.orbitals.get_orbitals(self.dens, new)
+    except KeyError:
+      self.orbitals.MO = []
+      self.orbitals.MO_a = []
+      self.orbitals.MO_b = []
+      self.orbitals.current_orbs = None
+      self.show_error('Data could not be found. Has the file been modified since it was opened?')
     if (self.dens == 'Transition'):
       spinlist = ['hole', 'particle']
     elif ((self.dens == 'WFA') and (len(self.orbitals.MO_a) > 0)):
@@ -3939,6 +3954,7 @@ class MainWindow(QMainWindow):
     self.settings.setValue('nodal_surface', self.nodesBox.isChecked())
     self.settings.setValue('box', self.boxBox.isChecked())
     self.settings.setValue('grid_points', str(self.gridPoints))
+    self.settings.setValue('sorted', self.sortedBox.isChecked())
     self.settings.beginGroup('Texture')
     self.settings.setValue('ambient', self.textureDock.ambient)
     self.settings.setValue('diffuse', self.textureDock.diffuse)
@@ -3981,6 +3997,7 @@ class MainWindow(QMainWindow):
     self.boxBox.setChecked(qt_to_bool(self.settings.value('box', 'false')))
     self.gridPointsBox.setText(qt_to_py(self.settings.value('grid_points', '30'), str))
     self.gridPointsBox.editingFinished.emit()
+    self.sortedBox.setChecked(qt_to_bool(self.settings.value('sorted', 'false')))
     self.settings.beginGroup('Texture')
     self.textureDock.ambient = qt_to_py(self.settings.value('ambient', '0.0'), float)
     self.textureDock.diffuse = qt_to_py(self.settings.value('diffuse', '0.7'), float)
@@ -4153,6 +4170,7 @@ class MainWindow(QMainWindow):
       return
     if (self.irrep == 'All'):
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (not o.get('hide'))}
+      orbidx = {i+1:[o['ene'], np.sign(o['occup']), -o['occup']] for i,o in enumerate(self.MO) if (not o.get('hide'))}
       if ((not self.isGrid) and any([(o['occup'] != 0.0) for o in self.MO])):
         is_it_spin = (self.dens == 'State') and any([(o['occup'] < -1e-4) for o in self.MO])
         if (self.dens == 'State'):
@@ -4178,7 +4196,15 @@ class MainWindow(QMainWindow):
           orblist[0] = 'Density'
     else:
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
-    for k in sorted(orblist.keys()):
+      orbidx = {i+1:[o['ene'], np.sign(o['occup']), -o['occup'], o['sym']] for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
+    if (self.sortedBox.isChecked()):
+      for k in orblist.keys():
+        if (not k in orbidx):
+          orbidx[k] = [np.finfo(np.float).min, k]
+      orbsort = sorted(orbidx.keys(), key=lambda k: orbidx[k])
+    else:
+      orbsort = sorted(orblist.keys())
+    for k in orbsort:
       self.orbitalButton.addItem(orblist[k], k)
     if (prev is None):
       prev = 1
@@ -5159,7 +5185,7 @@ class MainWindow(QMainWindow):
           text += ' ({0})'.format(self.spin)
         text += '\n'
     if (self.orbital <= 0):
-      text += '{0} ({1:.2f} electrons)'.format(self.orbitalButton.currentText(), self.orbitals.total_occup)
+      text += '{0} ({1:.4f} electrons)'.format(self.orbitalButton.currentText(), self.orbitals.total_occup)
     else:
       if (self.orbital is not None):
         orb = self.MO[self.orbital-1]
