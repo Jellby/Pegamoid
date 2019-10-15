@@ -21,6 +21,9 @@ Some of the features to pay attention to:
 * ``cyclopentadienyl.scf.molden``:
   Alpha and beta orbitals.
 
+* ``formaldehyde.rassi.h5``:
+  WFA orbitals.
+
 * ``ferrocene.caspt2.h5``:
   Symmetry-related atoms, CASPT2 orbitals.
 

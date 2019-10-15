@@ -1,0 +1,44 @@
+* OpenMolcas input for formaldehyde
+
+&GATEWAY
+  Coord = 4
+
+    C  0.000000000   0.000000000   0.592249000
+    O  0.000000000   0.000000000  -0.595374000
+    H  0.000000000   0.924901000   1.170727000
+    H  0.000000000  -0.924901000   1.170727000
+  Group = xy
+  Basis = STO-3G
+
+&SEWARD
+
+&SCF
+
+&RASSCF
+  Spin   = 1
+  NActEl = 6 0 0
+  Inact  = 4 1
+  RAS2   = 2 3
+  CIRoot = 2 2 1
+  Thrs   = 1e-10 1e-6 1e-6
+
+> COPY $Project.JobIph JOB001
+
+&RASSCF
+  Spin   = 3
+  NActEl = 6 0 0
+  Inact  = 4 1
+  RAS2   = 2 3
+  CIRoot = 2 2 1
+  Thrs   = 1e-10 1e-6 1e-6
+
+> COPY $Project.JobIph JOB002
+
+&RASSI
+  NrOfJobIphs = 2 all
+  TRD1
+
+&WFA
+  H5file = $Project.rassi.h5
+
+> SAVE $Project.rassi.h5 $MOLCAS_OUTPUT
