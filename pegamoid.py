@@ -41,11 +41,11 @@ except:
 
 import vtk.qt
 try:
-  vtk.qt.QVTKRWIBase = "QGLWidget"
+  vtk.qt.QVTKRWIBase = 'QGLWidget'
   from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
   QtVersion += ' with QtOpenGL'
 except ImportError:
-  vtk.qt.QVTKRWIBase = "QWidget"
+  vtk.qt.QVTKRWIBase = 'QWidget'
   from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 import vtk
 from vtk.util import numpy_support
@@ -202,7 +202,6 @@ class Orbitals(object):
       self.h5file = self.file
       self.read_h5_basis()
       self.read_h5_MO()
-      self.current_orbs = None
       self.get_orbitals('State', 0)
     elif (self.type == 'molden'):
       self.read_molden_basis()
@@ -236,6 +235,8 @@ class Orbitals(object):
         basis_function_ids = 'BASIS_FUNCTION_IDS'
       bf_id = np.rec.fromrecords(np.insert(f[basis_function_ids][:], 4, -1, axis=1), names='c, s, l, m, tl') # (center, shell, l, m, true-l)
       bf_cart = set([(b['c'], b['l'], b['s']) for b in bf_id if (b['l'] < 0)])
+      for i,c in enumerate(self.centers):
+        c['bf_ids'] = np.where(bf_id['c'] == i+1)[0].tolist()
       # Add contaminants, which are found as lower l basis functions after higher l ones
       # The "tl" field means the "l" from which exponents and coefficients are to be taken, or "true l"
       ii = [sum(self.N_bas[:i]) for i in range(len(self.N_bas))]
@@ -338,6 +339,7 @@ class Orbitals(object):
     self.MO = None
     self.MO_a = None
     self.MO_b = None
+    self.current_orbs = None
 
   # Read molecular orbitals from an HDF5 file
   def read_h5_MO(self):
@@ -415,14 +417,13 @@ class Orbitals(object):
       self.roots = ['Average']
       self.sdm = None
       self.tdm = None
+      self.tsdm = None
       mod = None
       if ('MOLCAS_MODULE' in f.attrs):
         mod = f.attrs['MOLCAS_MODULE'].decode('ascii')
       if (mod == 'CASPT2'):
         self.wf = 'PT2'
         self.roots[0] = 'Reference'
-        # For CASPT2 the density matrices are symmetry-blocked, and for all orbitals (not F or D),
-        # here we convert them to square, with full size
         if ('DENSITY_MATRIX' in f):
           rootids = f.attrs['STATE_ROOTID'][:]
           # For MS-CASPT2, the densities are SS, but the energies are MS,
@@ -434,18 +435,44 @@ class Orbitals(object):
             self.msroots.extend(['{0}: {1:.6f}'.format(i+1, e) for i,e in enumerate(f['STATE_PT2_ENERGIES'])])
           else:
             self.roots.extend(['{0}: {1:.6f}'.format(i, e) for i,e in zip(rootids, f['STATE_PT2_ENERGIES'])])
+      elif ('SFS_TRANSITION_DENSITIES' in f):
+        # This is a RASSI-like calculation, with TDMs
+        self.wf = 'SI'
+        self.roots = ['Average']
+        mult = f.attrs['STATE_SPINMULT']
+        sym = f.attrs['STATE_IRREPS']
+        ene = f['SFS_ENERGIES'][:]
+        sup = [u'⁰', u'¹', u'²', u'³', u'⁴', u'⁵', u'⁶', u'⁷', u'⁸', u'⁹']
+        for i,(e,m,s) in enumerate(zip(ene, mult, sym)):
+          try:
+            l = list(self.irrep[s-1])
+          except IndexError:
+            l = ['?']
+          l[0] = l[0].upper()
+          l = ''.join([sup[int(d)] for d in str(m)] + l)
+          self.roots.append(u'{0}: ({1}) {2:.6f}'.format(i+1,l, e))
+        self.tdm = True
+        if ('SFS_TRANSITION_SPIN_DENSITIES' in f):
+          self.sdm = True
+          if (any(mult != 1)):
+            self.tsdm = True
       else:
         if ('DENSITY_MATRIX' in f):
           rootids = [i+1 for i in range(f.attrs['NROOTS'])]
           self.roots.extend(['{0}: {1:.6f}'.format(i, e) for i,e in zip(rootids, f['ROOT_ENERGIES'])])
         if ('SPINDENSITY_MATRIX' in f):
           sdm = f['SPINDENSITY_MATRIX']
-          if (not np.allclose(sdm, np.zeros_like(sdm))):
+          if (not np.allclose(sdm, 0.0)):
             self.sdm = True
         if ('TRANSITION_DENSITY_MATRIX' in f):
           tdm = f['TRANSITION_DENSITY_MATRIX']
-          if (not np.allclose(tdm, np.zeros_like(tdm))):
+          if (not np.allclose(tdm, 0.0)):
             self.tdm = True
+          if ('TRANSITION_SPIN_DENSITY_MATRIX' in f):
+            tsdm = f['TRANSITION_SPIN_DENSITY_MATRIX']
+            if (not np.allclose(tsdm, 0.0)):
+              self.tsdm = True
+              self.tdm = True
       if ('WFA' in f):
         self.wfa_orbs = []
         for i in f['WFA'].keys():
@@ -458,9 +485,7 @@ class Orbitals(object):
 
   # Obtain a different type of MO orbitals (only for HDF5 files)
   def get_orbitals(self, density, root):
-    try:
-      assert (self.file == self.h5file)
-    except:
+    if (self.file != self.h5file):
       return
     if ((density, root) == self.current_orbs):
       return
@@ -471,41 +496,84 @@ class Orbitals(object):
         fix_frozen = True
       tp_act = set([o['type'] for o in self.base_MO[0]])
       tp_act -= set(['F', 'D'])
+    elif (self.wf == 'SI'):
+      tp_act = ['?']
     else:
       tp_act = ['1', '2', '3']
     # Depending on the type of density selected, read the matrix
     # and choose the appropriate method to get the orbitals
     if (density == 'State'):
       if (root == 0):
-        algo = 'non'
-        self.MO = self.base_MO[0]
-        self.MO_a = self.base_MO['a']
-        self.MO_b = self.base_MO['b']
+        if (self.wf == 'SI'):
+          algo = 'eigsort'
+          n = len(self.roots)-1
+          with h5py.File(self.file, 'r') as f:
+            dm = f['SFS_TRANSITION_DENSITIES'][0,0,:]
+            for i in range(1, n):
+              dm += f['SFS_TRANSITION_DENSITIES'][i,i,:]
+          dm /= n
+        else:
+          algo = 'non'
+          self.MO = self.base_MO[0]
+          self.MO_a = self.base_MO['a']
+          self.MO_b = self.base_MO['b']
       else:
         algo = 'eig'
         with h5py.File(self.file, 'r') as f:
-          dm = f['DENSITY_MATRIX'][root-1,:]
+          if (self.wf == 'SI'):
+            algo += 'sort'
+            dm = f['SFS_TRANSITION_DENSITIES'][root-1,root-1,:]
+          else:
+            dm = f['DENSITY_MATRIX'][root-1,:]
     elif (density == 'Spin'):
       algo = 'eig'
       if (root == 0):
-        with h5py.File(self.file, 'r') as f:
-          dm = np.mean(f['SPINDENSITY_MATRIX'], axis=0)
+        if (self.wf == 'SI'):
+          algo += 'sort'
+          n = len(self.roots)-1
+          with h5py.File(self.file, 'r') as f:
+            dm = f['SFS_TRANSITION_SPIN_DENSITIES'][0,0,:]
+            for i in range(1, n):
+              dm += f['SFS_TRANSITION_SPIN_DENSITIES'][i,i,:]
+          dm /= n
+        else:
+          with h5py.File(self.file, 'r') as f:
+            dm = np.mean(f['SPINDENSITY_MATRIX'], axis=0)
       else:
         with h5py.File(self.file, 'r') as f:
-          dm = f['SPINDENSITY_MATRIX'][root-1,:]
-    elif (density in ['Difference', 'Transition']):
+          if (self.wf == 'SI'):
+            algo += 'sort'
+            dm = f['SFS_TRANSITION_SPIN_DENSITIES'][root-1,root-1,:]
+          else:
+            dm = f['SPINDENSITY_MATRIX'][root-1,:]
+    elif (density.split()[0] in ['Difference', 'Transition']):
       n = len(self.roots)-1
       r1 = int((2*n-1-np.sqrt((2*n-1)**2-8*root))/2)
       r2 = root+1+int((r1**2-(2*n-3)*r1)/2)
       if (density == 'Difference'):
         algo = 'eigsort'
         with h5py.File(self.file, 'r') as f:
-          dm = f['DENSITY_MATRIX'][r2,:] - f['DENSITY_MATRIX'][r1,:]
-      elif (density == 'Transition'):
+          if (self.wf == 'SI'):
+            dm = f['SFS_TRANSITION_DENSITIES'][r2,r2,:] - f['SFS_TRANSITION_DENSITIES'][r1,r1,:]
+          else:
+            dm = f['DENSITY_MATRIX'][r2,:] - f['DENSITY_MATRIX'][r1,:]
+      elif (density.startswith('Transition')):
         algo = 'svd'
+        fact = 0
+        if ('(alpha)' in density):
+          fact = 1
+        elif ('(beta)' in density):
+          fact = -1
         with h5py.File(self.file, 'r') as f:
-          n = r2*(r2-1)//2+r1
-          dm = f['TRANSITION_DENSITY_MATRIX'][n,:]
+          if (self.wf == 'SI'):
+            dm = f['SFS_TRANSITION_DENSITIES'][r1,r2,:]
+            if (f != 0):
+              dm = (dm + fact * f['SFS_TRANSITION_SPIN_DENSITIES'][r1,r2,:]) / np.sqrt(2)
+          else:
+            n = r2*(r2-1)//2+r1
+            dm = f['TRANSITION_DENSITY_MATRIX'][n,:]
+            if (f != 0):
+              dm = (dm + fact * f['TRANSITION_SPIN_DENSITY_MATRIX'][n,:]) / np.sqrt(2)
     elif (density == 'WFA'):
       algo = 'non'
       label = self.wfa_orbs[root]
@@ -515,7 +583,7 @@ class Orbitals(object):
         norb = len(occ)
         vec = np.reshape(f['WFA/DESYM_{0}_VECTORS'.format(label)], (norb, -1))
       for i,o in enumerate(occ):
-        new_MO.append({'coeff': vec[i,:], 'occup': o, 'type': '?', 'ene': 0.0})
+        new_MO.append({'coeff': vec[i,:], 'occup': o, 'type': '?', 'ene': 0.0, 'sym': 'z'})
       # if these are NTOs, split in hole and particle
       ntos = '_NTO' in label
       for i in range(norb/2):
@@ -532,18 +600,52 @@ class Orbitals(object):
         self.MO = new_MO
         self.MO_a = []
         self.MO_b = []
+    # In RASSI, DMs are stored in (symmetrized) AO basis
+    if ('non' not in algo):
+      if (self.wf == 'SI'):
+        with h5py.File(self.file, 'r') as f:
+          S = f['AO_OVERLAP_MATRIX'][:]
+        tot = sum(self.N_bas)
+        full_S = np.zeros((tot, tot))
+        full_D = np.zeros((tot, tot))
+        j = 0
+        k = 0
+        for n in self.N_bas:
+          full_S[k:k+n,k:k+n] = np.reshape(S[j:j+n**2], (n, n))
+          full_D[k:k+n,k:k+n] = np.reshape(dm[j:j+n**2], (n, n))
+          j += n**2
+          k += n
+        S = full_S
+        dm = full_D
+        s, V = np.linalg.eigh(S)
+        sqrtS = np.dot(V * np.sqrt(s), V.T)
+        # convert to Löwdin-orthogonalized symmetrized AOs
+        dm = np.dot(sqrtS, np.dot(dm, sqrtS))
+        X = np.dot(V / np.sqrt(s), V.T)
+        AO = True
+      else:
+        AO = False
     # Now obtain the MOs from the density matrix
     mix_threshold = 1.0-1e-4
     # as eigenvectors
     if ('eig' in algo):
-      new_MO = deepcopy(self.base_MO[0])
-      act = [o for o in new_MO if (o['type'] in tp_act)]
+      # In AO (RASSI), there is no "base" set of MOs, use Löwdin symmetrized AOs
+      if (AO):
+        new_MO = []
+        for s,nbas in enumerate(self.N_bas):
+          new_MO.extend([{'sym': self.irrep[s], 'type': '?', 'ene': 0.0} for i in range(nbas)])
+        for i,o in enumerate(new_MO):
+          o['coeff'] = X[:,i]
+        act = new_MO
+      else:
+        new_MO = deepcopy(self.base_MO[0])
+        act = [o for o in new_MO if (o['type'] in tp_act)]
       if (density in ['Difference', 'Spin']):
         for o in new_MO:
           o['hide'] = True
           o['occup'] = 0.0
           o['ene'] = 0.0
-      # If density matrix is one-dimensional, it is stored by symmetry blocks,
+      # If density matrix is one-dimensional (e.g. from CASPT2), it is stored by symmetry blocks,
       # reconstruct the full matrix
       if (len(dm.shape) == 1):
         full_dm = np.zeros((len(act), len(act)))
@@ -586,12 +688,21 @@ class Orbitals(object):
               types.append(a)
           mix.append(types[0] if (len(types) == 1) else '?')
         new_coeff = np.dot(vec.T, [o['coeff'] for o in symact])
+        # If in AO, desymmetrize the resulting MOs
+        if (AO):
+          if (len(self.N_bas) > 1):
+            new_coeff = np.dot(new_coeff, self.mat.T)
+          occ[np.abs(occ) < 10*self.eps] = 0.0
         for o,n,c,t in zip(symact, occ, new_coeff, mix):
           o['hide'] = False
           o['occup'] = n
           o['coeff'] = c
           o['type'] = t
           o['ene'] = 0.0
+        if (AO and (density in ['Difference', 'Spin'])):
+          for o in symact:
+            if (np.abs(o['occup']) < self.eps):
+              o['hide'] = True
       if (fix_frozen):
         for o in new_MO:
           if (o['type'] == 'F'):
@@ -601,10 +712,22 @@ class Orbitals(object):
       self.MO_b = []
     # as singular vectors
     elif ('svd' in algo):
-      new_MO_l = deepcopy(self.base_MO[0])
-      new_MO_r = deepcopy(self.base_MO[0])
-      act_l = [o for o in new_MO_l if (o['type'] in tp_act)]
-      act_r = [o for o in new_MO_r if (o['type'] in tp_act)]
+      if (AO):
+        new_MO_l = []
+        new_MO_r = []
+        for s,nbas in enumerate(self.N_bas):
+          new_MO_l.extend([{'sym': self.irrep[s], 'type': '?', 'ene': 0.0} for i in range(nbas)])
+          new_MO_r.extend([{'sym': self.irrep[s], 'type': '?', 'ene': 0.0} for i in range(nbas)])
+        for i,(o_l,o_r) in enumerate(zip(new_MO_l, new_MO_r)):
+          o_l['coeff'] = X[:,i]
+          o_r['coeff'] = X[:,i]
+        act_l = new_MO_l
+        act_r = new_MO_r
+      else:
+        new_MO_l = deepcopy(self.base_MO[0])
+        new_MO_r = deepcopy(self.base_MO[0])
+        act_l = [o for o in new_MO_l if (o['type'] in tp_act)]
+        act_r = [o for o in new_MO_r if (o['type'] in tp_act)]
       for o in new_MO_l + new_MO_r:
         o['hide'] = True
         o['occup'] = 0.0
@@ -630,6 +753,11 @@ class Orbitals(object):
           mix_r.append(types_r[0] if (len(types_r) == 1) else '?')
         new_coeff_l = np.dot(vec_l.T, [o['coeff'] for o in symact_l])
         new_coeff_r = np.dot(vec_r.T, [o['coeff'] for o in symact_r])
+        if (AO):
+          if (len(self.N_bas) > 1):
+            new_coeff_l = np.dot(new_coeff_l, self.mat.T)
+            new_coeff_r = np.dot(new_coeff_r, self.mat.T)
+          occ[np.abs(occ) < 10*self.eps] = 0.0
         for o_l,o_r,n,cl,cr,tl,tr in zip(symact_l, symact_r, occ, new_coeff_l, new_coeff_r, mix_l, mix_r):
           o_l['hide'] = False
           o_l['occup'] = n**2/2
@@ -639,6 +767,12 @@ class Orbitals(object):
           o_r['occup'] = n**2/2
           o_r['coeff'] = cr
           o_r['type'] = tr
+        if (AO):
+          for o_l,o_r in zip(symact_l, symact_r):
+            if (np.abs(o_l['occup']) < self.eps):
+              o_l['hide'] = True
+            if (np.abs(o_r['occup']) < self.eps):
+              o_r['hide'] = True
       self.MO = []
       self.MO_a = new_MO_r
       self.MO_b = new_MO_l
@@ -791,6 +925,8 @@ class Orbitals(object):
       # N(0)=1, N(1)=1, N(2)=1*3, N(3)=1*3*5, ...
       self.fact = np.full(len(bf_id), 1.0)
       bf_id = np.rec.fromrecords(bf_id, names='c, s, l, m')
+      for i,c in enumerate(self.centers):
+        c['bf_ids'] = np.where(bf_id['c'] == i+1)[0].tolist()
       for i,b in enumerate(bf_id):
         if (b['l'] < 0):
           b['l'] *= -1
@@ -2463,8 +2599,8 @@ class AOIMapper(vtk.vtkOpenGLPolyDataMapper):
   @vtk.calldata_type(vtk.VTK_OBJECT)
   def update_shader(self, caller, event, program):
     if program is not None:
-      program.SetUniformf("transparencyUniform", self.Transparency)
-      program.SetUniformf("fresnelPowerUniform", self.Fresnel)
+      program.SetUniformf('transparencyUniform', self.Transparency)
+      program.SetUniformf('fresnelPowerUniform', self.Fresnel)
 
 
 class MainWindow(QMainWindow):
@@ -2978,7 +3114,7 @@ class MainWindow(QMainWindow):
     self.addDockWidget(Qt.BottomDockWidgetArea, self.optionsDock)
     self.optionsDock.setTitleBarWidget(titleBar)
     self.optionsDock.setWidget(_widget)
-    self.optionsDock.collapse_list = [_widget, self.densityTypeGroup]
+    self.optionsDock.collapse_list = [_widget]
     _widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
     self.optionsDock.setWhatsThis('This panel contains the main options for the display window. The panel can be collapsed, or detached by dragging the top part, to increase the size of the viewing area.')
 
@@ -3309,6 +3445,9 @@ class MainWindow(QMainWindow):
       densities.append('Difference')
       if (self.orbitals.tdm):
         densities.append('Transition')
+        if (self.orbitals.tsdm):
+          densities.append('Transition (alpha)')
+          densities.append('Transition (beta)')
     if (hasattr(new, 'wfa_orbs') and (len(new.wfa_orbs) > 0)):
       densities.append('WFA')
     if ((len(roots) > 2) or (enabled and ((new.wf == 'PT2') or ('WFA' in densities)))):
@@ -3629,7 +3768,7 @@ class MainWindow(QMainWindow):
       roots = ['Average']
     if (new in ['State', 'Spin']):
       items = roots
-    elif (new in ['Difference', 'Transition']):
+    elif (new.split()[0] in ['Difference', 'Transition']):
       rootids = []
       for r in roots:
         i = r.find(':')
@@ -3675,7 +3814,15 @@ class MainWindow(QMainWindow):
       self.orbitals.MO_b = []
       self.orbitals.current_orbs = None
       self.show_error('Data could not be found. Has the file been modified since it was opened?')
-    if (self.dens == 'Transition'):
+    irreplist = []
+    for o in self.orbitals.MO + self.orbitals.MO_a + self.orbitals.MO_b:
+      s = o['sym']
+      if (s not in irreplist):
+        irreplist.append(s)
+    if ('z' in irreplist):
+      irreplist.remove('z')
+    self.irreplist = irreplist
+    if (self.dens.startswith('Transition')):
       spinlist = ['hole', 'particle']
     elif ((self.dens == 'WFA') and (len(self.orbitals.MO_a) > 0)):
       spinlist = ['hole', 'particle']
@@ -4170,7 +4317,7 @@ class MainWindow(QMainWindow):
       return
     if (self.irrep == 'All'):
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (not o.get('hide'))}
-      orbidx = {i+1:[o['ene'], np.sign(o['occup']), -o['occup']] for i,o in enumerate(self.MO) if (not o.get('hide'))}
+      orbidx = {i+1:[o['ene'], np.copysign(1, o['occup']), -o['occup']] for i,o in enumerate(self.MO) if (not o.get('hide'))}
       if ((not self.isGrid) and any([(o['occup'] != 0.0) for o in self.MO])):
         is_it_spin = (self.dens == 'State') and any([(o['occup'] < -1e-4) for o in self.MO])
         if (self.dens == 'State'):
@@ -4196,7 +4343,7 @@ class MainWindow(QMainWindow):
           orblist[0] = 'Density'
     else:
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
-      orbidx = {i+1:[o['ene'], np.sign(o['occup']), -o['occup'], o['sym']] for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
+      orbidx = {i+1:[o['ene'], np.copysign(1, o['occup']), -o['occup'], o['sym']] for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
     if (self.sortedBox.isChecked()):
       for k in orblist.keys():
         if (not k in orbidx):
@@ -5159,32 +5306,40 @@ class MainWindow(QMainWindow):
     except (TypeError, KeyError, AttributeError):
       modified = False
     if (self.rootGroup.isEnabled()):
-      if ((not modified) and (self.orbital > 0)):
+      if (self.orbitals.wf in ['PT2', 'SI']):
+        state = 'State'
+      else:
+        state = 'Root'
+      if (len(self.MO) == 0):
+        text = 'Nothing\n'
+      elif ((not modified) and (self.orbital > 0)):
         if (self.orbitals.wf == 'PT2'):
           text = 'Reference\n'
         else:
           text = 'State average\n'
       elif (self.dens in ['State', 'Spin']):
-        if (self.orbitals.wf == 'PT2'):
-          if (self.root == 0):
+        if (self.root == 0):
+          if (self.orbitals.wf in ['PT2', 'SI']):
             text = 'Reference\n'
           else:
-            text = 'State {0}\n'.format(self.rootButton.currentText().split(':')[0])
-        else:
-          if (self.root == 0):
             text = 'State average\n'
-          else:
-            text = 'Root {0}\n'.format(self.rootButton.currentText().split(':')[0])
+        else:
+          text = '{0} {1}\n'.format(state, self.rootButton.currentText().split(':')[0])
       elif (self.dens == 'Difference'):
-        text = 'Difference from root {0} to {1}\n'.format(*self.rootButton.currentText().split(u' → '))
-      elif (self.dens == 'Transition'):
-        text = 'Transition ({0}) from root {1} to {2}\n'.format(self.spin, *self.rootButton.currentText().split(u' → '))
+        text = 'Difference from {0} {1} to {2}\n'.format(state.lower(), *self.rootButton.currentText().split(u' → '))
+      elif (self.dens.startswith('Transition')):
+        ttype = self.spin
+        if ('(alpha)' in self.dens):
+          ttype = 'alpha, {0}'.format(ttype)
+        elif ('(beta)' in self.dens):
+          ttype = 'beta, {0}'.format(ttype)
+        text = 'Transition ({0}) from {1} {2} to {3}\n'.format(ttype, state.lower(), *self.rootButton.currentText().split(u' → '))
       elif (self.dens == 'WFA'):
         text = 'WFA ({0})'.format(self.rootButton.currentText())
         if (self.spin):
           text += ' ({0})'.format(self.spin)
         text += '\n'
-    if (self.orbital <= 0):
+    if ((self.orbital <= 0) and (len(self.MO) > 0)):
       text += '{0} ({1:.4f} electrons)'.format(self.orbitalButton.currentText(), self.orbitals.total_occup)
     else:
       if (self.orbital is not None):
@@ -6022,10 +6177,13 @@ class TransformDock(QDockWidget):
   def align(self):
     orbitals = self.parent().orbitals
     xyz = np.array([c['xyz'] for c in orbitals.centers if (not isEmpty(c.get('basis', [0])))]) - orbitals.geomcenter
-    ev, vec = np.linalg.eig(np.cov(xyz.T))
-    vec = vec[:,np.argsort(ev)[::-1]]
-    if (np.linalg.det(vec) < 0):
-      vec[:,2] *= -1
+    if (xyz.shape[0] > 1):
+      ev, vec = np.linalg.eig(np.cov(xyz.T))
+      vec = vec[:,np.argsort(ev)[::-1]]
+      if (np.linalg.det(vec) < 0):
+        vec[:,2] *= -1
+    else:
+      vec = np.eye(3)
     xyz = np.dot(xyz, vec)
     center = (np.amin(xyz, axis=0) + np.amax(xyz, axis=0))/2
     value = np.eye(4)
