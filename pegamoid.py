@@ -757,7 +757,8 @@ class Orbitals(object):
           o['ene'] = 0.0
         if (AO and (density in ['Difference', 'Spin'])):
           for o in symact:
-            if (np.abs(o['occup']) < self.eps):
+            #if (np.abs(o['occup']) < self.eps):
+            if (np.abs(o['occup']) < 1e-6):
               o['hide'] = True
       if (fix_frozen):
         for o in new_MO:
@@ -835,11 +836,10 @@ class Orbitals(object):
           o_r['coeff'] = cr
           o_r['type'] = tr
         if (AO):
-          for o_l,o_r in zip(symact_l, symact_r):
-            if (np.abs(o_l['occup']) < self.eps):
-              o_l['hide'] = True
-            if (np.abs(o_r['occup']) < self.eps):
-              o_r['hide'] = True
+          for o in symact_l+symact_r:
+            #if (np.abs(o['occup']) < self.eps):
+            if (np.abs(o['occup']) < 1e-6):
+              o['hide'] = True
       # reorder the right NTOs to match them with the left, since they may come from different symmetries
       resort = deepcopy(new_MO_r)
       for i in np.flatnonzero(rl_sort >=0):
@@ -2197,7 +2197,8 @@ class vtkRenameArrayFilter(vtk.vtkProgrammableFilter):
     input = self.GetInput()
     output = self.GetOutput()
     output.ShallowCopy(input)
-    output.GetPointData().GetArray(self.idx).SetName(self.name)
+    if (output.GetPointData().GetNumberOfArrays() >= self.idx+1):
+      output.GetPointData().GetArray(self.idx).SetName(self.name)
 
 #===============================================================================
 

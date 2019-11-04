@@ -24,6 +24,9 @@ Some of the features to pay attention to:
 * ``ferrocene.caspt2.h5``:
   Symmetry-related atoms, CASPT2 orbitals.
 
+* ``naphthalene.rassi.h5``:
+  RASSI example with different spatial and spin symmetries.
+
 * ``NH3.cube``:
   Cube file with a non-orthogonal grid.
 

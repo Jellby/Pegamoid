@@ -1,0 +1,132 @@
+* OpenMolcas input for naphthalene
+
+&GATEWAY
+  Coord = 18
+
+    C     2.41191413    -0.70745484     0.00000000
+    C    -2.41191413    -0.70745484     0.00000000
+    C     2.41191413     0.70745484     0.00000000
+    C    -2.41191413     0.70745484     0.00000000
+    C     1.24038326     1.39036203     0.00000000
+    C    -1.24038326     1.39036203     0.00000000
+    C     1.24038326    -1.39036203     0.00000000
+    C    -1.24038326    -1.39036203     0.00000000
+    C     0.00000000     0.70279800     0.00000000
+    C     0.00000000    -0.70279800     0.00000000
+    H     3.34731853    -1.23735006     0.00000000
+    H    -3.34731853    -1.23735006     0.00000000
+    H     3.34731853     1.23735006     0.00000000
+    H    -3.34731853     1.23735006     0.00000000
+    H     1.23815653     2.46589625     0.00000000
+    H    -1.23815653     2.46589625     0.00000000
+    H     1.23815653    -2.46589625     0.00000000
+    H    -1.23815653    -2.46589625     0.00000000
+  Basis = ANO-RCC-VDZP
+  Group = Full
+  RICD
+
+&SEWARD
+
+&RASSCF
+  Spin     = 1
+  Symmetry = 1
+  NActEl   = 10
+  Inactive = 9 7 7 6 0 0 0 0
+  RAS2     = 0 0 0 0 3 2 3 2
+  CIRoot   = 1 1 1
+
+> COPY $Project.rasscf.h5 JOB001
+
+&RASSCF
+  Spin     = 1
+  Symmetry = 1
+  NActEl   = 10
+  Inactive = 9 7 7 6 0 0 0 0
+  RAS2     = 0 0 0 0 3 2 3 2
+  CIRoot   = 3 3 1
+
+> COPY $Project.rasscf.h5 JOB002
+
+&RASSCF
+  Spin     = 1
+  Symmetry = 2
+  NActEl   = 10
+  Inactive = 9 7 7 6 0 0 0 0
+  RAS2     = 0 0 0 0 3 2 3 2
+  CIRoot   = 2 2 1
+
+> COPY $Project.rasscf.h5 JOB003
+
+&RASSCF
+  Spin     = 1
+  Symmetry = 3
+  NActEl   = 10
+  Inactive = 9 7 7 6 0 0 0 0
+  RAS2     = 0 0 0 0 3 2 3 2
+  CIRoot   = 2 2 1
+
+> COPY $Project.rasscf.h5 JOB004
+
+&RASSCF
+  Spin     = 1
+  Symmetry = 4
+  NActEl   = 10
+  Inactive = 9 7 7 6 0 0 0 0
+  RAS2     = 0 0 0 0 3 2 3 2
+  CIRoot   = 2 2 1
+
+> COPY $Project.rasscf.h5 JOB005
+
+&RASSCF
+  Spin     = 3
+  Symmetry = 1
+  NActEl   = 10
+  Inactive = 9 7 7 6 0 0 0 0
+  RAS2     = 0 0 0 0 3 2 3 2
+  CIRoot   = 2 2 1
+
+> COPY $Project.rasscf.h5 JOB006
+
+&RASSCF
+  Spin     = 3
+  Symmetry = 2
+  NActEl   = 10
+  Inactive = 9 7 7 6 0 0 0 0
+  RAS2     = 0 0 0 0 3 2 3 2
+  CIRoot   = 2 2 1
+
+> COPY $Project.rasscf.h5 JOB007
+
+&RASSCF
+  Spin     = 3
+  Symmetry = 3
+  NActEl   = 10
+  Inactive = 9 7 7 6 0 0 0 0
+  RAS2     = 0 0 0 0 3 2 3 2
+  CIRoot   = 2 2 1
+
+> COPY $Project.rasscf.h5 JOB008
+
+&RASSCF
+  Spin     = 3
+  Symmetry = 4
+  NActEl   = 10
+  Inactive = 9 7 7 6 0 0 0 0
+  RAS2     = 0 0 0 0 3 2 3 2
+  CIRoot   = 2 2 1
+
+> COPY $Project.rasscf.h5 JOB009
+
+&RASSI
+  NrOfJobIphs = 9  1 2 2 2 2 2 2 2 2
+    1
+    2 3
+    1 2
+    1 2
+    1 2
+    1 2
+    1 2
+    1 2
+    1 2
+  TRD1
+  SubSet = 1
