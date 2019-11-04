@@ -2182,6 +2182,25 @@ def list_pad(a, n, item=None):
 
 #===============================================================================
 
+# Fix for VTK bug 17715
+class vtkRenameArrayFilter(vtk.vtkProgrammableFilter):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.idx = None
+    self.name = None
+    self.SetExecuteMethod(self.rename_array)
+  def SetIndex(self, idx):
+    self.idx = idx
+  def SetName(self, name):
+    self.name = name
+  def rename_array(self):
+    input = self.GetInput()
+    output = self.GetOutput()
+    output.ShallowCopy(input)
+    output.GetPointData().GetArray(self.idx).SetName(self.name)
+
+#===============================================================================
+
 def group_widgets(*args, **kwargs):
   layout = QHBoxLayout()
   layout.setSpacing(kwargs.get('spacing', 0))
@@ -4959,9 +4978,13 @@ class MainWindow(QMainWindow):
       rvneg.SetInputConnection(neg.GetOutputPort())
       rvneg.ReverseCellsOn()
       rvneg.ReverseNormalsOn()
+      fix_normals = vtkRenameArrayFilter()
+      fix_normals.SetInputConnection(rvneg.GetOutputPort())
+      fix_normals.SetIndex(1)
+      fix_normals.SetName('Normals')
       tot = vtk.vtkAppendPolyData()
       tot.AddInputConnection(pos.GetOutputPort())
-      tot.AddInputConnection(rvneg.GetOutputPort())
+      tot.AddInputConnection(fix_normals.GetOutputPort())
       rv = vtk.vtkReverseSense()
       rv.SetInputConnection(tot.GetOutputPort())
       rv.SetReverseCells(transform.GetMatrix().Determinant() < 0)
