@@ -2753,6 +2753,7 @@ class MainWindow(QMainWindow):
     self._root = None
     self._irrep = None
     self._irreplist = None
+    self._prev_irrep = None
     self._spin = None
     self._prev_spin = None
     self._spinlist = None
@@ -3950,6 +3951,8 @@ class MainWindow(QMainWindow):
   def irrep(self, value):
     old = self._irrep
     self._irrep = value
+    if (value):
+      self._prev_irrep = value
     if (value != old):
       self.populate_orbitals()
 
@@ -3960,12 +3963,15 @@ class MainWindow(QMainWindow):
   @irreplist.setter
   def irreplist(self, value):
     self._irreplist = value
+    prev = self._prev_irrep
     self.irrepButton.clear()
     self.irrepButton.addItem('All')
     enabled = len(value) > 1
     if (enabled):
-      for i in value:
-        self.irrepButton.addItem(i)
+      for i,v in enumerate(value):
+        self.irrepButton.addItem(v)
+        if (v == prev):
+          self.irrepButton.setCurrentIndex(i+1)
     self.irrepGroup.setEnabled(enabled)
 
   @property
@@ -4397,11 +4403,8 @@ class MainWindow(QMainWindow):
       if (self.nosym):
         numsym = ''
       else:
-        if (self.irrep == 'All'):
-          numsym = ' [{0}]'.format(orb['sym'])
-        else:
-          m = [o['sym'] for o in self.MO[:n]].count(orb['sym'])
-          numsym = ' [{0}, {1}]'.format(orb['sym'], m)
+        m = [o['sym'] for o in self.MO[:n]].count(orb['sym'])
+        numsym = ' [{0}, {1}]'.format(orb['sym'], m)
       # Add new type if it has been modified
       tp = orb['type']
       if (('newtype' in orb) and (orb['newtype'] != tp)):
