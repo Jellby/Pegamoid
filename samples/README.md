@@ -43,7 +43,7 @@ Some of the features to pay attention to:
   MM atoms (without basis functions), box fitted to atoms with basis functions.
 
 * ``uracil.LocOrb``:
-  Localized orbitals, easy to choose an active space.
+  Localized orbitals, easy to choose an active space, old InpOrb version.
 
 * ``uracil.rasscf.h5``:
   RAS1 and RAS3 orbitals, natural transition orbitals.

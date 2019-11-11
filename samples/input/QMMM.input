@@ -1,3 +1,5 @@
+* OpenMolcas input for QM/MM sample
+
 &GATEWAY
   Coord = 143
 
