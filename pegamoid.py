@@ -545,6 +545,7 @@ class Orbitals(object):
       tp_act = ['1', '2', '3']
     sym = 0
     transpose = False
+    sdm = False
     # Depending on the type of density selected, read the matrix
     # and choose the appropriate method to get the orbitals
     if (density == 'State'):
@@ -553,10 +554,17 @@ class Orbitals(object):
           algo = 'eigsort'
           n = len(self.roots)-1
           with h5py.File(self.file, 'r') as f:
+            sdm = 'SFS_TRANSITION_SPIN_DENSITIES' in f
             dm = f['SFS_TRANSITION_DENSITIES'][0,0,:]
+            if (sdm is not False):
+              sdm = f['SFS_TRANSITION_SPIN_DENSITIES'][0,0,:]
             for i in range(1, n):
               dm += f['SFS_TRANSITION_DENSITIES'][i,i,:]
+              if (sdm is not False):
+                sdm += f['SFS_TRANSITION_SPIN_DENSITIES'][i,i,:]
           dm /= n
+          if (sdm is not False):
+            sdm /= n
         else:
           algo = 'non'
           self.MO = self.base_MO[0]
@@ -566,10 +574,16 @@ class Orbitals(object):
         algo = 'eig'
         with h5py.File(self.file, 'r') as f:
           if (self.wf == 'SI'):
+            sdm = 'SFS_TRANSITION_SPIN_DENSITIES' in f
             algo += 'sort'
             dm = f['SFS_TRANSITION_DENSITIES'][root-1,root-1,:]
+            if (sdm is not False):
+              sdm = f['SFS_TRANSITION_SPIN_DENSITIES'][root-1,root-1,:]
           else:
+            sdm = 'SPINDENSITY_MATRIX' in f
             dm = f['DENSITY_MATRIX'][root-1,:]
+            if (sdm is not False):
+              sdm = f['SPINDENSITY_MATRIX'][root-1,:]
     elif (density == 'Spin'):
       algo = 'eig'
       if (root == 0):
@@ -598,10 +612,16 @@ class Orbitals(object):
         algo = 'eig'
         with h5py.File(self.file, 'r') as f:
           if (self.wf == 'SI'):
+            sdm = 'SFS_TRANSITION_SPIN_DENSITIES' in f
             algo += 'sort'
             dm = f['SFS_TRANSITION_DENSITIES'][r2,r2,:] - f['SFS_TRANSITION_DENSITIES'][r1,r1,:]
+            if (sdm is not False):
+              sdm = f['SFS_TRANSITION_SPIN_DENSITIES'][r2,r2,:] - f['SFS_TRANSITION_SPIN_DENSITIES'][r1,r1,:]
           else:
+            sdm = 'SPINDENSITY_MATRIX' in f
             dm = f['DENSITY_MATRIX'][r2,:] - f['DENSITY_MATRIX'][r1,:]
+            if (sdm is not False):
+              sdm = f['SPINDENSITY_MATRIX'][r2,:] - f['SPINDENSITY_MATRIX'][r1,:]
       elif (density.startswith('Transition')):
         if (r1 > r2):
           r1, r2 = (r2, r1)
@@ -658,6 +678,8 @@ class Orbitals(object):
       tot = sum(self.N_bas)
       full_S = np.zeros((tot, tot))
       full_D = np.zeros((tot, tot))
+      if (sdm is not False):
+        full_sD = np.zeros((tot, tot))
       i = 0
       k = 0
       for s1,n1 in enumerate(self.N_bas):
@@ -668,13 +690,19 @@ class Orbitals(object):
         n2 = self.N_bas[s2]
         j2 = np.sum(self.N_bas[:s2])
         full_D[j2:j2+n2,j1:j1+n1] = np.reshape(dm[k:k+n1*n2], (n2, n1))
+        if (sdm is not False):
+          full_sD[j2:j2+n2,j1:j1+n1] = np.reshape(sdm[k:k+n1*n2], (n2, n1))
         k += n1*n2
       S = full_S
       dm = full_D
+      if (sdm is not False):
+        sdm = full_sD
       s, V = np.linalg.eigh(S)
       sqrtS = np.dot(V * np.sqrt(s), V.T)
       # convert to Löwdin-orthogonalized symmetrized AOs
       dm = np.dot(sqrtS, np.dot(dm, sqrtS))
+      if (sdm is not False):
+        sdm = np.dot(sqrtS, np.dot(sdm, sqrtS))
       X = np.dot(V / np.sqrt(s), V.T)
       AO = True
     else:
@@ -683,90 +711,97 @@ class Orbitals(object):
     mix_threshold = 1.0-1e-4
     # as eigenvectors
     if ('eig' in algo):
-      # In AO (RASSI), there is no "base" set of MOs, use Löwdin symmetrized AOs
-      if (AO):
-        new_MO = []
-        for s,nbas in enumerate(self.N_bas):
-          new_MO.extend([{'sym': self.irrep[s], 'type': '?', 'ene': 0.0} for i in range(nbas)])
-        for i,o in enumerate(new_MO):
-          o['coeff'] = X[:,i]
-        act = new_MO
-      else:
-        new_MO = deepcopy(self.base_MO[0])
-        act = [o for o in new_MO if (o['type'] in tp_act)]
-      if (density in ['Difference', 'Spin']):
-        for o in new_MO:
-          o['hide'] = True
-          o['occup'] = 0.0
-          o['ene'] = 0.0
-      # If density matrix is one-dimensional (e.g. from CASPT2), it is stored by symmetry blocks,
-      # reconstruct the full matrix
-      if (len(dm.shape) == 1):
-        full_dm = np.zeros((len(act), len(act)))
-        nMO = [(sum(self.N_bas[:i]), sum(self.N_bas[:i+1])) for i in range(len(self.N_bas))]
-        j = 0
-        k = 0
-        for i,nbas in zip(nMO, self.N_bas):
-          n = len([o for o in new_MO[i[0]:i[1]] if (o['type'] in tp_act)])
-          j1 = int(n*(n+1)/2)
-          sym_dm = np.zeros((n, n))
-          sym_dm[np.tril_indices(n, 0)] = dm[j:j+j1]
-          sym_dm = sym_dm + np.tril(sym_dm, -1).T
-          full_dm[k:k+n,k:k+n] = sym_dm
-          j += j1
-          k += n
-        dm = full_dm
-      for s in set([o['sym'] for o in act]):
-        symidx = [i for i,o in enumerate(act) if (o['sym'] == s)]
-        symdm = dm[np.ix_(symidx,symidx)]
-        symact = [act[i] for i in symidx]
-        occ, vec = np.linalg.eigh(symdm)
-        # Match similar orbitals
-        if ('sort' in algo):
-          idx = occ.argsort()[::-1]
-        else:
-          freevec = [1 for i in symidx]
-          idx = [-1 for i in symidx]
-          for i in range(len(symidx)):
-            idx[i] = np.argmax(abs(vec[i,:]*freevec))
-            if (vec[i,idx[i]] < 0.0):
-              vec[:,idx[i]] *= -1
-            freevec[idx[i]] = 0
-        occ = occ[idx]
-        vec = vec[:,idx]
-        # Check contributions for each orbital, if there are significant
-        # contributions from several types, mark this type as '?'
-        mix = []
-        for i in range(vec.shape[1]):
-          types = []
-          for a in tp_act:
-            if (sum([j**2 for n,j in enumerate(vec[:,i]) if (symact[n]['type']==a)]) > mix_threshold):
-              types.append(a)
-          mix.append(types[0] if (len(types) == 1) else '?')
-        new_coeff = np.dot(vec.T, [o['coeff'] for o in symact])
-        # If in AO, desymmetrize the resulting MOs
+      dmlist = [dm, None, None]
+      MOlist = ['MO', 'MO_a', 'MO_b']
+      if (np.any(sdm)):
+        dmlist[1] = 0.5 * (dm + sdm) # alpha density
+        dmlist[2] = 0.5 * (dm - sdm) # beta density
+      for dm_,MO_ in zip(dmlist, MOlist):
+        if (dm_ is None):
+          setattr(self, MO_, [])
+          continue
+        # In AO (RASSI), there is no "base" set of MOs, use Löwdin symmetrized AOs
         if (AO):
-          if (len(self.N_bas) > 1):
-            new_coeff = np.dot(new_coeff, self.mat.T)
-          occ[np.abs(occ) < 10*self.eps] = 0.0
-        for o,n,c,t in zip(symact, occ, new_coeff, mix):
-          o['hide'] = False
-          o['occup'] = n
-          o['coeff'] = c
-          o['type'] = t
-          o['ene'] = 0.0
-        if (AO and (density in ['Difference', 'Spin'])):
-          for o in symact:
-            #if (np.abs(o['occup']) < self.eps):
-            if (np.abs(o['occup']) < 1e-6):
-              o['hide'] = True
-      if (fix_frozen):
-        for o in new_MO:
-          if (o['type'] == 'F'):
-            o['occup'] = 2.0
-      self.MO = new_MO
-      self.MO_a = []
-      self.MO_b = []
+          new_MO = []
+          for s,nbas in enumerate(self.N_bas):
+            new_MO.extend([{'sym': self.irrep[s], 'type': '?', 'ene': 0.0} for i in range(nbas)])
+          for i,o in enumerate(new_MO):
+            o['coeff'] = X[:,i]
+          act = new_MO
+        else:
+          new_MO = deepcopy(self.base_MO[0])
+          act = [o for o in new_MO if (o['type'] in tp_act)]
+        if (density in ['Difference', 'Spin']):
+          for o in new_MO:
+            o['hide'] = True
+            o['occup'] = 0.0
+            o['ene'] = 0.0
+        # If density matrix is one-dimensional (e.g. from CASPT2), it is stored by symmetry blocks,
+        # reconstruct the full matrix
+        if (len(dm_.shape) == 1):
+          full_dm = np.zeros((len(act), len(act)))
+          nMO = [(sum(self.N_bas[:i]), sum(self.N_bas[:i+1])) for i in range(len(self.N_bas))]
+          j = 0
+          k = 0
+          for i,nbas in zip(nMO, self.N_bas):
+            n = len([o for o in new_MO[i[0]:i[1]] if (o['type'] in tp_act)])
+            j1 = int(n*(n+1)/2)
+            sym_dm = np.zeros((n, n))
+            sym_dm[np.tril_indices(n, 0)] = dm_[j:j+j1]
+            sym_dm = sym_dm + np.tril(sym_dm, -1).T
+            full_dm[k:k+n,k:k+n] = sym_dm
+            j += j1
+            k += n
+          dm_ = full_dm
+        for s in set([o['sym'] for o in act]):
+          symidx = [i for i,o in enumerate(act) if (o['sym'] == s)]
+          symdm = dm_[np.ix_(symidx,symidx)]
+          symact = [act[i] for i in symidx]
+          occ, vec = np.linalg.eigh(symdm)
+          # Match similar orbitals
+          if ('sort' in algo):
+            idx = occ.argsort()[::-1]
+          else:
+            freevec = [1 for i in symidx]
+            idx = [-1 for i in symidx]
+            for i in range(len(symidx)):
+              idx[i] = np.argmax(abs(vec[i,:]*freevec))
+              if (vec[i,idx[i]] < 0.0):
+                vec[:,idx[i]] *= -1
+              freevec[idx[i]] = 0
+          occ = occ[idx]
+          vec = vec[:,idx]
+          # Check contributions for each orbital, if there are significant
+          # contributions from several types, mark this type as '?'
+          mix = []
+          for i in range(vec.shape[1]):
+            types = []
+            for a in tp_act:
+              if (sum([j**2 for n,j in enumerate(vec[:,i]) if (symact[n]['type']==a)]) > mix_threshold):
+                types.append(a)
+            mix.append(types[0] if (len(types) == 1) else '?')
+          new_coeff = np.dot(vec.T, [o['coeff'] for o in symact])
+          # If in AO, desymmetrize the resulting MOs
+          if (AO):
+            if (len(self.N_bas) > 1):
+              new_coeff = np.dot(new_coeff, self.mat.T)
+            occ[np.abs(occ) < 10*self.eps] = 0.0
+          for o,n,c,t in zip(symact, occ, new_coeff, mix):
+            o['hide'] = False
+            o['occup'] = n
+            o['coeff'] = c
+            o['type'] = t
+            o['ene'] = 0.0
+          if (AO and (density in ['Difference', 'Spin'])):
+            for o in symact:
+              #if (np.abs(o['occup']) < self.eps):
+              if (np.abs(o['occup']) < 1e-6):
+                o['hide'] = True
+        if (fix_frozen):
+          for o in new_MO:
+            if (o['type'] == 'F'):
+              o['occup'] = 2.0
+        setattr(self, MO_, new_MO)
     # as singular vectors
     elif ('svd' in algo):
       if (AO):
@@ -3934,7 +3969,7 @@ class MainWindow(QMainWindow):
         if (len(self.orbitals.MO_b) > 0):
           spinlist.append('beta')
         if ((len(self.orbitals.MO) > 0) and spinlist):
-          spinlist.insert(0, '—')
+          spinlist.insert(0, u'—')
         if (not spinlist):
           spinlist = ['']
       except:
@@ -5432,8 +5467,10 @@ class MainWindow(QMainWindow):
           text = 'State average\n'
       elif (self.dens in ['State', 'Spin']):
         if (self.root == 0):
-          if (self.orbitals.wf in ['PT2', 'SI']):
+          if (self.orbitals.wf == 'PT2'):
             text = 'Reference\n'
+          elif (self.orbitals.wf == 'SI'):
+            text = 'Average\n'
           else:
             text = 'State average\n'
         else:
