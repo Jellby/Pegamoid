@@ -554,35 +554,38 @@ class Orbitals(object):
           algo = 'eigsort'
           n = len(self.roots)-1
           with h5py.File(self.file, 'r') as f:
-            sdm = 'SFS_TRANSITION_SPIN_DENSITIES' in f
             dm = f['SFS_TRANSITION_DENSITIES'][0,0,:]
-            if (sdm is not False):
+            if (self.sdm):
               sdm = f['SFS_TRANSITION_SPIN_DENSITIES'][0,0,:]
             for i in range(1, n):
               dm += f['SFS_TRANSITION_DENSITIES'][i,i,:]
-              if (sdm is not False):
+              if (self.sdm):
                 sdm += f['SFS_TRANSITION_SPIN_DENSITIES'][i,i,:]
           dm /= n
-          if (sdm is not False):
+          if (self.sdm):
             sdm /= n
         else:
-          algo = 'non'
-          self.MO = self.base_MO[0]
-          self.MO_a = self.base_MO['a']
-          self.MO_b = self.base_MO['b']
+          if (self.sdm):
+            algo = 'eig'
+            dm = np.diag([o['occup'] for o in self.base_MO[0] if (o['type'] in tp_act)])
+            with h5py.File(self.file, 'r') as f:
+              sdm = np.mean(f['SPINDENSITY_MATRIX'], axis=0)
+          else:
+            algo = 'non'
+            self.MO = self.base_MO[0]
+            self.MO_a = self.base_MO['a']
+            self.MO_b = self.base_MO['b']
       else:
         algo = 'eig'
         with h5py.File(self.file, 'r') as f:
           if (self.wf == 'SI'):
-            sdm = 'SFS_TRANSITION_SPIN_DENSITIES' in f
             algo += 'sort'
             dm = f['SFS_TRANSITION_DENSITIES'][root-1,root-1,:]
-            if (sdm is not False):
+            if (self.sdm):
               sdm = f['SFS_TRANSITION_SPIN_DENSITIES'][root-1,root-1,:]
           else:
-            sdm = 'SPINDENSITY_MATRIX' in f
             dm = f['DENSITY_MATRIX'][root-1,:]
-            if (sdm is not False):
+            if (self.sdm):
               sdm = f['SPINDENSITY_MATRIX'][root-1,:]
     elif (density == 'Spin'):
       algo = 'eig'
@@ -612,15 +615,13 @@ class Orbitals(object):
         algo = 'eig'
         with h5py.File(self.file, 'r') as f:
           if (self.wf == 'SI'):
-            sdm = 'SFS_TRANSITION_SPIN_DENSITIES' in f
             algo += 'sort'
             dm = f['SFS_TRANSITION_DENSITIES'][r2,r2,:] - f['SFS_TRANSITION_DENSITIES'][r1,r1,:]
-            if (sdm is not False):
+            if (self.sdm):
               sdm = f['SFS_TRANSITION_SPIN_DENSITIES'][r2,r2,:] - f['SFS_TRANSITION_SPIN_DENSITIES'][r1,r1,:]
           else:
-            sdm = 'SPINDENSITY_MATRIX' in f
             dm = f['DENSITY_MATRIX'][r2,:] - f['DENSITY_MATRIX'][r1,:]
-            if (sdm is not False):
+            if (self.sdm):
               sdm = f['SPINDENSITY_MATRIX'][r2,:] - f['SPINDENSITY_MATRIX'][r1,:]
       elif (density.startswith('Transition')):
         if (r1 > r2):
@@ -671,6 +672,9 @@ class Orbitals(object):
         self.MO = new_MO
         self.MO_a = []
         self.MO_b = []
+    if (sdm is not False):
+      if (np.allclose(sdm, 0)):
+        sdm = False
     # In RASSI, DMs are stored in (symmetrized) AO basis
     if ((self.wf == 'SI') and ('non' not in algo)):
       with h5py.File(self.file, 'r') as f:
@@ -713,7 +717,7 @@ class Orbitals(object):
     if ('eig' in algo):
       dmlist = [dm, None, None]
       MOlist = ['MO', 'MO_a', 'MO_b']
-      if (np.any(sdm)):
+      if (sdm is not False):
         dmlist[1] = 0.5 * (dm + sdm) # alpha density
         dmlist[2] = 0.5 * (dm - sdm) # beta density
       for dm_,MO_ in zip(dmlist, MOlist):
