@@ -1,6 +1,21 @@
-**2.4.2** (2019-09-12)
+**2.5** (2019-11-18)
+
+New features:
+* Sort orbitals in drop-down list by energy and occupation (across irreps)
+* Hide irrelevant orbitals from drop-down list (those not in spin/difference/transition densities)
+* Read orbitals written by WFA
+* Support densities (and orbitals) in RASSI files
+* Transition and unrelaxed difference densities
+* Separate alpha and beta orbitals if spin densities are available (also for difference and transition)
+* Total number of electrons in densities
 
 Bug fix:
+* Alignment of monoatomic structures
+* Workaround for VTK bug #17715
+
+**2.4.2** (2019-09-12)
+
+Bug fixes:
 * Fix writing of HDF5
 * Write natural UHF orbitals too (if available)
 

@@ -60,7 +60,7 @@ are supported:
 
 * Natural transition orbitals.
 
-* Hole and particle density.
+* Transition, hole, particle and unrelaxed difference density.
 
 For any orbital or density, gradient lines can be computed and displayed
 (particularly significant for the electron density). Densities can be computed
@@ -92,6 +92,18 @@ or the current volumetric data or snapshot can be saved as:
 * Cube format.
 
 * PNG image.
+
+Tips for OpenMolcas
+-------------------
+
+Use the `TDM` keyword in a RASSCF calculation to include transition densities
+in the HDF5 file.
+
+Use the `TRD1` keyword in a RASSI calculation to include state and transition
+densities in the HDF5 file. Use the `SUBSET` keyword to reduce the number of
+transition densities stored.
+
+Use the `WFA` module for more detailed analysis.
 
 Installation
 ------------
