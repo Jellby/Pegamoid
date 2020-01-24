@@ -930,7 +930,7 @@ class Orbitals(object):
               save = f.tell()
               try:
                 l, _, q, x, y, z = f.readline().split()
-                self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array([float(x), float(y), float(z)])*unit})
+                self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])*unit})
                 num += 1
               except:
                 f.seek(save)
@@ -938,7 +938,7 @@ class Orbitals(object):
           else:
             for i in range(num):
               l, _, q, x, y, z = f.readline().split()
-              self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array([float(x), float(y), float(z)])*unit})
+              self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])*unit})
           self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
         # Read tags for spherical shells
         elif re.search(r'\[5D\]', line, re.IGNORECASE):
@@ -996,7 +996,7 @@ class Orbitals(object):
                     basis[1] = []
                   basis[1].append([0, []])
                   for i in range(nprim):
-                    e, c1, c2 = (float(i) for i in f.readline().split()[0:2])
+                    e, c1, c2 = (fortran_float(i) for i in f.readline().split()[0:2])
                     basis[0][-1][1].append([e, c1])
                     basis[1][-1][1].append([e, c2])
                   bf_id.append([n, len(basis[0]), 0, 0])
@@ -1013,7 +1013,7 @@ class Orbitals(object):
                   basis[l].append([0, []])
                   # Read exponents and coefficients
                   for i in range(nprim):
-                    e, c = (float(i) for i in f.readline().split()[0:2])
+                    e, c = (fortran_float(i) for i in f.readline().split()[0:2])
                     basis[l][-1][1].append([e, c])
                   # Set up the basis_id
                   if (cart[l]):
@@ -1095,18 +1095,18 @@ class Orbitals(object):
             if (tag == 'sym='):
               sym = re.sub(r'^\d*', '', line[1])
             elif (tag == 'ene='):
-              ene = float(line[1])
+              ene = fortran_float(line[1])
             elif (tag == 'spin='):
               spn = 'b' if (line[1] == 'Beta') else 'a'
             elif (tag == 'occup='):
-              occ = float(line[1])
+              occ = fortran_float(line[1])
             else:
               f.seek(save_cff)
               break
           cff = np.zeros(sum(self.N_bas))
           for i in range(sum(self.N_bas)):
             n, c = f.readline().split()
-            cff[int(n)-1] = float(c)
+            cff[int(n)-1] = fortran_float(c)
           # Save the orbital as alpha or beta
           if (spn == 'b'):
             self.MO_b.append({'ene':ene, 'occup':occ, 'sym':sym, 'type':'?', 'coeff':self.fact*cff})
@@ -1174,7 +1174,7 @@ class Orbitals(object):
                   cff.extend(fortrannums.findall(line))
                 else:
                   cff.extend(line.split())
-              orb['coeff'][i:i+b] = [float(c) for c in cff]
+              orb['coeff'][i:i+b] = [fortran_float(c) for c in cff]
               j += b
         elif (line.startswith('#UORB')):
           sections['UORB'] = True
@@ -1193,7 +1193,7 @@ class Orbitals(object):
                     cff.extend(fortrannums.findall(line))
                   else:
                     cff.extend(line.split())
-                orb['coeff'][i:i+b] = [float(c) for c in cff]
+                orb['coeff'][i:i+b] = [fortran_float(c) for c in cff]
                 j += b
         # Read the occupations
         elif (line.startswith('#OCC')):
@@ -1276,7 +1276,7 @@ class Orbitals(object):
         if (uhf and (not sections.get('UOCC'))):
           return 'No UOCC section'
         for i,o in enumerate(self.MO + self.MO_b):
-          o['occup'] = float(occ[i])
+          o['occup'] = fortran_float(occ[i])
       else:
         for o in self.MO + self.MO_b:
           o['occup'] = 0.0
@@ -1285,7 +1285,7 @@ class Orbitals(object):
         if (uhf and (not sections.get('UONE'))):
           return 'No UONE section'
         for i,o in enumerate(self.MO + self.MO_b):
-          o['ene'] = float(ene[i])
+          o['ene'] = fortran_float(ene[i])
       else:
         for o in self.MO + self.MO_b:
           o['ene'] = 0.0
@@ -1835,31 +1835,31 @@ class Grid(object):
       title = str(f.readline().decode('ascii')).strip()
       n, x, y, z = f.readline().split()
       num = int(n)
-      translate = np.array([float(x), float(y), float(z)])
+      translate = np.array([fortran_float(x), fortran_float(y), fortran_float(z)])
       # Read grid sizes and transformation matrix
       n, x, y, z = f.readline().split()
       ngridx = int(n)
-      self.transform[0,0] = float(x)
-      self.transform[1,0] = float(y)
-      self.transform[2,0] = float(z)
+      self.transform[0,0] = fortran_float(x)
+      self.transform[1,0] = fortran_float(y)
+      self.transform[2,0] = fortran_float(z)
       self.transform[0,3] = translate[0]
       n, x, y, z = f.readline().split()
       ngridy = int(n)
-      self.transform[0,1] = float(x)
-      self.transform[1,1] = float(y)
-      self.transform[2,1] = float(z)
+      self.transform[0,1] = fortran_float(x)
+      self.transform[1,1] = fortran_float(y)
+      self.transform[2,1] = fortran_float(z)
       self.transform[1,3] = translate[1]
       n, x, y, z = f.readline().split()
       ngridz= int(n)
-      self.transform[0,2] = float(x)
-      self.transform[1,2] = float(y)
-      self.transform[2,2] = float(z)
+      self.transform[0,2] = fortran_float(x)
+      self.transform[1,2] = fortran_float(y)
+      self.transform[2,2] = fortran_float(z)
       self.transform[2,3] = translate[2]
       # Read geometry
       self.centers = []
       for i in range(abs(num)):
         q, _, x, y, z = str(f.readline().decode('ascii')).split()
-        self.centers.append({'name':'{0}'.format(i), 'Z':int(q), 'xyz':np.array([float(x), float(y), float(z)])})
+        self.centers.append({'name':'{0}'.format(i), 'Z':int(q), 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])})
       self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
       # Compute full volume size
       self.ngrid = [ngridx, ngridy, ngridz]
@@ -1894,7 +1894,7 @@ class Grid(object):
       self.centers = []
       for i in range(num):
         l, x, y, z = str(f.readline().decode('ascii')).split()
-        self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array([float(x), float(y), float(z)])})
+        self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])})
       self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
       # Read number of orbitals and block size
       f.readline()
@@ -1909,21 +1909,21 @@ class Grid(object):
       f.readline()
       # Read grid definition and transform matrix
       self.ngrid = [int(i)+1 for i in f.readline().split()[1:]]
-      translate = np.array([float(i) for i in f.readline().split()[1:]])
-      x, y, z = (float(i) for i in f.readline().split()[1:])
-      self.transform[0,0] = float(x)
-      self.transform[1,0] = float(y)
-      self.transform[2,0] = float(z)
+      translate = np.array([fortran_float(i) for i in f.readline().split()[1:]])
+      x, y, z = (fortran_float(i) for i in f.readline().split()[1:])
+      self.transform[0,0] = x
+      self.transform[1,0] = y
+      self.transform[2,0] = z
       self.transform[0,3] = translate[0]
-      x, y, z = (float(i) for i in f.readline().split()[1:])
-      self.transform[0,1] = float(x)
-      self.transform[1,1] = float(y)
-      self.transform[2,1] = float(z)
+      x, y, z = (fortran_float(i) for i in f.readline().split()[1:])
+      self.transform[0,1] = x
+      self.transform[1,1] = y
+      self.transform[2,1] = z
       self.transform[1,3] = translate[1]
-      x, y, z = (float(i) for i in f.readline().split()[1:])
-      self.transform[0,2] = float(x)
-      self.transform[1,2] = float(y)
-      self.transform[2,2] = float(z)
+      x, y, z = (fortran_float(i) for i in f.readline().split()[1:])
+      self.transform[0,2] = x
+      self.transform[1,2] = y
+      self.transform[2,2] = z
       self.transform[2,3] = translate[2]
       self.orig = np.array([0.0, 0.0, 0.0])
       self.end = np.array([1.0, 1.0, 1.0])
@@ -1936,7 +1936,7 @@ class Grid(object):
         name = str(f.readline().decode('ascii'))
         match = re.match(r'\s*GridName=\s+(\d+)\s+(\d+)\s+(.+)\s+\((.+)\)\s+(\w)s*', name)
         if (match):
-          self.MO.append({'ene':float(match.group(3)), 'occup':float(match.group(4)), 'type':match.group(5).upper(), 'sym':match.group(1), 'num':int(match.group(2)), 'idx':i})
+          self.MO.append({'ene':fortran_float(match.group(3)), 'occup':fortran_float(match.group(4)), 'type':match.group(5).upper(), 'sym':match.group(1), 'num':int(match.group(2)), 'idx':i})
           if (self.MO[-1]['sym'] not in self.irrep):
             self.irrep.append(self.MO[-1]['sym'])
         else:
@@ -1969,7 +1969,7 @@ class Grid(object):
       self.centers = []
       for i in range(num):
         l, x, y, z = str(f.readline().decode('ascii')).split()
-        self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array([float(x), float(y), float(z)])*angstrom})
+        self.centers.append({'name':l, 'Z':name_to_Z(l), 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])*angstrom})
       self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
       # Read number of orbitals and block size
       f.readline()
@@ -1979,21 +1979,21 @@ class Grid(object):
       f.readline()
       # Read grid definition and transform matrix
       self.ngrid = [int(i) for i in f.readline().split()[1:]]
-      translate = np.array([float(i) for i in f.readline().split()[1:]])
-      x, y, z = (float(i) for i in f.readline().split()[1:])
-      self.transform[0,0] = float(x)
-      self.transform[1,0] = float(y)
-      self.transform[2,0] = float(z)
+      translate = np.array([fortran_float(i) for i in f.readline().split()[1:]])
+      x, y, z = (fortran_float(i) for i in f.readline().split()[1:])
+      self.transform[0,0] = x
+      self.transform[1,0] = y
+      self.transform[2,0] = z
       self.transform[0,3] = translate[0]
-      x, y, z = (float(i) for i in f.readline().split()[1:])
-      self.transform[0,1] = float(x)
-      self.transform[1,1] = float(y)
-      self.transform[2,1] = float(z)
+      x, y, z = (fortran_float(i) for i in f.readline().split()[1:])
+      self.transform[0,1] = x
+      self.transform[1,1] = y
+      self.transform[2,1] = z
       self.transform[1,3] = translate[1]
-      x, y, z = (float(i) for i in f.readline().split()[1:])
-      self.transform[0,2] = float(x)
-      self.transform[1,2] = float(y)
-      self.transform[2,2] = float(z)
+      x, y, z = (fortran_float(i) for i in f.readline().split()[1:])
+      self.transform[0,2] = x
+      self.transform[1,2] = y
+      self.transform[2,2] = z
       self.transform[2,3] = translate[2]
       self.orig = np.array([0.0, 0.0, 0.0])
       self.end = np.array([1.0, 1.0, 1.0])
@@ -2007,7 +2007,7 @@ class Grid(object):
         name = str(f.readline().decode('ascii'))
         match = re.match(r'\s*GridName=\s*(.+)\s*sym=\s*(\d+)\s*index=\s*(\d+)\s*Energ=\s*(.+)\s*occ=\s*(.+)\s*type=\s*(\w)\s*', name)
         if (match):
-          self.MO.append({'ene':float(match.group(4)), 'occup':float(match.group(5)), 'type':match.group(6).upper(), 'sym':match.group(2), 'num':int(match.group(3)), 'idx':i})
+          self.MO.append({'ene':fortran_float(match.group(4)), 'occup':fortran_float(match.group(5)), 'type':match.group(6).upper(), 'sym':match.group(2), 'num':int(match.group(3)), 'idx':i})
           if (self.MO[-1]['sym'] not in self.irrep):
             self.irrep.append(self.MO[-1]['sym'])
         else:
@@ -2045,7 +2045,7 @@ class Grid(object):
               if (interrupt):
                 return vol
               data += f.readline()
-            vol[i,j,:] = [float(k) for k in data.split()[n::self.nMO]]
+            vol[i,j,:] = [fortran_float(k) for k in data.split()[n::self.nMO]]
     elif (self.type == 'grid'):
       # In Grid format, the nesting is MO:x:y:z, but divided in
       # blocks of length bsize
@@ -2063,7 +2063,7 @@ class Grid(object):
                 vol = np.resize(data, num)
                 return np.reshape(vol, tuple(self.ngrid))
               if (o == norb):
-                data.append(float(f.readline()))
+                data.append(fortran_float(f.readline()))
               else:
                 f.readline()
       vol = np.reshape(data, tuple(self.ngrid))
@@ -2224,6 +2224,15 @@ def isEmpty(a):
 def list_pad(a, n, item=None):
   if (len(a) < n):
     a.extend([item] * (n-len(a)))
+
+#===============================================================================
+
+# Convert a Fortran-formatted number to float
+# replace d/D with e, add e if missing
+fortfixexp = re.compile(r'([\d.])[dD]?(((?<=[dD])[+-]?|[+-])\d)')
+def fortran_float(num):
+  num = fortfixexp.sub(r'\1e\2', num)
+  return float(num)
 
 #===============================================================================
 
@@ -4411,7 +4420,7 @@ class MainWindow(QMainWindow):
               try:
                 data = line.split()
                 N = int(data[0])
-                o = (float(i) for i in data[1:])
+                o = (fortran_float(i) for i in data[1:])
                 return 'cube'
               except:
                 pass
