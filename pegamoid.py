@@ -1463,7 +1463,7 @@ class Orbitals(object):
               # Only compute if above threshold
               if (abs(MO[f]) > self.eps):
                 if (compute):
-                  if callback is not None:
+                  if (callback is not None):
                     num += 1
                     callback('Computing: {0}/{1} ...'.format(num, total))
                   # The AO contribution is either in the cache
@@ -1556,7 +1556,7 @@ class Orbitals(object):
             occup = f*orb['occup']
             if (abs(occup) > self.eps):
               if (compute):
-                if callback is not None:
+                if (callback is not None):
                   num += 1
                   if (len(do_list) > 1):
                     callback('Computing: {0}/{1} (chunk {2}/{3}) ...'.format(num, total, chunk+1, len(do_list)))
@@ -2213,7 +2213,7 @@ def parse_size(size):
   try:
     size_ = str(size).upper()
     for i in units:
-      if i in size_:
+      if (i in size_):
         factor *= units[i]
         size_ = size_.replace(i, '')
     size_.replace('B', '')
@@ -2437,6 +2437,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>P</b>: Toggle orthographic projection</p>
                    <p><b>R</b>: Fit the view to the scene</p>
                    <p><b>Shift+R</b>: Reset camera to default position</p>
+                   <p><b>Shift+M</b>: Toggle visibility of atoms without basis functions</p>
                    <p><b>{0}</b>: Load file</p>
                    <p><b>Ctrl+H</b>: Save HDF5 file</p>
                    <p><b>Ctrl+I</b>: Save InpOrb file</p>
@@ -2763,7 +2764,7 @@ class AOIMapper(vtk.vtkOpenGLPolyDataMapper):
 
   @vtk.calldata_type(vtk.VTK_OBJECT)
   def update_shader(self, caller, event, program):
-    if program is not None:
+    if (program is not None):
       program.SetUniformf('transparencyUniform', self.Transparency)
       program.SetUniformf('fresnelPowerUniform', self.Fresnel)
 
@@ -2922,6 +2923,8 @@ class MainWindow(QMainWindow):
     self.orthographicAction.setCheckable(True)
     self.fitViewAction = self.viewMenu.addAction('&Fit view')
     self.resetCameraAction = self.viewMenu.addAction('&Reset camera')
+    self.hideMMAction = self.viewMenu.addAction('&Hide atoms without basis')
+    self.hideMMAction.setCheckable(True)
     self.helpMenu = MenuTT('&Help')
     self.mainMenu.addMenu(self.helpMenu)
     self.keysAction = self.helpMenu.addAction('&Keys')
@@ -3068,6 +3071,7 @@ class MainWindow(QMainWindow):
     self.orthographicAction.setToolTip('Toggle the use of an orthographic projection (perspective if disabled)')
     self.fitViewAction.setToolTip('Fit the currently displayed objects in the view')
     self.resetCameraAction.setToolTip('Reset the camera to the default view')
+    self.hideMMAction.setToolTip('Toggle hiding atoms without basis functions (e.g. MM atoms)')
     self.keysAction.setToolTip('Show list of hotkeys')
     self.widgetHelpAction.setToolTip('Show more help about some particular interface item')
     self.aboutAction.setToolTip('Show information about {0} and environment'.format(__name__))
@@ -3328,6 +3332,7 @@ class MainWindow(QMainWindow):
     self.orthographicAction.setShortcut(QKeySequence('P'))
     self.fitViewAction.setShortcut(QKeySequence('R'))
     self.resetCameraAction.setShortcut(QKeySequence('Shift+R'))
+    self.hideMMAction.setShortcut(QKeySequence('Shift+M'))
     self.collapseButton.setShortcut(QKeySequence('Ctrl+_'))
     self.listButton.setShortcut('Ctrl+L')
     self.prevDensShortcut = QShortcut(QKeySequence('Alt+PgUp'), self)
@@ -3416,6 +3421,7 @@ class MainWindow(QMainWindow):
     self.orthographicAction.triggered.connect(self.orthographic)
     self.fitViewAction.triggered.connect(self.reset_camera)
     self.resetCameraAction.triggered.connect(partial(self.reset_camera, True))
+    self.hideMMAction.triggered.connect(self.toggleMM)
     self.fileButton.clicked.connect(self.load_file)
     self.collapseButton.toggled.connect(self.collapse_options)
     self.densityTypeButton.currentIndexChanged.connect(self.densityTypeButton_changed)
@@ -4974,7 +4980,7 @@ class MainWindow(QMainWindow):
 
   def toggle_cache(self, enabled):
     if (enabled):
-      if self.xyz is None:
+      if (self.xyz is None):
         return
       try:
         ngrid = self.xyz.GetInput().GetDimensions()
@@ -5364,7 +5370,7 @@ class MainWindow(QMainWindow):
       self.mol_nb.VisibilityOff()
     else:
       self.mol.VisibilityOn()
-      self.mol_nb.VisibilityOn()
+      self.toggleMM(self.hideMMAction.isChecked())
       mm = self.mol.GetMapper()
       mm_nb = self.mol_nb.GetMapper()
       if (rep == 0):
@@ -6042,6 +6048,13 @@ class MainWindow(QMainWindow):
         self.ren.GetActiveCamera().SetViewUp(0, 1, 0)
     self.ren.ResetCamera()
     self.set_scale()
+    self.vtk_update()
+
+  def toggleMM(self, value):
+    if (value or (self.moleculeButton.currentIndex() == 2)):
+      self.mol_nb.VisibilityOff()
+    else:
+      self.mol_nb.VisibilityOn()
     self.vtk_update()
 
   def vtk_update(self):
