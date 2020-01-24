@@ -184,6 +184,9 @@ background_color = {
 
 angstrom = 1.88972612462 # = 1 / 0.529177210904
 
+# Atomic radii are only available up to Z=109 in VTK, apparently
+maxZ = 109
+
 # Symmetry multiplication table
 symmult = np.array([
   [0, 1, 2, 3, 4, 5, 6, 7],
@@ -230,14 +233,21 @@ class Orbitals(object):
       # First read the centers and their properties
       if (sym > 1):
         labels = f['DESYM_CENTER_LABELS'][:]
-        charges = f['DESYM_CENTER_CHARGES'][:]
+        try:
+          charges = f['DESYM_CENTER_ATNUMS'][:]
+        except KeyError:
+          charges = f['DESYM_CENTER_CHARGES'][:]
         coords = f['DESYM_CENTER_COORDINATES'][:]
         self.mat = np.reshape(f['DESYM_MATRIX'][:], (sum(self.N_bas), sum(self.N_bas))).T
       else:
         labels = f['CENTER_LABELS'][:]
-        charges = f['CENTER_CHARGES'][:]
+        try:
+          charges = f['CENTER_ATNUMS'][:]
+        except KeyError:
+          charges = f['CENTER_CHARGES'][:]
         coords = f['CENTER_COORDINATES'][:]
-      self.centers = [{'name':str(l.decode('ascii')).strip(), 'Z':int(q), 'xyz':x} for l,q,x in zip(labels, charges, coords)]
+      charges = charges.astype(np.int).clip(0, maxZ)
+      self.centers = [{'name':str(l.decode('ascii')).strip(), 'Z':q, 'xyz':x} for l,q,x in zip(labels, charges, coords)]
       self.geomcenter = (np.amin(coords, axis=0) + np.amax(coords, axis=0))/2
       # Then read the primitives and assign them to the centers
       prims = f['PRIMITIVES'][:]    # (exponent, coefficient)
@@ -930,7 +940,8 @@ class Orbitals(object):
               save = f.tell()
               try:
                 l, _, q, x, y, z = f.readline().split()
-                self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])*unit})
+                q = min(maxZ, max(0, int(q)))
+                self.centers.append({'name':l, 'Z':q, 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])*unit})
                 num += 1
               except:
                 f.seek(save)
@@ -938,7 +949,8 @@ class Orbitals(object):
           else:
             for i in range(num):
               l, _, q, x, y, z = f.readline().split()
-              self.centers.append({'name':l, 'Z':int(q), 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])*unit})
+              q = min(maxZ, max(0, int(q)))
+              self.centers.append({'name':l, 'Z':q, 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])*unit})
           self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
         # Read tags for spherical shells
         elif re.search(r'\[5D\]', line, re.IGNORECASE):
@@ -1859,7 +1871,8 @@ class Grid(object):
       self.centers = []
       for i in range(abs(num)):
         q, _, x, y, z = str(f.readline().decode('ascii')).split()
-        self.centers.append({'name':'{0}'.format(i), 'Z':int(q), 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])})
+        q = min(maxZ, max(0, int(q)))
+        self.centers.append({'name':'{0}'.format(i), 'Z':q, 'xyz':np.array([fortran_float(x), fortran_float(y), fortran_float(z)])})
       self.geomcenter = (np.amin([c['xyz'] for c in self.centers], axis=0) + np.amax([c['xyz'] for c in self.centers], axis=0))/2
       # Compute full volume size
       self.ngrid = [ngridx, ngridy, ngridz]
