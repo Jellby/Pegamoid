@@ -2437,7 +2437,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>Alt+PgUp</b>/<b>Alt+PgDown</b>: Switch to previous/next density type</p>
                    <p><b>Shift+PgUp</b>/<b>Shift+PgDown</b>: Switch to previous/next root</p>
                    <p><b>Ctrl+PgUp</b>/<b>Ctrl+PgDown</b>: Switch to previous/next irrep</p>
-                   <p><b>A</b>/<b>B</b>: Switch to alpha/beta or electron/spin orbitals</p>
+                   <p><b>A</b>/<b>B</b>/<b>E</b>: Switch to alpha/hole, beta/particle or natural orbitals, respectively</p>
                    <p><b>Shift+S</b>: Toggle sorting of orbital list by energy &amp; occupation</p>
                    <p><b>Ctrl+L</b>: Show/hide full list of orbitals</p>
                    <p><b>F</b>: Change orbital type to frozen</p>
@@ -3339,6 +3339,8 @@ class MainWindow(QMainWindow):
     self.alphaShortcut.activated.connect(self.select_alpha)
     self.betaShortcut = QShortcut(QKeySequence('B'), self)
     self.betaShortcut.activated.connect(self.select_beta)
+    self.naturalShortcut = QShortcut(QKeySequence('E'), self)
+    self.naturalShortcut.activated.connect(self.select_natural)
     self.sortedBox.setShortcut('Shift+S')
     self.frozenButton.setShortcut('F')
     self.inactiveButton.setShortcut('I')
@@ -5871,6 +5873,13 @@ class MainWindow(QMainWindow):
     index = self.spinButton.findText('beta')
     if (index < 0):
       index = self.spinButton.findText('particle')
+    if (index >= 0):
+      self.spinButton.setCurrentIndex(index)
+
+  def select_natural(self):
+    if (not self.spinButton.isEnabled()):
+      return
+    index = self.spinButton.findText('—')
     if (index >= 0):
       self.spinButton.setCurrentIndex(index)
 
