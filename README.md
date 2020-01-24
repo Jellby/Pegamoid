@@ -210,7 +210,8 @@ In some systems there are display issues in the 3D window, where some elements
 are wrongly drawn "on top" of others (this does not refer to the atom names,
 which are always on top). This problem has been seen with PyQt 5, and it's
 usually solved by switching to PyQt 4 or installing QtOpenGL support (in the
-"About" dialog, check if the "Qt API" line says "with QtOpenGL").
+"About" dialog, check if the "Qt API" line says "with QtOpenGL"). To disable
+QtOpenGL detection, define the environment variable ``PEGAMOID_NO_QGL=1``.
 
 Issues with the "Transform" and "Texture" windows not appearing have also been
 reported in some PyQt 4 versions. It is unclear at the moment what is the

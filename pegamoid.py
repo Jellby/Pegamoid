@@ -6,9 +6,9 @@ from builtins import bytes, dict, int, range, super
 
 __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
-__copyright__ = u'Copyright © 2018–2019'
+__copyright__ = u'Copyright © 2018–2020'
 __license__ = 'GPL v3.0'
-__version__ = '2.5'
+__version__ = '2.5.1'
 
 import sys
 try:
@@ -39,8 +39,11 @@ except:
       print('Please install at least one of: PyQt4, PyQt5, PySide')
       sys.exit(1)
 
+import os
 import vtk.qt
 try:
+  if os.environ.get('PEGAMOID_NO_QGL', None):
+    raise ImportError
   vtk.qt.QVTKRWIBase = 'QGLWidget'
   from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
   QtVersion += ' with QtOpenGL'
@@ -54,7 +57,6 @@ import h5py
 import numpy as np
 from fractions import Fraction
 
-import os
 import os.path
 import codecs
 import re
@@ -272,7 +274,7 @@ class Orbitals(object):
           for j in nz:
             bf_id[j]['tl'] = bb['tl']
       # Workaround for bug in HDF5 files where p-type contaminants did all have m=0
-      p_shells, p0_counts = np.unique([np.array(b)[['c','s','tl']] for b in bf_id if ((b['l']==1) and (b['m']==0))], return_counts=True)
+      p_shells, p0_counts = np.unique([np.array(b)[['c','s','tl']].copy() for b in bf_id if ((b['l']==1) and (b['m']==0))], return_counts=True)
       if (np.any(p0_counts > 1)):
         if (sym > 1):
           # can't fix it with symmetry
@@ -973,7 +975,11 @@ class Orbitals(object):
             except:
               f.seek(save)
               break
-            self.centers[n-1]['cart'] = []
+            try:
+              self.centers[n-1]['cart'] = []
+            except IndexError:
+              error = 'Basis functions found for unspecified centers. Broken molden file?'
+              raise Exception(error)
             basis = {}
             # Read the shells for this center
             while (True):
@@ -2192,7 +2198,7 @@ def parse_size(size):
            'KIB': 2**10, 'MIB': 2**20, 'GIB': 2**30, 'TIB': 2**40}
   factor = 1
   try:
-    size_ = size.upper()
+    size_ = str(size).upper()
     for i in units:
       if i in size_:
         factor *= units[i]
@@ -2351,7 +2357,9 @@ class ComputeVolume(Worker):
         elif ((self.dens_type == 'detachment') and (o['occup'] > 0)):
           mask[l] = False
         l += 1
-    if ((orb in [0, -1]) or (orb <= -3)):
+    if (orb is None):
+      pass
+    elif ((orb in [0, -1]) or (orb <= -3)):
       a_and_b = False
       trans = False
       list_pad(mask, len(self.parent().orbitals.MO_a), True)
@@ -3930,7 +3938,10 @@ class MainWindow(QMainWindow):
       self.rootButton.setCurrentIndex(index)
     self.rootButton.blockSignals(False)
     index = self.rootButton.currentIndex()
-    self.root = self.rootButton.itemData(index)
+    try:
+      self.root = self.rootButton.itemData(index).toPyObject()
+    except AttributeError:
+      self.root = self.rootButton.itemData(index)
 
   @property
   def root(self):
@@ -5204,18 +5215,15 @@ class MainWindow(QMainWindow):
 
   def densityTypeButton_changed(self, value):
     if (value >= 0):
-      self.dens = self.densityTypeButton.currentText()
+      self.dens = str(self.densityTypeButton.currentText())
 
   def rootButton_changed(self, value):
     if (value >= 0):
+      index = self.rootButton.currentIndex()
       try:
-        self.root = self.rootButton.currentData()
+        self.root = self.rootButton.itemData(index).toPyObject()
       except AttributeError:
-        index = self.rootButton.currentIndex()
-        try:
-          self.root, _ = self.rootButton.itemData(index).toInt()
-        except AttributeError:
-          self.root = self.rootButton.itemData(index)
+        self.root = self.rootButton.itemData(index)
 
   def irrepButton_changed(self, value):
     if (value >= 0):
@@ -5443,7 +5451,9 @@ class MainWindow(QMainWindow):
 
   def set_panel(self):
     # Update the description text
-    if (self.orbital > 0):
+    if (self.orbital is None):
+      tp = ''
+    elif (self.orbital > 0):
       tp = self.MO[self.orbital-1]['type']
     elif (self.orbital < 1):
       tp = '2'
@@ -5493,7 +5503,9 @@ class MainWindow(QMainWindow):
         if (self.spin):
           text += ' ({0})'.format(self.spin)
         text += '\n'
-    if ((self.orbital <= 0) and (len(self.MO) > 0)):
+    if (self.orbital is None):
+      pass
+    elif ((self.orbital <= 0) and (len(self.MO) > 0)):
       text += '{0} ({1:.4f} electrons)'.format(self.orbitalButton.currentText(), self.orbitals.total_occup)
     else:
       if (self.orbital is not None):
@@ -5739,13 +5751,13 @@ class MainWindow(QMainWindow):
           if (line.startswith('#INDEX')):
             fo.write(line)
             index = []
-            line = f.readline().split()
-            while (line[0][0] not in ['#', '<']):
+            line = f.readline()
+            while (line and (line[0] not in ['#', '<'])):
               if (line[0] == '*'):
                 index.append('')
               else:
-                index[-1] += line[1]
-              line = f.readline().split()
+                index[-1] += line.split()[1]
+              line = f.readline()
             nMO = OrderedDict()
             for i,l in enumerate(index):
               nMO['{0}'.format(i+1)] = len(l)
