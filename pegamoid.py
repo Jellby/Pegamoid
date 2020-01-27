@@ -1496,7 +1496,7 @@ class Orbitals(object):
 
   # Compute electron density as sum of square of (natural) orbitals times occupation.
   # It can use a cache for MO evaluation and a mask to select only some orbitals.
-  def dens(self, x, y, z, cache=None, mask=None, spin=False, trans=False, callback=None, interrupt=False):
+  def dens(self, x, y, z, cache=None, precomp=None, mask=None, spin=False, trans=False, callback=None, interrupt=False):
     dens = np.zeros_like(x)
     if (self.MO_b):
       MO_list = [j for i in zip_longest(self.MO_a, self.MO_b) for j in i]
@@ -1509,6 +1509,23 @@ class Orbitals(object):
     else:
       total = 0
       actions = [False, True]
+
+    # Try to build a unique identifier for this density
+    # and see if has already been computed (and stored)
+    if (precomp is not None):
+      denshash = hash(repr([[(o['coeff'], o['occup']) for o in MO_list], mask, spin, trans]))
+      denslist = precomp[0]
+      try:
+        idx = [i[0] for i in denslist].index(denshash)
+      except ValueError:
+        pass
+      else:
+        pos = denslist.pop(idx)
+        denscache = precomp[1]
+        self.total_occup = denscache[pos[1],0]
+        dens = denscache[pos[1],1:]
+        denslist.append(pos)
+        return dens
 
     npoints = x.size
     if (cache is not None):
@@ -1572,6 +1589,15 @@ class Orbitals(object):
                 total += 1
           j += 1
     self.total_occup = tot
+    # Save the computed density in the oldest slot
+    if (precomp is not None):
+      denslist = precomp[0]
+      denscache = precomp[1]
+      if (denscache.shape[0] > 0):
+        pos = denslist.pop(0)
+        denscache[pos[1],0] = self.total_occup
+        denscache[pos[1],1:] = dens
+        denslist.append((denshash, pos[1]))
     return dens
 
   # Compute the Laplacian of a field by central finite differences
@@ -2363,6 +2389,10 @@ class ComputeVolume(Worker):
       spin = 'a'
     else:
       spin = 'n'
+    if (self.parent()._dens_cache is None):
+      precomp = None
+    else:
+      precomp = [self.parent()._dens_list, self.parent()._dens_cache]
     mask = [o['density'] for o in self.parent().notes]
     if (self.dens_type in ['attachment', 'detachment']):
       l = 0
@@ -2398,10 +2428,12 @@ class ComputeVolume(Worker):
       elif (self.dens_type == 'particle'):
         mask = [i for j in [[k, False] for k in mask] for i in j]
         a_and_b = True
-      self.data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, spin=a_and_b, trans=trans, callback=print_func, interrupt=self.parent().interrupt)
+      self.data = self.parent().orbitals.dens(x, y, z, self.cache, precomp=precomp,
+                                              mask=mask, spin=a_and_b, trans=trans, callback=print_func, interrupt=self.parent().interrupt)
     elif (orb == -2):
       ngrid = self.parent().xyz.GetInput().GetDimensions()
-      data = self.parent().orbitals.dens(x, y, z, self.cache, mask=mask, callback=print_func, interrupt=self.parent().interrupt).reshape(ngrid[::-1])
+      data = self.parent().orbitals.dens(x, y, z, self.cache, precomp=precomp,
+                                         mask=mask, callback=print_func, interrupt=self.parent().interrupt).reshape(ngrid[::-1])
       # Get the actual lengths of the possibly transformed axes
       c0 = np.array([x[0], y[0], z[0]])
       n = ngrid[0]-1
@@ -2846,6 +2878,8 @@ class MainWindow(QMainWindow):
     self._maxval = 0.1
     self._tmpdir = mkdtemp()
     self._cache_file = None
+    self._dens_cache = None
+    self._dens_list = None
     self._timestamp = time.time()
 
   def init_properties(self):
@@ -3531,6 +3565,8 @@ class MainWindow(QMainWindow):
     try:
       if (self._cache_file is not None):
         del self._cache_file
+      if (self._dens_cache is not None):
+        del self._dens_cache
       rmtree(self._tmpdir)
     except:
       pass
@@ -4878,14 +4914,21 @@ class MainWindow(QMainWindow):
 
   def update_cache(self, ngrid):
     self.scratchsize['rec'] = None
-    if (self.orbitals is None):
-      return
     if (self._cache_file is not None):
       del self._cache_file
+      self._cache_file = None
+    if (self._cache_file is not None):
+      del self._dens_cache
+      self._dens_cache = None
+      self._dens_list = None
+    if (self.orbitals is None):
+      return
     if (not self.use_scratch):
       return
     if (self.isGrid):
       self._cache_file = None
+      self._dens_cache = None
+      self._dens_list = None
     else:
       nbas = sum(self.orbitals.N_bas)
       npoints = np.prod(ngrid)
@@ -4906,12 +4949,25 @@ class MainWindow(QMainWindow):
           return
       self._cache_file = np.memmap(os.path.join(self._tmpdir, '{0}.cache'.format(__name__.lower())), dtype=dtype, mode='w+', shape=(sum(self.orbitals.N_bas), npoints))
       self._cache_file[:,0] = np.nan
+      # Use remaining space for density cache
+      npoints = np.prod(ngrid)
+      maxdens = (self.scratchsize['max'] - self._cache_file.nbytes)//int(npoints*np.dtype(dtype).itemsize)
+      maxdens = min(10, maxdens)
+      if (maxdens > 0):
+        self._dens_cache = np.memmap(os.path.join(self._tmpdir, '{0}.dens_cache'.format(__name__.lower())), dtype=dtype, mode='w+', shape=(maxdens, npoints+1))
+        self._dens_cache[:,0] = np.nan
+        self._dens_list = [['', i] for i in range(maxdens)]
+      else:
+        self._dens_cache = None
+        self._dens_list = None
 
   def scratchstring(self):
     if (self._cache_file is None):
       s_act = 0
     else:
       s_act = self._cache_file.nbytes / 2**20
+    if (self._dens_cache is not None):
+      s_act += self._dens_cache.nbytes / 2**20
     s_max = 0
     if (self.scratchsize['max'] is not None):
       s_max = self.scratchsize['max'] / 2**20
@@ -4989,9 +5045,12 @@ class MainWindow(QMainWindow):
         raise
     else:
       if (self._cache_file is not None):
-        fname = self._cache_file.filename
         del self._cache_file
         self._cache_file = None
+      if (self._dens_cache is not None):
+        del self._dens_cache
+        self._dens_cache = None
+        self._dens_list = None
 
   def build_surface(self):
     if (self.xyz is None):
