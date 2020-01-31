@@ -1,3 +1,17 @@
+**2.5.1** (2020-01-31)
+
+New features:
+* Keyboard shortcut to select natural UHF orbitals
+* Option to hide atoms without basis functions (e.g. MM atoms)
+* Density cache to reuse previously computed densities
+* Environment variable to disable QtOpenGL
+
+Bug fixes:
+* Accept d/D as exponent marker (besides e/E)
+* Fix patching of InpOrb files (with blank lines at the end)
+* Fix for when there are no orbitals in drop-down list
+* Keep atomic numbers within supported range
+
 **2.5** (2019-11-18)
 
 New features:
@@ -9,7 +23,7 @@ New features:
 * Separate alpha and beta orbitals if spin densities are available (also for difference and transition)
 * Total number of electrons in densities
 
-Bug fix:
+Bug fixes:
 * Alignment of monoatomic structures
 * Workaround for VTK bug #17715
 
