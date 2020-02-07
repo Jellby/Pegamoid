@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020'
 __license__ = 'GPL v3.0'
-__version__ = '2.5.1'
+__version__ = '2.5.2'
 
 import sys
 try:
@@ -2270,6 +2270,10 @@ def list_pad(a, n, item=None):
 # replace d/D with e, add e if missing
 fortfixexp = re.compile(r'([\d.])[dD]?(((?<=[dD])[+-]?|[+-])\d)')
 def fortran_float(num):
+  try:
+    num = str(num.decode('ascii'))
+  except AttributeError:
+    pass
   num = fortfixexp.sub(r'\1e\2', num)
   return float(num)
 

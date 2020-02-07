@@ -1,3 +1,8 @@
+**2.5.2** (2020-02-07)
+
+Bug fix:
+* Reading of grid/cube/lus files with python3
+
 **2.5.1** (2020-01-31)
 
 New features:
