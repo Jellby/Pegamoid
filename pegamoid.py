@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020'
 __license__ = 'GPL v3.0'
-__version__ = '2.5.2'
+__version__ = '2.5.3'
 
 import sys
 try:
@@ -2200,21 +2200,18 @@ def name_to_Z(name):
 
 #===============================================================================
 
-# Convert a (Qt) string into a bool, according to its value
-def qt_to_bool(string):
-  try:
-    return str(string.toPyObject()).lower() in ['true', '1', 'yes', 'on']
-  except AttributeError:
-    return string.lower() in ['true', '1', 'yes', 'on']
-
-#===============================================================================
-
-# Convert a (Qt) type into an int
+# Convert a (Qt) type into type tp
 def qt_to_py(string, tp):
   try:
     return tp(string.toPyObject())
   except AttributeError:
     return tp(string)
+
+#===============================================================================
+
+# Convert a (Qt) string into a bool, according to its value
+def qt_to_bool(string):
+  return qt_to_py(string, str).lower() in ['true', '1', 'yes', 'on']
 
 #===============================================================================
 
@@ -4687,18 +4684,27 @@ class MainWindow(QMainWindow):
     bp.Update()
     molb = vtk.vtkMolecule()
     molb.DeepCopy(bp.GetOutput())
+    pt = vtk.vtkPeriodicTable()
+    # Fix default bonds
+    for i in range(molb.GetNumberOfBonds()):
+      bond = molb.GetBond(i)
+      Z1 = bond.GetBeginAtom().GetAtomicNumber()
+      Z2 = bond.GetEndAtom().GetAtomicNumber()
+      # Remove (hide) bonds with ghost and MM atoms
+      if ((Z1 < 1) or (Z2 < 1)):
+        molb.SetBondOrder(i, 0)
+      # Fix missing radii being taken as 1e38 (use 1.6 instead)
+      l = bond.GetLength()
+      r1 = pt.GetCovalentRadius(Z1)
+      r1 = 1.6 if (r1 > 10.0) else r1
+      r2 = pt.GetCovalentRadius(Z2)
+      r2 = 1.6 if (r2 > 10.0) else r2
+      if (l > r1+r2+bp.GetTolerance()):
+        molb.SetBondOrder(i, 0)
     # Change coordinates back to bohr
     for i in range(molb.GetNumberOfAtoms()):
       xyz = np.array(molb.GetAtomPosition(i))*angstrom
       molb.SetAtomPosition(i, *xyz)
-    # Remove (hide) bonds with ghost and MM atoms
-    for i in range(molb.GetNumberOfBonds()):
-      a1 = molb.GetBond(i).GetBeginAtom()
-      a2 = molb.GetBond(i).GetEndAtom()
-      Z1 = a1.GetAtomicNumber()
-      Z2 = a2.GetAtomicNumber()
-      if ((Z1 < 1) or (Z2 < 1)):
-        molb.SetBondOrder(i, 0)
     molb.GetVertexData().AddArray(vtkr)
     mol_nb.GetVertexData().AddArray(vtkr_nb)
     mm = vtk.vtkOpenGLMoleculeMapper()

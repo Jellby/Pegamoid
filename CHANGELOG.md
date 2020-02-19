@@ -1,3 +1,9 @@
+**2.5.3** (2020-02-19)
+
+Bug fixes:
+* Parsing of Boolean values in config file
+* Workaround VTK bug/misfeature causing crazy bonds for uncommon elements
+
 **2.5.2** (2020-02-07)
 
 Bug fix:
