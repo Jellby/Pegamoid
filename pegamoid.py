@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020'
 __license__ = 'GPL v3.0'
-__version__ = '2.5.3'
+__version__ = '2.5.4'
 
 import sys
 try:
@@ -2946,6 +2946,7 @@ class MainWindow(QMainWindow):
     self.saveCubeAction = self.saveMenu.addAction('Save &cube...')
     self.saveMenu.addSeparator()
     self.screenshotAction = self.saveMenu.addAction('Save &PNG image...')
+    self.overwriteAction = self.fileMenu.addAction('Over&write')
     self.fileMenu.addSeparator()
     self.setScratchAction = self.fileMenu.addAction('Set scra&tch...')
     self.fileMenu.addSeparator()
@@ -3096,10 +3097,12 @@ class MainWindow(QMainWindow):
 
     # tooltips
     self.loadAction.setToolTip('Load a file in any supported format')
+    self.saveMenu.setToolTip('')
     self.saveHDF5Action.setToolTip('Save current orbitals in HDF5 format')
     self.saveInpOrbAction.setToolTip('Save current orbitals in InpOrb format')
     self.saveCubeAction.setToolTip('Save current volume in cube format')
     self.screenshotAction.setToolTip('Save the current view as an image')
+    self.overwriteAction.setToolTip('Overwrite current file')
     self.setScratchAction.setToolTip('View and configure scratch settings')
     self.clearAction.setToolTip('Clear the currently loaded file')
     self.quitAction.setToolTip('Quit {0}'.format(__name__))
@@ -3448,6 +3451,7 @@ class MainWindow(QMainWindow):
     self.saveInpOrbAction.triggered.connect(self.write_inporb)
     self.saveCubeAction.triggered.connect(self.write_cube)
     self.screenshotAction.triggered.connect(self.show_screenshot)
+    self.overwriteAction.triggered.connect(self.overwrite)
     self.clearAction.triggered.connect(self.clear)
     self.setScratchAction.triggered.connect(self.config_scratch)
     self.quitAction.triggered.connect(self.close)
@@ -3638,6 +3642,7 @@ class MainWindow(QMainWindow):
     enabled = new is not None
     self.orbitalGroup.setEnabled(enabled)
     self.saveHDF5Action.setEnabled(enabled and (new.type == 'hdf5'))
+    self.overwriteAction.setEnabled(enabled and (new.type == 'hdf5'))
     self.MO = None
     self.xyz = None
     try:
@@ -3721,13 +3726,14 @@ class MainWindow(QMainWindow):
     self.gradient = None
     self.new_box()
     self.toggle_names()
+    not_reset = (new.type == 'hdf5') and (type(new.inporb) is int)
     if (self.box is not None):
       v = self.box.GetVisibility()
       self.box.VisibilityOn()
-      self.reset_camera(new.type != 'inporb')
+      self.reset_camera(not not_reset)
       self.box.SetVisibility(v)
     else:
-      self.reset_camera(new.type != 'inporb')
+      self.reset_camera(not not_reset)
     self.ready = True
     self.vtk_update()
 
@@ -5749,6 +5755,9 @@ class MainWindow(QMainWindow):
       filename, _ = result
     except ValueError:
       filename = result
+    self._write_hdf5(filename)
+
+  def _write_hdf5(self, filename):
     notes = [n['note'] for n in self.notes]
     if (any(notes)):
       self.orbitals.notes = notes
@@ -5771,6 +5780,9 @@ class MainWindow(QMainWindow):
       filename, _ = result
     except ValueError:
       filename = result
+    self._write_inporb(filename)
+
+  def _write_inporb(self, filename):
     try:
       if (self.orbitals.inporb == 'gen'):
         self.orbitals.create_inporb(filename, self.MO)
@@ -5823,6 +5835,17 @@ class MainWindow(QMainWindow):
       error = 'Error writing cube file {0}:\n{1}'.format(filename, e)
       traceback.print_exc()
       self.show_error(error)
+
+  def overwrite(self):
+    if (self.orbitals.type != 'hdf5'):
+      return
+    message = 'Are you sure you want to overwrite the current file?<br/>{}'.format(self.orbitals.file)
+    if (QMessageBox.question(self, 'Overwrite?', message, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes):
+      return
+    if (self.orbitals.file == self.orbitals.h5file):
+      self._write_hdf5(self.orbitals.file)
+    else:
+      self._write_inporb(self.orbitals.file)
 
   # Copy an InpOrb file, changing header and index section
   def patch_inporb(self, outfile):

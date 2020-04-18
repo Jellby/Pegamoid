@@ -1,3 +1,13 @@
+**2.5.4** (2020-04-18)
+
+New feature:
+* Menu action for overwriting current file (HDF5/InpOrb formats)
+
+Bug fix:
+* Overwriting InpOrb files
+* Saving InpOrb from InpOrb (index block was not updated)
+* Do not reset camera orientation when loading an InpOrb
+
 **2.5.3** (2020-02-19)
 
 Bug fixes:
