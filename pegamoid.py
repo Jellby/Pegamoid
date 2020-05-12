@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020'
 __license__ = 'GPL v3.0'
-__version__ = '2.5.4'
+__version__ = '2.5.5'
 
 import sys
 try:
@@ -1107,7 +1107,10 @@ class Orbitals(object):
             if (tag == 'sym='):
               sym = re.sub(r'^\d*', '', line[1])
             elif (tag == 'ene='):
-              ene = fortran_float(line[1])
+              try:
+                ene = fortran_float(line[1])
+              except ValueError:
+                ene = np.nan
             elif (tag == 'spin='):
               spn = 'b' if (line[1] == 'Beta') else 'a'
             elif (tag == 'occup='):
@@ -1980,7 +1983,7 @@ class Grid(object):
             self.irrep.append(self.MO[-1]['sym'])
         else:
           name = ' '.join(name.split()[1:])
-          self.MO.append({'label':name, 'ene':np.finfo(np.float).min, 'occup':0.0, 'type':'?', 'sym':'z', 'num':0, 'idx':i})
+          self.MO.append({'label':name, 'ene':-np.inf, 'occup':0.0, 'type':'?', 'sym':'z', 'num':0, 'idx':i})
           if ('z' not in self.irrep):
             self.irrep.append('z')
       # Sort the orbitals by symmetry and number
@@ -2051,7 +2054,7 @@ class Grid(object):
             self.irrep.append(self.MO[-1]['sym'])
         else:
           name = ' '.join(name.split()[1:])
-          self.MO.append({'label':name, 'ene':np.finfo(np.float).min, 'occup':0.0, 'type':'?', 'sym':'z', 'num':0, 'idx':i})
+          self.MO.append({'label':name, 'ene':-np.inf, 'occup':0.0, 'type':'?', 'sym':'z', 'num':0, 'idx':i})
           if ('z' not in self.irrep):
             self.irrep.append('z')
       # Sort the orbitals by symmetry and number
@@ -4543,7 +4546,8 @@ class MainWindow(QMainWindow):
       return
     if (self.irrep == 'All'):
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (not o.get('hide'))}
-      orbidx = {i+1:[o['ene'], np.copysign(1, o['occup']), -o['occup']] for i,o in enumerate(self.MO) if (not o.get('hide'))}
+      orbidx = {i+1:[-np.inf if np.isnan(o['ene']) else o['ene'], np.copysign(1, o['occup']), -o['occup']]
+                     for i,o in enumerate(self.MO) if (not o.get('hide'))}
       if ((not self.isGrid) and any([(o['occup'] != 0.0) for o in self.MO])):
         is_it_spin = (self.dens == 'State') and any([(o['occup'] < -1e-4) for o in self.MO])
         if (self.dens == 'State'):
@@ -4569,11 +4573,12 @@ class MainWindow(QMainWindow):
           orblist[0] = 'Density'
     else:
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
-      orbidx = {i+1:[o['ene'], np.copysign(1, o['occup']), -o['occup'], o['sym']] for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
+      orbidx = {i+1:[-np.inf if np.isnan(o['ene']) else o['ene'], np.copysign(1, o['occup']), -o['occup'], o['sym']]
+                     for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
     if (self.sortedBox.isChecked()):
       for k in orblist.keys():
         if (not k in orbidx):
-          orbidx[k] = [np.finfo(np.float).min, k]
+          orbidx[k] = [-np.inf, k]
       orbsort = sorted(orbidx.keys(), key=lambda k: orbidx[k])
     else:
       orbsort = sorted(orblist.keys())

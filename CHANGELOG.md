@@ -1,9 +1,14 @@
+**2.5.5** (2020-05-12)
+
+Bug fix:
+* Parsing of Molden files with unreadable (starred) energies
+
 **2.5.4** (2020-04-18)
 
 New feature:
 * Menu action for overwriting current file (HDF5/InpOrb formats)
 
-Bug fix:
+Bug fixes:
 * Overwriting InpOrb files
 * Saving InpOrb from InpOrb (index block was not updated)
 * Do not reset camera orientation when loading an InpOrb
@@ -12,7 +17,7 @@ Bug fix:
 
 Bug fixes:
 * Parsing of Boolean values in config file
-* Workaround VTK bug/misfeature causing crazy bonds for uncommon elements
+* Work around VTK bug/misfeature causing crazy bonds for uncommon elements
 
 **2.5.2** (2020-02-07)
 
