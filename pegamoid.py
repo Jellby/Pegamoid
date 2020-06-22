@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020'
 __license__ = 'GPL v3.0'
-__version__ = '2.5.5'
+__version__ = '2.5.6'
 
 import sys
 try:
@@ -2739,8 +2739,15 @@ class MutableBool(object):
 # such that if the slopes at 0 and 1 for fresnelPower = 1-d are 1-d and
 # 1/(1-d), the slopes for fresnelPower = 1+d are 1/(1-d) and 1-d.
 #   If fresnelPower < 0, the results are inverted: p -> 1/p, y -> 1-y.
-class AOIMapper(vtk.vtkOpenGLPolyDataMapper):
+try:
+  # VTK >= 9.0
+  ShaderClass = vtk.vtkOpenGLShaderProperty
+except AttributeError:
+  # VTK < 9.0
+  ShaderClass = vtk.vtkOpenGLPolyDataMapper
+class AOIShader(ShaderClass):
   def __init__(self, *args, **kwargs):
+    self.texture = kwargs.pop('texture', None)
     super().__init__(*args, **kwargs)
     self.Transparency = 0.0
     self.Fresnel = 0.0
@@ -2797,10 +2804,14 @@ class AOIMapper(vtk.vtkOpenGLPolyDataMapper):
       '}\n',
       False
     )
-    self.AddObserver(vtk.vtkCommand.UpdateShaderEvent, self.update_shader)
 
   @vtk.calldata_type(vtk.VTK_OBJECT)
   def update_shader(self, caller, event, program):
+    try:
+      self.Transparency = self.texture.transparency
+      self.Fresnel = self.texture.fresnel
+    except:
+      pass
     if (program is not None):
       program.SetUniformf('transparencyUniform', self.Transparency)
       program.SetUniformf('fresnelPowerUniform', self.Fresnel)
@@ -4719,14 +4730,14 @@ class MainWindow(QMainWindow):
       molb.SetAtomPosition(i, *xyz)
     molb.GetVertexData().AddArray(vtkr)
     mol_nb.GetVertexData().AddArray(vtkr_nb)
-    mm = vtk.vtkOpenGLMoleculeMapper()
+    mm = vtk.vtkMoleculeMapper()
     mm.SetInputData(molb)
     mm.SetRenderAtoms(True)
     mm.SetAtomicRadiusScaleFactor(0.3)
     mm.SetBondRadius(0.075)
     mm.SetAtomicRadiusTypeToVDWRadius()
     mm.SetRenderBonds(True)
-    mm_nb = vtk.vtkOpenGLMoleculeMapper()
+    mm_nb = vtk.vtkMoleculeMapper()
     mm_nb.SetInputData(mol_nb)
     mm_nb.SetRenderAtoms(True)
     mm_nb.SetAtomicRadiusScaleFactor(0.3)
@@ -5153,11 +5164,17 @@ class MainWindow(QMainWindow):
       rv = vtk.vtkReverseSense()
       rv.SetInputConnection(tot.GetOutputPort())
       rv.SetReverseCells(transform.GetMatrix().Determinant() < 0)
-      m = AOIMapper()
+      self.surface = vtk.vtkActor()
+      sh = AOIShader(texture=self.textureDock)
+      if (isinstance(sh, vtk.vtkOpenGLPolyDataMapper)):
+        m = sh
+      else:
+        m = vtk.vtkOpenGLPolyDataMapper()
+        self.surface.SetShaderProperty(sh)
+      m.AddObserver(vtk.vtkCommand.UpdateShaderEvent, sh.update_shader)
       m.SetInputConnection(rv.GetOutputPort())
       m.UseLookupTableScalarRangeOn()
       m.SetLookupTable(self.lut)
-      self.surface = vtk.vtkActor()
       self.surface.SetMapper(m)
       self.surface.GetProperty().SetColor(self.textureDock.zerocolor)
       self.surface.GetProperty().SetOpacity(min(1-1e-6, self.opacity))
@@ -5166,8 +5183,6 @@ class MainWindow(QMainWindow):
       self.surface.GetProperty().SetSpecular(self.textureDock.specular)
       self.surface.GetProperty().SetSpecularPower(self.textureDock.power)
       self.surface.GetProperty().SetSpecularColor(self.textureDock.specularcolor)
-      self.surface.GetMapper().Transparency = self.textureDock.transparency
-      self.surface.GetMapper().Fresnel = self.textureDock.fresnel
       self.surface.GetProperty().SetInterpolation(self.textureDock.interpolation)
       self.surface.GetProperty().SetRepresentation(self.textureDock.representation)
       self.surface.GetProperty().SetLineWidth(self.textureDock.size)
@@ -7093,7 +7108,6 @@ class TextureDock(QDockWidget):
       fix_box(self.transparencyBox, '{0:.2f}'.format(new))
     if (self.parent().surface is None):
       return
-    self.parent().surface.GetMapper().Transparency = new
     self.parent().vtk_update()
 
   def transparencySlider_changed(self, value):
@@ -7123,7 +7137,6 @@ class TextureDock(QDockWidget):
       fix_box(self.fresnelBox, '{0:.2f}'.format(new))
     if (self.parent().surface is None):
       return
-    self.parent().surface.GetMapper().Fresnel = new
     self.parent().vtk_update()
 
   def fresnelSlider_changed(self, value):

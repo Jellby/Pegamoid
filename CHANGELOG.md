@@ -1,3 +1,8 @@
+**2.5.6** (2020-06-22)
+
+New features:
+* Support for VTK 9.0
+
 **2.5.5** (2020-05-12)
 
 Bug fix:
