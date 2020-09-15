@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020'
 __license__ = 'GPL v3.0'
-__version__ = '2.5.6'
+__version__ = '2.6'
 
 import sys
 try:
@@ -223,6 +223,7 @@ class Orbitals(object):
     elif (self.type == 'molden'):
       self.read_molden_basis()
       self.read_molden_MO()
+    self.normalize_rad()
 
   # Read basis set from an HDF5 file
   def read_h5_basis(self):
@@ -1086,6 +1087,34 @@ class Orbitals(object):
     self.MO_a = None
     self.MO_b = None
 
+  # Scale the primitive coefficients to normalize the radial part
+  # Note that the coefficients refer to normalized primitives
+  def normalize_rad(self):
+    for c in self.centers:
+      for l,ll in enumerate(c['basis']):
+        for s in ll:
+          prims = s[1]
+          if (len(prims) == 1):
+            prims[0][1] = 1.0
+          else:
+            ec = np.array(prims)
+            nprim = ec.shape[0]
+            # normalized primitives, so just sum the square coefficients
+            integral = np.sum(ec[:,1]**2)
+            # overlap between each pair of normalized primitives
+            for i in range(nprim):
+              for j in range(i+1, nprim):
+                cc = ec[i,1]*ec[j,1]
+                if (cc != 0.0):
+                  true_l = l+2*s[0]
+                  ep = np.sqrt(ec[i,0]*ec[j,0])
+                  es = (ec[i,0]+ec[j,0])/2
+                  integral += 2*cc*np.power(ep/es, 1.5+true_l)
+            # normalize the coefficients
+            fact = 1/np.sqrt(integral)
+            for p in prims:
+              p[1] *= fact
+
   # Read molecular orbitals from a Molden file
   def read_molden_MO(self):
     self.MO = []
@@ -1521,7 +1550,7 @@ class Orbitals(object):
       try:
         idx = [i[0] for i in denslist].index(denshash)
       except ValueError:
-        pass
+        self.total_occup = np.nan
       else:
         pos = denslist.pop(idx)
         denscache = precomp[1]
@@ -4717,12 +4746,11 @@ class MainWindow(QMainWindow):
       if ((Z1 < 1) or (Z2 < 1)):
         molb.SetBondOrder(i, 0)
       # Fix missing radii being taken as 1e38 (use 1.6 instead)
-      l = bond.GetLength()
       r1 = pt.GetCovalentRadius(Z1)
       r1 = 1.6 if (r1 > 10.0) else r1
       r2 = pt.GetCovalentRadius(Z2)
       r2 = 1.6 if (r2 > 10.0) else r2
-      if (l > r1+r2+bp.GetTolerance()):
+      if (bond.GetLength() > r1+r2+bp.GetTolerance()):
         molb.SetBondOrder(i, 0)
     # Change coordinates back to bohr
     for i in range(molb.GetNumberOfAtoms()):

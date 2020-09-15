@@ -219,7 +219,7 @@ reason for this.
 
 When running in KDE Plasma 5, some shortcuts may not work because KDE tries to
 be smart and overwrites them (see
-[here](https://stackoverflow.com/a/32711483/1538701) for example). To fix this,
+[here](https://stackoverflow.com/questions/32688153) for example). To fix this,
 you can add to the ``~/.config/kdeglobals`` file:
 
     [Development]

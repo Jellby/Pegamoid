@@ -1,6 +1,11 @@
+**2.6** (2020-09-15)
+
+Bug fix:
+* Basis function primitive coefficients are normalized after reading
+
 **2.5.6** (2020-06-22)
 
-New features:
+New feature:
 * Support for VTK 9.0
 
 **2.5.5** (2020-05-12)
@@ -22,7 +27,7 @@ Bug fixes:
 
 Bug fixes:
 * Parsing of Boolean values in config file
-* Work around VTK bug/misfeature causing crazy bonds for uncommon elements
+* Workaround for VTK bug/misfeature #17791 causing crazy bonds for uncommon elements
 
 **2.5.2** (2020-02-07)
 
