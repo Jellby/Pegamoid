@@ -1,3 +1,8 @@
+**2.6.1** (2020-10-21)
+
+Bug fix:
+* WFA orbitals with python3
+
 **2.6** (2020-09-15)
 
 Bug fix:

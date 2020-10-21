@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020'
 __license__ = 'GPL v3.0'
-__version__ = '2.6'
+__version__ = '2.6.1'
 
 import sys
 try:
@@ -670,11 +670,12 @@ class Orbitals(object):
       for i,o in enumerate(occ):
         new_MO.append({'coeff': vec[i,:], 'occup': o, 'type': '?', 'ene': 0.0, 'sym': 'z'})
       # if these are NTOs, split in hole and particle
-      ntos = '_NTO' in label
-      for i in range(norb/2):
-        if (not np.isclose(occ[i], -occ[-i-1], atol=self.eps)):
-          ntos = False
-          break
+      ntos = ('_NTO' in label) and (norb%2 == 0)
+      if (ntos):
+        for i in range(norb//2):
+          if (not np.isclose(occ[i], -occ[-i-1], atol=self.eps)):
+            ntos = False
+            break
       if (ntos):
         self.MO = []
         self.MO_a = sorted(new_MO[int(norb/2):], key=lambda i: i['occup'], reverse=True)
