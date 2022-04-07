@@ -6,9 +6,9 @@ from builtins import bytes, dict, int, range, super
 
 __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
-__copyright__ = u'Copyright © 2018–2020'
+__copyright__ = u'Copyright © 2018–2020,2022'
 __license__ = 'GPL v3.0'
-__version__ = '2.6.1'
+__version__ = '2.6.2'
 
 import sys
 try:
@@ -171,7 +171,7 @@ rnDMTsv8wc/10ubiXkYuFZaRXlao1HaLTPQjneqkay37H9gL/mliu8SBAAAAAElFTkSuQmCC
 ''', 'base64')
 
 # For CIELab <-> RGB conversion: http://colorizer.org/
-background_color = {
+def_background_color = {
   'F': (0.449, 0.448, 0.646), # CIELab(50,12,-27)
   'I': (0.711, 0.704, 0.918), # CIELab(75,12,-27)   Hue ~ 240
   '1': (0.605, 0.759, 0.682), # CIELab(75,-17,5.5)  Hue ~ 150
@@ -181,6 +181,7 @@ background_color = {
   'D': (0.609, 0.417, 0.416), # CIELab(50,19.5,8)
   '?': (0.466, 0.466, 0.466)  # CIELab(50,0,0)
 }
+background_color = def_background_color.copy()
 
 angstrom = 1.88972612462 # = 1 / 0.529177210904
 
@@ -450,7 +451,10 @@ class Orbitals(object):
         self.wf = 'PT2'
         self.roots[0] = (0, 'Reference')
         if ('DENSITY_MATRIX' in f):
-          rootids = f.attrs['STATE_ROOTID'][:]
+          try:
+            rootids = f.attrs['STATE_ROOTID'][:]
+          except KeyError:
+            rootids = [i+1 for i in range(f.attrs['NSTATES'])]
           # For MS-CASPT2, the densities are SS, but the energies are MS,
           # so take the energies from the effective Hamiltonian matrix instead
           if ('H_EFF' in f):
@@ -2750,6 +2754,33 @@ class MutableBool(object):
   __nonzero__ = __bool__
 
 
+# A button for selecting colors
+class ColorButton(QToolButton):
+  def __init__(self, color, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.setToolButtonStyle(Qt.ToolButtonTextOnly)
+    self.setAutoFillBackground(True)
+    self.setText(u' ')
+    self.color = QColor()
+    self.set_color(color)
+    self.clicked.connect(self.color_select)
+  def set_color(self, color):
+    try:
+      self.color.setRgbF(*color.getRgbF())
+    except AttributeError:
+      self.color.setRgbF(*color)
+    pal = QPalette()
+    trans = pal.color(QPalette.Window)
+    trans.setAlphaF(0)
+    pal.setColor(QPalette.Window, trans)
+    pal.setColor(QPalette.Button, self.color)
+    self.setPalette(pal)
+  def color_select(self):
+    color = QColorDialog().getColor(self.color, self)
+    if (not color.isValid()):
+      return
+    self.set_color(color)
+
 # A shader with angle-of-incidence (aoi) dependent transparency
 # (not affecting specular highlights)
 #
@@ -2881,6 +2912,19 @@ class MainWindow(QMainWindow):
     self.deltmp()
     event.accept()
 
+  # Hackish code to be able to enable back the options dock if for some reason it gets closed
+  def contextMenuEvent(self, event):
+    menu = self.createPopupMenu()
+    for i in menu.actions():
+      if i.text() == self.optionsDock.windowTitle():
+        if i.isChecked():
+          # This should always be the case and the default (i.e. not closable)
+          self.optionsDock.setFeatures(self.optionsDock.features() & ~QDockWidget.DockWidgetClosable)
+        else:
+          # This should never happen (make it closable so that the menu action is enabled)
+          self.optionsDock.setFeatures(self.optionsDock.features() | QDockWidget.DockWidgetClosable)
+    menu.exec_(event.globalPos())
+
   def init_priv_properties(self):
     self._filename = None
     self._orbitals = None
@@ -2945,6 +2989,7 @@ class MainWindow(QMainWindow):
     self.haveBasis = False
     self.haveInpOrb = False
     self.transform = np.eye(4).flatten().tolist()
+    self.bgcolorbytype = True
     self.isovalue = 0.05
     self.opacity = 1.0
     self.gridPoints = 30
@@ -3006,6 +3051,7 @@ class MainWindow(QMainWindow):
     self.resetCameraAction = self.viewMenu.addAction('&Reset camera')
     self.hideMMAction = self.viewMenu.addAction('&Hide atoms without basis')
     self.hideMMAction.setCheckable(True)
+    self.BGColorAction = self.viewMenu.addAction('&Background color...')
     self.helpMenu = MenuTT('&Help')
     self.mainMenu.addMenu(self.helpMenu)
     self.keysAction = self.helpMenu.addAction('&Keys')
@@ -3155,6 +3201,7 @@ class MainWindow(QMainWindow):
     self.fitViewAction.setToolTip('Fit the currently displayed objects in the view')
     self.resetCameraAction.setToolTip('Reset the camera to the default view')
     self.hideMMAction.setToolTip('Toggle hiding atoms without basis functions (e.g. MM atoms)')
+    self.BGColorAction.setToolTip('Configure the background color')
     self.keysAction.setToolTip('Show list of hotkeys')
     self.widgetHelpAction.setToolTip('Show more help about some particular interface item')
     self.aboutAction.setToolTip('Show information about {0} and environment'.format(__name__))
@@ -3416,6 +3463,7 @@ class MainWindow(QMainWindow):
     self.fitViewAction.setShortcut(QKeySequence('R'))
     self.resetCameraAction.setShortcut(QKeySequence('Shift+R'))
     self.hideMMAction.setShortcut(QKeySequence('Shift+M'))
+    self.BGColorAction.setShortcut(QKeySequence('Shift+B'))
     self.collapseButton.setShortcut(QKeySequence('Ctrl+_'))
     self.listButton.setShortcut('Ctrl+L')
     self.prevDensShortcut = QShortcut(QKeySequence('Alt+PgUp'), self)
@@ -3506,6 +3554,7 @@ class MainWindow(QMainWindow):
     self.fitViewAction.triggered.connect(self.reset_camera)
     self.resetCameraAction.triggered.connect(partial(self.reset_camera, True))
     self.hideMMAction.triggered.connect(self.toggleMM)
+    self.BGColorAction.triggered.connect(self.config_bgcolor)
     self.fileButton.clicked.connect(self.load_file)
     self.collapseButton.toggled.connect(self.collapse_options)
     self.densityTypeButton.currentIndexChanged.connect(self.densityTypeButton_changed)
@@ -4390,6 +4439,15 @@ class MainWindow(QMainWindow):
     self.settings.setValue('poscolor', ' '.join([str(i) for i in self.textureDock.poscolor]))
     self.settings.setValue('specularcolor', ' '.join([str(i) for i in self.textureDock.specularcolor]))
     self.settings.endGroup()
+    self.settings.setValue('bgcolor', ' '.join([str(i) for i in background_color['?']]))
+    self.settings.setValue('bgFcolor', ' '.join([str(i) for i in background_color['F']]))
+    self.settings.setValue('bgIcolor', ' '.join([str(i) for i in background_color['I']]))
+    self.settings.setValue('bg1color', ' '.join([str(i) for i in background_color['1']]))
+    self.settings.setValue('bg2color', ' '.join([str(i) for i in background_color['2']]))
+    self.settings.setValue('bg3color', ' '.join([str(i) for i in background_color['3']]))
+    self.settings.setValue('bgScolor', ' '.join([str(i) for i in background_color['S']]))
+    self.settings.setValue('bgDcolor', ' '.join([str(i) for i in background_color['D']]))
+    self.settings.setValue('bgtype', self.bgcolorbytype)
     if (self.screenshot):
       self.settings.beginGroup('Screenshots')
       self.settings.setValue('transparent', self.screenshot.transparentBox.isChecked())
@@ -4434,17 +4492,42 @@ class MainWindow(QMainWindow):
     self.textureDock.sizeBox.setValue(qt_to_py(self.settings.value('size', 1), int))
     negcolor = qt_to_py(self.settings.value('negcolor'), str)
     if (negcolor != 'None'):
-      self.textureDock.choose_color('neg', tuple(map(float, negcolor.split())))
+      self.textureDock.negcolor = tuple(map(float, negcolor.split()))
     zerocolor = qt_to_py(self.settings.value('zerocolor'), str)
     if (zerocolor != 'None'):
-      self.textureDock.choose_color('zero', tuple(map(float, zerocolor.split())))
+      self.textureDock.zerocolor = tuple(map(float, zerocolor.split()))
     poscolor = qt_to_py(self.settings.value('poscolor'), str)
     if (poscolor != 'None'):
-      self.textureDock.choose_color('pos', tuple(map(float, poscolor.split())))
+      self.textureDock.poscolor = tuple(map(float, poscolor.split()))
     specularcolor = qt_to_py(self.settings.value('specularcolor'), str)
     if (specularcolor != 'None'):
-      self.textureDock.choose_color('spec', tuple(map(float, specularcolor.split())))
+      self.textureDock.specularcolor = tuple(map(float, specularcolor.split()))
     self.settings.endGroup()
+    bgcolor = qt_to_py(self.settings.value('bgcolor'), str)
+    if (bgcolor != 'None'):
+      background_color['?'] = tuple(map(float, bgcolor.split()))
+    bgFcolor = qt_to_py(self.settings.value('bgFcolor'), str)
+    if (bgFcolor != 'None'):
+      background_color['F'] = tuple(map(float, bgFcolor.split()))
+    bgIcolor = qt_to_py(self.settings.value('bgIcolor'), str)
+    if (bgIcolor != 'None'):
+      background_color['I'] = tuple(map(float, bgIcolor.split()))
+    bg1color = qt_to_py(self.settings.value('bg1color'), str)
+    if (bg1color != 'None'):
+      background_color['1'] = tuple(map(float, bg1color.split()))
+    bg2color = qt_to_py(self.settings.value('bg2color'), str)
+    if (bg2color != 'None'):
+      background_color['2'] = tuple(map(float, bg2color.split()))
+    bg3color = qt_to_py(self.settings.value('bg3color'), str)
+    if (bg3color != 'None'):
+      background_color['3'] = tuple(map(float, bg3color.split()))
+    bgScolor = qt_to_py(self.settings.value('bgScolor'), str)
+    if (bgScolor != 'None'):
+      background_color['S'] = tuple(map(float, bgScolor.split()))
+    bgDcolor = qt_to_py(self.settings.value('bgDcolor'), str)
+    if (bgDcolor != 'None'):
+      background_color['D'] = tuple(map(float, bgDcolor.split()))
+    self.bgcolorbytype = qt_to_bool(self.settings.value('bgtype', 'true'))
     size = self.settings.value('size')
     if (size):
       try:
@@ -5114,6 +5197,23 @@ class MainWindow(QMainWindow):
         self._dens_cache = None
         self._dens_list = None
 
+  def config_bgcolor(self):
+    dialog = BGColorDialog(self)
+    dialog.exec_()
+
+  def set_bgcolors(self, dialog):
+    self.bgcolorbytype = dialog.typeBox.isChecked()
+    background_color['F'] = dialog.FColorButton.color.getRgbF()[0:3]
+    background_color['I'] = dialog.IColorButton.color.getRgbF()[0:3]
+    background_color['1'] = dialog.R1ColorButton.color.getRgbF()[0:3]
+    background_color['2'] = dialog.R2ColorButton.color.getRgbF()[0:3]
+    background_color['3'] = dialog.R3ColorButton.color.getRgbF()[0:3]
+    background_color['S'] = dialog.SColorButton.color.getRgbF()[0:3]
+    background_color['D'] = dialog.DColorButton.color.getRgbF()[0:3]
+    background_color['?'] = dialog.mainColorButton.color.getRgbF()[0:3]
+    dialog.accept()
+    self.typeButtonGroup_changed()
+
   def build_surface(self):
     if (self.xyz is None):
       return
@@ -5565,7 +5665,7 @@ class MainWindow(QMainWindow):
       else:
         orb['newtype'] = tp
       self.orbitalButton.setItemText(item, self.orb_to_list(self.orbital, orb))
-    self.ren.SetBackground(*background_color[tp])
+    self.ren.SetBackground(*background_color[tp if self.bgcolorbytype else '?'])
     self.vtk_update()
     self.set_panel()
 
@@ -6601,10 +6701,10 @@ class TextureDock(QDockWidget):
     self._interpolation = None
     self._representation = None
     self._size = None
-    self._negcolor = None
-    self._zerocolor = None
-    self._poscolor = None
-    self._specularcolor = None
+    self._negcolor = (0, 0, 0)
+    self._zerocolor = (0, 0, 0)
+    self._poscolor = (0, 0, 0)
+    self._specularcolor = (0, 0, 0)
     self.init_UI()
     self.pos = False
 
@@ -6656,13 +6756,13 @@ class TextureDock(QDockWidget):
     self.sizeBox = QSpinBox()
     self.sizeBox.setMinimum(0)
     self.colorsLabel = QLabel('Colors:')
-    self.negColorButton = QToolButton()
+    self.negColorButton = ColorButton(self._negcolor)
     self.negColorButton.setText(u'⊖')
-    self.zeroColorButton = QToolButton()
+    self.zeroColorButton = ColorButton(self._zerocolor)
     self.zeroColorButton.setText(u'⊗')
-    self.posColorButton = QToolButton()
+    self.posColorButton = ColorButton(self._poscolor)
     self.posColorButton.setText(u'⊕')
-    self.specColorButton = QToolButton()
+    self.specColorButton = ColorButton(self._specularcolor)
     self.specColorButton.setText(u'⊙')
     self.invertButton = QPushButton('Invert')
     self.presets2Label = QLabel('Presets:')
@@ -6762,15 +6862,6 @@ class TextureDock(QDockWidget):
     self.powerSlider.setRange(0, 1000)
     self.transparencySlider.setRange(0, 100)
     self.fresnelSlider.setRange(0, 200)
-
-    self.negColorButton.setAutoFillBackground(True)
-    self.negColorButton.setToolButtonStyle(Qt.ToolButtonTextOnly)
-    self.zeroColorButton.setAutoFillBackground(True)
-    self.zeroColorButton.setToolButtonStyle(Qt.ToolButtonTextOnly)
-    self.posColorButton.setAutoFillBackground(True)
-    self.posColorButton.setToolButtonStyle(Qt.ToolButtonTextOnly)
-    self.specColorButton.setAutoFillBackground(True)
-    self.specColorButton.setToolButtonStyle(Qt.ToolButtonTextOnly)
 
     self.ambientSlider.setToolTip('Amount of "ambient" illumination, independent of lighting')
     self.ambientSlider.setWhatsThis('This gives the amount of the surface color that will show up regardless of its orientation with respect to the light sources.')
@@ -6967,42 +7058,50 @@ class TextureDock(QDockWidget):
 
   @property
   def negcolor(self):
-    return self._negcolor
+    return self.negColorButton.color.getRgbF()[0:3]
 
   @negcolor.setter
   def negcolor(self, value):
     old = self._negcolor
     self._negcolor = value
+    if value != self.negcolor:
+      self.negColorButton.set_color(value)
     self.color_changed('neg', value, old)
 
   @property
   def zerocolor(self):
-    return self._zerocolor
+    return self.zeroColorButton.color.getRgbF()[0:3]
 
   @zerocolor.setter
   def zerocolor(self, value):
     old = self._zerocolor
     self._zerocolor = value
+    if value != self.zerocolor:
+      self.zeroColorButton.set_color(value)
     self.color_changed('zero', value, old)
 
   @property
   def poscolor(self):
-    return self._poscolor
+    return self.posColorButton.color.getRgbF()[0:3]
 
   @poscolor.setter
   def poscolor(self, value):
     old = self._poscolor
     self._poscolor = value
+    if value != self.poscolor:
+      self.posColorButton.set_color(value)
     self.color_changed('pos', value, old)
 
   @property
   def specularcolor(self):
-    return self._specularcolor
+    return self.specColorButton.color.getRgbF()[0:3]
 
   @specularcolor.setter
   def specularcolor(self, value):
     old = self._specularcolor
     self._specularcolor = value
+    if value != self.specularcolor:
+      self.specColorButton.set_color(value)
     self.color_changed('spec', value, old)
 
   def _ambient_changed(self, new, old):
@@ -7311,60 +7410,39 @@ class TextureDock(QDockWidget):
     self.parent().ready = ready
     self.parent().vtk_update()
 
-  def choose_color(self, which, _color=None):
-    color = QColor()
-    if (not _color):
-      if (which == 'neg'):
-        color.setRgbF(*self.negcolor)
-      elif (which == 'zero'):
-        color.setRgbF(*self.zerocolor)
-      elif (which == 'pos'):
-        color.setRgbF(*self.poscolor)
-      elif (which == 'spec'):
-        color.setRgbF(*self.specularcolor)
-      color = QColorDialog().getColor(color, self)
-    else:
-      color.setRgbF(*_color)
-    if (not color.isValid()):
-      return
-    pal = QPalette()
-    pal.setColor(QPalette.Button, color)
+  def choose_color(self, which):
     if (which == 'neg'):
-      self.negcolor = color.getRgbF()[0:3]
-      self.negColorButton.setPalette(pal)
+      self.negcolor = self.negcolor
     elif (which == 'zero'):
-      self.zerocolor = color.getRgbF()[0:3]
-      self.zeroColorButton.setPalette(pal)
+      self.zerocolor = self.zerocolor
     elif (which == 'pos'):
-      self.poscolor = color.getRgbF()[0:3]
-      self.posColorButton.setPalette(pal)
+      self.poscolor = self.poscolor
     elif (which == 'spec'):
-      self.specularcolor = color.getRgbF()[0:3]
-      self.specColorButton.setPalette(pal)
+      self.specularcolor = self.specularcolor
 
   def color_preset(self, preset):
     ready = self.parent().ready
     self.parent().ready = False
     if (preset == 'GBS'):
-      self.choose_color('neg',  (222/255, 119/255,  61/255))
-      self.choose_color('zero', (172/255, 189/255, 208/255))
-      self.choose_color('pos',  (204/255, 222/255,  61/255))
-      self.choose_color('spec', (172/255, 189/255, 208/255))
+      self.negcolor =      (222/255, 119/255,  61/255)
+      self.zerocolor =     (172/255, 189/255, 208/255)
+      self.poscolor =      (204/255, 222/255,  61/255)
+      self.specularcolor = (172/255, 189/255, 208/255)
     elif (preset == 'B&W'):
-      self.choose_color('neg',  ( 20/255,  20/255,  20/255))
-      self.choose_color('zero', (128/255, 128/255, 128/255))
-      self.choose_color('pos',  (235/255, 235/255, 235/255))
-      self.choose_color('spec', (255/255, 255/255, 255/255))
+      self.negcolor =      ( 20/255,  20/255,  20/255)
+      self.zerocolor =     (128/255, 128/255, 128/255)
+      self.poscolor =      (235/255, 235/255, 235/255)
+      self.specularcolor = (255/255, 255/255, 255/255)
     elif (preset == 'RGB'):
-      self.choose_color('neg',  (200/255,  60/255,  60/255))
-      self.choose_color('zero', ( 60/255, 200/255,  60/255))
-      self.choose_color('pos',  ( 60/255, 120/255, 200/255))
-      self.choose_color('spec', (200/255, 200/255, 200/255))
+      self.negcolor =      (200/255,  60/255,  60/255)
+      self.zerocolor =     ( 60/255, 200/255,  60/255)
+      self.poscolor =      ( 60/255, 120/255, 200/255)
+      self.specularcolor = (200/255, 200/255, 200/255)
     elif (preset == 'CMY'):
-      self.choose_color('neg',  (220/255,   0/255, 220/255))
-      self.choose_color('zero', (  0/255, 220/255, 220/255))
-      self.choose_color('pos',  (220/255, 220/255,   0/255))
-      self.choose_color('spec', (128/255, 220/255, 128/255))
+      self.negcolor =      (220/255,   0/255, 220/255)
+      self.zerocolor =     (  0/255, 220/255, 220/255)
+      self.poscolor =      (220/255, 220/255,   0/255)
+      self.specularcolor = (128/255, 220/255, 128/255)
     self.parent().ready = ready
     self.parent().vtk_update()
 
@@ -7372,8 +7450,8 @@ class TextureDock(QDockWidget):
     ready = self.parent().ready
     self.parent().ready = False
     negcolor = self.negcolor
-    self.choose_color('neg', self.poscolor)
-    self.choose_color('pos', negcolor)
+    self.negcolor = self.poscolor
+    self.poscolor = negcolor
     self.parent().ready = ready
     self.parent().vtk_update()
 
@@ -7384,6 +7462,123 @@ class TextureDock(QDockWidget):
   def closeEvent(self, *args):
     self.parent().textureButton.setChecked(False)
     super().closeEvent(*args)
+
+
+class BGColorDialog(QDialog):
+
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.init_UI()
+    self.toggle_type()
+
+  def init_UI(self):
+    self.setWindowTitle('Configure background color')
+    self.mainColorButton = ColorButton(background_color['?'])
+    self.mainLabel = QLabel('Main &background color:')
+    self.mainLabel.setBuddy(self.mainColorButton)
+    self.typeBox = QCheckBox('Color by &type:')
+    self.typeBox.setLayoutDirection(Qt.RightToLeft)
+    self.typeBox.setChecked(self.parent().bgcolorbytype)
+    self.FColorButton = ColorButton(background_color['F'])
+    self.FLabel = QLabel('&Frozen:')
+    self.FLabel.setBuddy(self.FColorButton)
+    self.IColorButton = ColorButton(background_color['I'])
+    self.ILabel = QLabel('&Inactive:')
+    self.ILabel.setBuddy(self.IColorButton)
+    self.R1ColorButton = ColorButton(background_color['1'])
+    self.R1Label = QLabel('RAS &1:')
+    self.R1Label.setBuddy(self.R1ColorButton)
+    self.R2ColorButton = ColorButton(background_color['2'])
+    self.R2Label = QLabel('RAS &2:')
+    self.R2Label.setBuddy(self.R2ColorButton)
+    self.R3ColorButton = ColorButton(background_color['3'])
+    self.R3Label = QLabel('RAS &3:')
+    self.R3Label.setBuddy(self.R3ColorButton)
+    self.SColorButton = ColorButton(background_color['S'])
+    self.SLabel = QLabel('&Secondary:')
+    self.SLabel.setBuddy(self.SColorButton)
+    self.DColorButton = ColorButton(background_color['D'])
+    self.DLabel = QLabel('&Deleted:')
+    self.DLabel.setBuddy(self.DColorButton)
+    bbox = QDialogButtonBox(QDialogButtonBox.RestoreDefaults | QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    self.presetButton = bbox.button(QDialogButtonBox.RestoreDefaults)
+    self.presetButton.setText('&Preset')
+    hbox1 = QHBoxLayout()
+    hbox1.addWidget(self.mainLabel)
+    hbox1.addStretch(1)
+    hbox1.addWidget(self.mainColorButton)
+    self.typeGroup = QGroupBox()
+    grid = QGridLayout()
+    grid.addWidget(self.typeBox,0,0,1,-1,Qt.AlignRight)
+    grid.addWidget(self.FLabel,1,0)
+    grid.addWidget(self.FColorButton,1,1)
+    grid.addWidget(self.ILabel,2,0)
+    grid.addWidget(self.IColorButton,2,1)
+    grid.addWidget(self.R1Label,3,0)
+    grid.addWidget(self.R1ColorButton,3,1)
+    grid.addWidget(self.R2Label,4,0)
+    grid.addWidget(self.R2ColorButton,4,1)
+    grid.addWidget(self.R3Label,5,0)
+    grid.addWidget(self.R3ColorButton,5,1)
+    grid.addWidget(self.SLabel,6,0)
+    grid.addWidget(self.SColorButton,6,1)
+    grid.addWidget(self.DLabel,7,0)
+    grid.addWidget(self.DColorButton,7,1)
+    self.typeGroup.setLayout(grid)
+    vbox = QVBoxLayout()
+    vbox.addLayout(hbox1)
+    vbox.addWidget(self.typeGroup)
+    vbox.addStretch(1)
+    vbox.addWidget(bbox)
+    self.setLayout(vbox)
+    self.setMinimumWidth(350)
+
+    self.mainColorButton.setToolTip('Default background color')
+    self.mainColorButton.setWhatsThis('Choose background color for densities, orbitals of uknown/mixed type, or if color by type is disabled')
+    self.typeBox.setToolTip('Use different background color based on the orbital type')
+    self.typeBox.setWhatsThis('Enable or disable different background color based on the orbital type')
+    self.FColorButton.setToolTip('Background color for frozen orbitals')
+    self.FColorButton.setWhatsThis('Choose background color when displaying frozen orbitals (if color by type is enabled)')
+    self.IColorButton.setToolTip('Background color for inactive orbitals')
+    self.IColorButton.setWhatsThis('Choose background color when displaying inactive orbitals (if color by type is enabled)')
+    self.R1ColorButton.setToolTip('Background color for RAS 1 orbitals')
+    self.R1ColorButton.setWhatsThis('Choose background color when displaying RAS 1 orbitals (if color by type is enabled)')
+    self.R2ColorButton.setToolTip('Background color for RAS 2 orbitals')
+    self.R2ColorButton.setWhatsThis('Choose background color when displaying RAS 2 orbitals (if color by type is enabled)')
+    self.R3ColorButton.setToolTip('Background color for RAS 3 orbitals')
+    self.R3ColorButton.setWhatsThis('Choose background color when displaying RAS 3 orbitals (if color by type is enabled)')
+    self.SColorButton.setToolTip('Background color for secondary orbitals')
+    self.SColorButton.setWhatsThis('Choose background color when displaying secondary orbitals (if color by type is enabled)')
+    self.DColorButton.setToolTip('Background color for deleted orbitals')
+    self.DColorButton.setWhatsThis('Choose background color when displaying deleted orbitals (if color by type is enabled)')
+    self.presetButton.setToolTip('Restore preset colors')
+    self.presetButton.setWhatsThis('Restore the preset background colors')
+
+    bbox.accepted.connect(partial(self.parent().set_bgcolors, self))
+    bbox.rejected.connect(self.close)
+    self.typeBox.toggled.connect(self.toggle_type)
+    self.presetButton.clicked.connect(self.set_defaults)
+
+  def toggle_type(self):
+    enabled = self.typeBox.isChecked()
+    self.FColorButton.setEnabled(enabled)
+    self.IColorButton.setEnabled(enabled)
+    self.R1ColorButton.setEnabled(enabled)
+    self.R2ColorButton.setEnabled(enabled)
+    self.R3ColorButton.setEnabled(enabled)
+    self.SColorButton.setEnabled(enabled)
+    self.DColorButton.setEnabled(enabled)
+
+  def set_defaults(self):
+    self.mainColorButton.set_color(def_background_color['?'])
+    self.FColorButton.set_color(def_background_color['F'])
+    self.IColorButton.set_color(def_background_color['I'])
+    self.R1ColorButton.set_color(def_background_color['1'])
+    self.R2ColorButton.set_color(def_background_color['2'])
+    self.R3ColorButton.set_color(def_background_color['3'])
+    self.SColorButton.set_color(def_background_color['S'])
+    self.DColorButton.set_color(def_background_color['D'])
+
 
 app = QApplication(sys.argv)
 win = MainWindow()

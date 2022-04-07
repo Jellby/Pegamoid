@@ -1,3 +1,11 @@
+**2.6.2** (2022-04-07)
+
+New feature:
+* Allow choosing the background color and toggling the color-by-type feature
+
+Workaround:
+* Allow re-enabling the options panel if for some reason/bug it gets closed
+
 **2.6.1** (2020-10-21)
 
 Bug fix:
