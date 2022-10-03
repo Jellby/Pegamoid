@@ -1,3 +1,8 @@
+**2.6.3** (2022-10-03)
+
+Bug fix:
+* Fit grid button location
+
 **2.6.2** (2022-04-07)
 
 New feature:

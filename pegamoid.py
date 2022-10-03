@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 from __future__ import division, absolute_import, print_function
@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022'
 __license__ = 'GPL v3.0'
-__version__ = '2.6.2'
+__version__ = '2.6.3'
 
 import sys
 try:
@@ -2584,7 +2584,7 @@ class LineEditWithButton(QLineEdit):
   def resizeEvent(self, event):
     sz = self.button.sizeHint()
     frameWidth = self.style().pixelMetric(QStyle.PM_DefaultFrameWidth)
-    self.button.move(self.rect().right() - frameWidth - sz.width(), (self.rect().bottom() + 1 - sz.height())/2)
+    self.button.move(self.rect().right() - frameWidth - sz.width(), (self.rect().bottom() + 1 - sz.height())//2)
   def setButton(self, text):
     self.button.setText(text)
     self.button.setVisible(bool(text))
