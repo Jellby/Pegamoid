@@ -1,3 +1,8 @@
+**2.6.4** (2022-11-01)
+
+Bug fix:
+* Reading cube files with no linebreaks in the inner loop
+
 **2.6.3** (2022-10-03)
 
 Bug fix:

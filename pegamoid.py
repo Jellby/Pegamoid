@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022'
 __license__ = 'GPL v3.0'
-__version__ = '2.6.3'
+__version__ = '2.6.4'
 
 import sys
 try:
@@ -1955,8 +1955,8 @@ class Grid(object):
         self.MO = [{'label':title, 'ene':0.0, 'occup':0.0, 'type':'?', 'sym':'z'}]
       self.MO_a = []
       self.MO_b = []
-      # Number of lines occupied by each "record" (ngridz * nMO)
-      self.lrec = int(np.ceil(float(self.nMO)*self.ngrid[2]/6))
+      # Number of values in the innermost loop (ngridz * nMO)
+      self.lrec = self.nMO*self.ngrid[2]
       # Save the position after the header
       self.head = f.tell()
 
@@ -2109,19 +2109,19 @@ class Grid(object):
   # Read and return precomputed MO values
   def mo(self, n, x, y, z, spin=None, cache=None, callback=None, interrupt=False):
     if (self.type == 'cube'):
-      # In Cube format, the nesting is x:y:z:MO, with
-      # wrapped lines and forced newlines every lrec values
+      # In Cube format, the nesting is x:y:z:MO
       vol = np.empty(tuple(self.ngrid))
       with open(self.file, 'rb') as f:
         f.seek(self.head)
+        data = []
         for i in range(self.ngrid[0]):
           for j in range(self.ngrid[1]):
-            data = b''
-            for k in range(self.lrec):
+            while len(data) < self.lrec:
               if (interrupt):
                 return vol
-              data += f.readline()
-            vol[i,j,:] = [fortran_float(k) for k in data.split()[n::self.nMO]]
+              data.extend(f.readline().split())
+            vol[i,j,:] = [fortran_float(k) for k in data[n:self.lrec:self.nMO]]
+            data = data[self.lrec:]
     elif (self.type == 'grid'):
       # In Grid format, the nesting is MO:x:y:z, but divided in
       # blocks of length bsize
