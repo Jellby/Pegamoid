@@ -1128,6 +1128,7 @@ class Orbitals(object):
     # Each orbital is a header with properties and a list of coefficients
     with open(self.file, 'r') as f:
       f.seek(self.head)
+      next_line = None
       while (True):
         sym = '?'
         ene = 0.0
@@ -1135,8 +1136,11 @@ class Orbitals(object):
         occ = 0.0
         try:
           while(True):
-            save_cff = f.tell()
-            line = f.readline().split()
+            if next_line:
+              line = next_line
+              next_line = None
+            else:
+              line = f.readline().split()
             tag = line[0].lower()
             if (tag == 'sym='):
               sym = re.sub(r'^\d*', '', line[1])
@@ -1150,12 +1154,21 @@ class Orbitals(object):
             elif (tag == 'occup='):
               occ = fortran_float(line[1])
             else:
-              f.seek(save_cff)
+              next_line = line
               break
           cff = np.zeros(sum(self.N_bas))
           for i in range(sum(self.N_bas)):
-            n, c = f.readline().split()
-            cff[int(n)-1] = fortran_float(c)
+            try:
+              if next_line:
+                line = next_line
+                next_line = None
+              else:
+                line = f.readline().split()
+              n, c = line
+              cff[int(n)-1] = fortran_float(c)
+            except ValueError:
+              next_line = line
+              break
           # Save the orbital as alpha or beta
           if (spn == 'b'):
             self.MO_b.append({'ene':ene, 'occup':occ, 'sym':sym, 'type':'?', 'coeff':self.fact*cff})
