@@ -1,3 +1,9 @@
+**2.7** (2023-02-02)
+
+Bug fixes:
+* Support numpy 1.24 (remove deprecated aliases)
+* Reading molden files with omitted (zero) MO coefficients
+
 **2.6.4** (2022-11-01)
 
 Bug fix:
