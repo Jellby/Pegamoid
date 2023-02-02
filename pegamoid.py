@@ -6,7 +6,7 @@ from builtins import bytes, dict, int, range, super
 
 __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
-__copyright__ = u'Copyright © 2018–2020,2022'
+__copyright__ = u'Copyright © 2018–2020,2022–2023'
 __license__ = 'GPL v3.0'
 __version__ = '2.6.4'
 
@@ -213,7 +213,7 @@ class Orbitals(object):
     self.inporb = None
     self.file = orbfile
     self.type = ftype
-    self.eps = np.finfo(np.float).eps
+    self.eps = np.finfo(float).eps
     self.wf = 'SCF'
     if (self.type == 'hdf5'):
       self.inporb = 'gen'
@@ -248,7 +248,7 @@ class Orbitals(object):
         except KeyError:
           charges = f['CENTER_CHARGES'][:]
         coords = f['CENTER_COORDINATES'][:]
-      charges = charges.astype(np.int).clip(0, maxZ)
+      charges = charges.astype(int).clip(0, maxZ)
       self.centers = [{'name':str(l.decode('ascii')).strip(), 'Z':q, 'xyz':x} for l,q,x in zip(labels, charges, coords)]
       self.geomcenter = (np.amin(coords, axis=0) + np.amax(coords, axis=0))/2
       # Then read the primitives and assign them to the centers
@@ -3222,7 +3222,7 @@ class MainWindow(QMainWindow):
     self.spinButton.setToolTip('Select spin for the orbital list')
     self.spinButton.setWhatsThis('Select alpha or beta orbitals. This list is only visible if the file contains spin-orbitals.<br>Keys: <b>A</b>, <b>B</b>')
     self.sortedBox.setToolTip('Sort orbitals by energy & occupation')
-    self.sortedBox.setWhatsThis('Sort the list of orbitals according the the energy and occupation values. The index still refers to the original order.<br>Key: <b>Shift+S</b>')
+    self.sortedBox.setWhatsThis('Sort the list of orbitals according to the energy and occupation values. The index still refers to the original order.<br>Key: <b>Shift+S</b>')
     self.listButton.setToolTip('Show/hide full list of orbitals')
     self.listButton.setWhatsThis('Open or close a window showing the list of all orbitals (no restrictions), where custom notes can be added.<br>Key: <b>Shift+L</b>')
     activeFrame.setWhatsThis('RAS1, RAS2 and RAS3 orbitals count as "active"')
@@ -3619,7 +3619,7 @@ class MainWindow(QMainWindow):
     self.lut.SetTableValue(0, *self.textureDock.negcolor)
     self.lut.SetTableValue(1, *self.textureDock.zerocolor)
     self.lut.SetTableValue(2, *self.textureDock.poscolor)
-    self.lut.SetTableRange(-np.finfo(np.float).eps, np.finfo(np.float).eps)
+    self.lut.SetTableRange(-np.finfo(float).eps, np.finfo(float).eps)
     self.lut.SetNanColor(1, 1, 1, 1)
 
     # lighting
