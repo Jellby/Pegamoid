@@ -1,7 +1,8 @@
 **2.8** (2023-??-??)
 
-Bug fix:
+Bug fixes:
 * Reading InpOrb files with fewer orbitals than basis functions
+* Do not return an error when Cancelling save dialogs
 
 **2.7** (2023-02-02)
 

@@ -2668,12 +2668,12 @@ class TakeScreenshot(QDialog):
 
   def select_file(self):
     result = QFileDialog.getSaveFileName(self, 'Save image')
-    if (not result):
-      return
     try:
       filename, _ = result
     except ValueError:
       filename = result
+    if (not filename):
+      return
     self.fileBox.setText(filename)
 
   def save_screenshot(self):
@@ -5922,12 +5922,12 @@ class MainWindow(QMainWindow):
     if (self.orbitals.type != 'hdf5'):
       return
     result = QFileDialog.getSaveFileName(self, 'Save HDF5')
-    if (not result):
-      return
     try:
       filename, _ = result
     except ValueError:
       filename = result
+    if (not filename):
+      return
     self._write_hdf5(filename)
 
   def _write_hdf5(self, filename):
@@ -5947,12 +5947,12 @@ class MainWindow(QMainWindow):
     if (not self.haveInpOrb):
       return
     result = QFileDialog.getSaveFileName(self, 'Save InpOrb')
-    if (not result):
-      return
     try:
       filename, _ = result
     except ValueError:
       filename = result
+    if (not filename):
+      return
     self._write_inporb(filename)
 
   def _write_inporb(self, filename):
@@ -5970,12 +5970,12 @@ class MainWindow(QMainWindow):
     if (self.surface is None):
       return
     result = QFileDialog.getSaveFileName(self, 'Save cube')
-    if (not result):
-      return
     try:
       filename, _ = result
     except ValueError:
       filename = result
+    if (not filename):
+      return
     try:
       data = self.xyz.GetInput()
       ngrid = data.GetDimensions()
