@@ -1,3 +1,8 @@
+**2.8** (2023-??-??)
+
+Bug fix:
+* Reading InpOrb files with fewer orbitals than basis functions
+
 **2.7** (2023-02-02)
 
 Bug fixes:
