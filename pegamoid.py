@@ -1204,15 +1204,17 @@ class Orbitals(object):
       uhf, nsym, _ = (int(i) for i in f.readline().split())
       N_bas = np.array([int(i) for i in f.readline().split()])
       nMO = np.array([int(i) for i in f.readline().split()])
-      if (not np.array_equal(N_bas, self.N_bas)) or (any(nMO > self.N_bas)):
+      if (not np.array_equal(N_bas, self.N_bas)):
         return 'Incompatible InpOrb data'
-      # Decide whether or not beta orbitals will be read
+      # Clear orbitals and decide whether or not beta orbitals will be read
+      self.MO = [{} for i in range(sum(nMO))]
       if (uhf):
         self.MO_b = deepcopy(self.MO)
       else:
         self.MO_a = []
         self.MO_b = []
       ii = [sum(self.N_bas[:i]) for i in range(len(self.N_bas))]
+      jj = [sum(nMO[:i]) for i in range(len(nMO))]
       # Read until EOF
       while (line != ''):
         # Find next section
@@ -1223,9 +1225,8 @@ class Orbitals(object):
         if (line.startswith('#ORB')):
           sections['ORB'] = True
           line = '\n'
-          for i,b,n,s in zip(ii, self.N_bas, nMO, self.irrep):
-            for orb in self.MO[i:i+n]:
-              orb['hide'] = False
+          for i,j,b,n,s in zip(ii, jj, self.N_bas, nMO, self.irrep):
+            for orb in self.MO[j:j+n]:
               orb['sym'] = s
               orb['coeff'] = np.zeros(sum(self.N_bas))
               cff = []
@@ -1237,17 +1238,12 @@ class Orbitals(object):
                 else:
                   cff.extend(line.split())
               orb['coeff'][i:i+b] = [fortran_float(c) for c in cff]
-            for orb in self.MO[i+n:i+b]:
-              orb['hide'] = True
-              orb['sym'] = '0'
-              orb['coeff'][i:i+b] = 0.0
         elif (line.startswith('#UORB')):
           sections['UORB'] = True
           line = '\n'
           if (uhf):
-            for i,b,n,s in zip(ii, self.N_bas, nMO, self.irrep):
-              for orb in self.MO_b[i:i+b]:
-                orb['hide'] = False
+            for i,j,b,n,s in zip(ii, jj, self.N_bas, nMO, self.irrep):
+              for orb in self.MO_b[j:j+b]:
                 orb['sym'] = s
                 orb['coeff'] = np.zeros(sum(self.N_bas))
                 cff = []
@@ -1259,74 +1255,65 @@ class Orbitals(object):
                   else:
                     cff.extend(line.split())
                 orb['coeff'][i:i+b] = [fortran_float(c) for c in cff]
-              for orb in self.MO_b[i+n:i+b]:
-                orb['hide'] = True
-                orb['sym'] = '0'
-                orb['coeff'][i:i+b] = 0.0
         # Read the occupations
         elif (line.startswith('#OCC')):
           sections['OCC'] = True
           line = '\n'
           f.readline()
           occ = []
-          for i,b,n in zip(ii, self.N_bas, nMO):
+          for i,b,n in zip(jj, self.N_bas, nMO):
             while (len(occ) < i+n):
               line = f.readline()
               if (re.search(r'\.[^ ]*\.', line)):
                 occ.extend(fortrannums.findall(line))
               else:
                 occ.extend(line.split())
-            occ.extend(['0']*(b-n))
         elif (line.startswith('#UOCC')):
           sections['UOCC'] = True
           line = '\n'
           if (uhf):
             f.readline()
-            for i,b,n in zip(ii, self.N_bas, nMO):
+            for i,b,n in zip(jj, self.N_bas, nMO):
               while (len(occ) < len(self.MO)+i+n):
                 line = f.readline()
                 if (re.search(r'\.[^ ]*\.', line)):
                   occ.extend(fortrannums.findall(line))
                 else:
                   occ.extend(line.split())
-              occ.extend(['0']*(b-n))
         # Read the energies
         elif (line.startswith('#ONE')):
           sections['ONE'] = True
           line = '\n'
           f.readline()
           ene = []
-          for i,b,n in zip(ii, self.N_bas, nMO):
+          for i,b,n in zip(jj, self.N_bas, nMO):
             while (len(ene) < i+n):
               line = f.readline()
               if (re.search(r'\.[^ ]*\.', line)):
                 ene.extend(fortrannums.findall(line))
               else:
                 ene.extend(line.split())
-            ene.extend(['0']*(b-n))
         elif (line.startswith('#UONE')):
           sections['UONE'] = True
           line = '\n'
           if (uhf):
             f.readline()
-            for i,b,n in zip(ii, self.N_bas, nMO):
+            for i,b,n in zip(jj, self.N_bas, nMO):
               while (len(ene) < len(self.MO)+i+n):
                 line = f.readline()
                 if (re.search(r'\.[^ ]*\.', line)):
                   ene.extend(fortrannums.findall(line))
                 else:
                   ene.extend(line.split())
-              ene.extend(['0']*(b-n))
         # Read the orbital types (same for alpha and beta)
         elif (line.startswith('#INDEX')):
           sections['INDEX'] = True
           line = '\n'
           idx = ''
-          for i,b,n in zip(ii, self.N_bas, nMO):
+          for i,b,n in zip(jj, self.N_bas, nMO):
             line = f.readline()
             while (len(idx) < i+n):
               idx += f.readline().split()[1]
-            idx += '?'*(b-n)
           for i,o in enumerate(self.MO):
             o['type'] = idx[i].upper()
             o.pop('newtype', None)
