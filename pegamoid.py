@@ -5366,6 +5366,8 @@ class MainWindow(QMainWindow):
       b.AddScalarArrayName('Values')
       b.SetFunction('abs(Values)')
       b.SetResultArrayName('Values')
+      b.ReplaceInvalidValuesOn()
+      b.SetReplacementValue(0.0)
       sl = vtk.vtkStreamTracer()
       sl.SetInputConnection(b.GetOutputPort())
       sl.SetIntegratorTypeToRungeKutta45()
