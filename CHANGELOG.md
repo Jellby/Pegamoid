@@ -1,8 +1,11 @@
-**2.8** (2023-??-??)
+**2.8** (2023-06-29)
+
+New feature:
+* Support loading desymmetrized InpOrb files (e.g. SO NTOs), on top of HDF5 files with symmetry
 
 Bug fixes:
 * Reading InpOrb files with fewer orbitals than basis functions
-* Do not return an error when Cancelling save dialogs
+* Do not return an error when cancelling save dialogs
 
 **2.7** (2023-02-02)
 

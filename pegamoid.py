@@ -1204,8 +1204,15 @@ class Orbitals(object):
       uhf, nsym, _ = (int(i) for i in f.readline().split())
       N_bas = np.array([int(i) for i in f.readline().split()])
       nMO = np.array([int(i) for i in f.readline().split()])
+      irrep = self.irrep
+      desymmetrized = False
       if (not np.array_equal(N_bas, self.N_bas)):
-        return 'Incompatible InpOrb data'
+        # Allow files with desymmetrized orbitals (e.g. NTOrb.SO)
+        if ((len(N_bas) == 1) and (N_bas[0] == sum(self.N_bas))):
+          desymmetrized = True
+          irrep = ['?']
+        else:
+          return 'Incompatible InpOrb data'
       # Clear orbitals and decide whether or not beta orbitals will be read
       self.MO = [{} for i in range(sum(nMO))]
       if (uhf):
@@ -1213,7 +1220,7 @@ class Orbitals(object):
       else:
         self.MO_a = []
         self.MO_b = []
-      ii = [sum(self.N_bas[:i]) for i in range(len(self.N_bas))]
+      ii = [sum(N_bas[:i]) for i in range(len(N_bas))]
       jj = [sum(nMO[:i]) for i in range(len(nMO))]
       # Read until EOF
       while (line != ''):
@@ -1225,10 +1232,10 @@ class Orbitals(object):
         if (line.startswith('#ORB')):
           sections['ORB'] = True
           line = '\n'
-          for i,j,b,n,s in zip(ii, jj, self.N_bas, nMO, self.irrep):
+          for i,j,b,n,s in zip(ii, jj, N_bas, nMO, irrep):
             for orb in self.MO[j:j+n]:
               orb['sym'] = s
-              orb['coeff'] = np.zeros(sum(self.N_bas))
+              orb['coeff'] = np.zeros(sum(N_bas))
               cff = []
               f.readline()
               while (len(cff) < b):
@@ -1242,10 +1249,10 @@ class Orbitals(object):
           sections['UORB'] = True
           line = '\n'
           if (uhf):
-            for i,j,b,n,s in zip(ii, jj, self.N_bas, nMO, self.irrep):
+            for i,j,b,n,s in zip(ii, jj, N_bas, nMO, irrep):
               for orb in self.MO_b[j:j+b]:
                 orb['sym'] = s
-                orb['coeff'] = np.zeros(sum(self.N_bas))
+                orb['coeff'] = np.zeros(sum(N_bas))
                 cff = []
                 f.readline()
                 while (len(cff) < b):
@@ -1261,7 +1268,7 @@ class Orbitals(object):
           line = '\n'
           f.readline()
           occ = []
-          for i,b,n in zip(jj, self.N_bas, nMO):
+          for i,b,n in zip(jj, N_bas, nMO):
             while (len(occ) < i+n):
               line = f.readline()
               if (re.search(r'\.[^ ]*\.', line)):
@@ -1273,7 +1280,7 @@ class Orbitals(object):
           line = '\n'
           if (uhf):
             f.readline()
-            for i,b,n in zip(jj, self.N_bas, nMO):
+            for i,b,n in zip(jj, N_bas, nMO):
               while (len(occ) < len(self.MO)+i+n):
                 line = f.readline()
                 if (re.search(r'\.[^ ]*\.', line)):
@@ -1286,7 +1293,7 @@ class Orbitals(object):
           line = '\n'
           f.readline()
           ene = []
-          for i,b,n in zip(jj, self.N_bas, nMO):
+          for i,b,n in zip(jj, N_bas, nMO):
             while (len(ene) < i+n):
               line = f.readline()
               if (re.search(r'\.[^ ]*\.', line)):
@@ -1298,7 +1305,7 @@ class Orbitals(object):
           line = '\n'
           if (uhf):
             f.readline()
-            for i,b,n in zip(jj, self.N_bas, nMO):
+            for i,b,n in zip(jj, N_bas, nMO):
               while (len(ene) < len(self.MO)+i+n):
                 line = f.readline()
                 if (re.search(r'\.[^ ]*\.', line)):
@@ -1310,7 +1317,7 @@ class Orbitals(object):
           sections['INDEX'] = True
           line = '\n'
           idx = ''
-          for i,b,n in zip(jj, self.N_bas, nMO):
+          for i,b,n in zip(jj, N_bas, nMO):
             line = f.readline()
             while (len(idx) < i+n):
               idx += f.readline().split()[1]
@@ -1326,7 +1333,7 @@ class Orbitals(object):
       if (sections.get('ORB')):
         if (uhf and (not sections.get('UORB'))):
           return 'No UORB section'
-        if (len(self.N_bas) > 1):
+        if (len(N_bas) > 1):
           for orb in self.MO + self.MO_b:
             orb['coeff'] = np.dot(self.mat, orb['coeff'])
       else:
