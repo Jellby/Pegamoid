@@ -1,3 +1,8 @@
+**2.8.1** (2023-08-30)
+
+Bug fix:
+* QApplication.desktop is removed in Qt 6
+
 **2.8** (2023-06-29)
 
 New feature:

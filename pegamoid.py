@@ -8,13 +8,13 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022–2023'
 __license__ = 'GPL v3.0'
-__version__ = '2.8'
+__version__ = '2.8.1'
 
 import sys
 try:
   from qtpy.QtCore import Qt, QObject, QThread, QEvent, QSettings
   from qtpy.QtWidgets import *
-  from qtpy.QtGui import QPixmap, QIcon, QKeySequence, QColor, QPalette
+  from qtpy.QtGui import QPixmap, QIcon, QKeySequence, QColor, QPalette, QScreen, QCursor
   import qtpy
   v = qtpy.PYQT_VERSION
   if (v is None):
@@ -27,7 +27,7 @@ except:
   try:
     from PyQt5.QtCore import Qt, QObject, QThread, QEvent, QSettings, PYQT_VERSION_STR, QT_VERSION_STR
     from PyQt5.QtWidgets import *
-    from PyQt5.QtGui import QPixmap, QIcon, QKeySequence, QColor, QPalette
+    from PyQt5.QtGui import QPixmap, QIcon, QKeySequence, QColor, QPalette, QScreen, QCursor
     QtVersion = 'PyQt5 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
   except ImportError:
     try:
@@ -2910,8 +2910,13 @@ class MainWindow(QMainWindow):
     self.settings = QSettings('Pegamoid', 'Pegamoid')
     self.restore_settings()
 
-    screen = QApplication.desktop().screenNumber(QApplication.desktop().cursor().pos())
-    self.setGeometry(QStyle.alignedRect(Qt.LeftToRight, Qt.AlignCenter, self.size(), QApplication.desktop().availableGeometry(screen)))
+    # QApplication.desktop is deprecated/removed
+    try:
+      screen = QApplication.desktop().screenNumber(QApplication.desktop().cursor().pos())
+      self.setGeometry(QStyle.alignedRect(Qt.LeftToRight, Qt.AlignCenter, self.size(), QApplication.desktop().availableGeometry(screen)))
+    except AttributeError:
+      screen = QApplication.primaryScreen().virtualSiblingAt(QCursor.pos())
+      self.setGeometry(QStyle.alignedRect(Qt.LeftToRight, Qt.AlignCenter, self.size(), screen.availableGeometry()))
 
     self.vtkWidget.setFocus()
     self.show()
