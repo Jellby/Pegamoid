@@ -1,3 +1,9 @@
+**2.8.2** (2023-08-31)
+
+Bug fixes:
+* Correct detection of TDMs, no crash with 2 roots
+* Deletion of density cache
+
 **2.8.1** (2023-08-30)
 
 Bug fix:

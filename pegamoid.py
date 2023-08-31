@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022–2023'
 __license__ = 'GPL v3.0'
-__version__ = '2.8.1'
+__version__ = '2.8.2'
 
 import sys
 try:
@@ -527,7 +527,7 @@ class Orbitals(object):
             tsdm = np.zeros(n*(n-1)//2)
           for i in range(n):
             for j in range(i):
-              m = j*(j-1)//2+i
+              m = i*(i-1)//2+j
               if ((not np.allclose(tdm[m], 0)) or (not np.allclose(tsdm[m], 0))):
                 self.have_tdm[i,j] = True
                 self.have_tdm[j,i] = True
@@ -5085,7 +5085,7 @@ class MainWindow(QMainWindow):
     if (self._cache_file is not None):
       del self._cache_file
       self._cache_file = None
-    if (self._cache_file is not None):
+    if (self._dens_cache is not None):
       del self._dens_cache
       self._dens_cache = None
       self._dens_list = None

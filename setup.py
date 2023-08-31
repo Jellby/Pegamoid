@@ -9,7 +9,7 @@ with open("README.md", "r") as f:
     long_description = re.sub('Screenshots\n-*\n*(<.*> *\n*)*', '', f.read())
 
 setup(name='Pegamoid',
-      version='2.8.1',
+      version='2.8.2',
       description='Orbital viewer for OpenMolcas',
       author=u'Ignacio Fdez. Galván',
       author_email='jellby@yahoo.com',
