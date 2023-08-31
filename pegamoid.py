@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022–2023'
 __license__ = 'GPL v3.0'
-__version__ = '2.8.2'
+__version__ = '2.8.3'
 
 import sys
 try:
@@ -5083,10 +5083,16 @@ class MainWindow(QMainWindow):
   def update_cache(self, ngrid):
     self.scratchsize['rec'] = None
     if (self._cache_file is not None):
+      filename = self._cache_file.filename
+      self._cache_file._mmap.close()
       del self._cache_file
+      os.remove(filename)
       self._cache_file = None
     if (self._dens_cache is not None):
+      filename = self._dens_cache.filename
+      self._dens_cache._mmap.close()
       del self._dens_cache
+      os.remove(filename)
       self._dens_cache = None
       self._dens_list = None
     if (self.orbitals is None):

@@ -1,3 +1,8 @@
+**2.8.3** (2023-08-31)
+
+Bug fix:
+* Deletion of cache files (caused issues on Windows)
+
 **2.8.2** (2023-08-31)
 
 Bug fixes:
