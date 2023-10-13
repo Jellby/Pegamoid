@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022–2023'
 __license__ = 'GPL v3.0'
-__version__ = '2.8.3'
+__version__ = '2.8.4'
 
 import sys
 try:
@@ -1141,17 +1141,19 @@ class Orbitals(object):
               next_line = None
             else:
               line = f.readline().split()
+            if '=' in line[0]:
+              line = [x.strip() for x in (''.join(line)).split('=')]
             tag = line[0].lower()
-            if (tag == 'sym='):
+            if (tag == 'sym'):
               sym = re.sub(r'^\d*', '', line[1])
-            elif (tag == 'ene='):
+            elif (tag == 'ene'):
               try:
                 ene = fortran_float(line[1])
               except ValueError:
                 ene = np.nan
-            elif (tag == 'spin='):
+            elif (tag == 'spin'):
               spn = 'b' if (line[1] == 'Beta') else 'a'
-            elif (tag == 'occup='):
+            elif (tag == 'occup'):
               occ = fortran_float(line[1])
             else:
               next_line = line

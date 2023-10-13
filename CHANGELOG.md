@@ -1,3 +1,8 @@
+**2.8.4** (2023-10-13)
+
+Bug fix:
+* Reading Molden files without space after "=" signs
+
 **2.8.3** (2023-08-31)
 
 Bug fix:
@@ -27,7 +32,7 @@ Bug fixes:
 
 Bug fixes:
 * Support numpy 1.24 (remove deprecated aliases)
-* Reading molden files with omitted (zero) MO coefficients
+* Reading Molden files with omitted (zero) MO coefficients
 
 **2.6.4** (2022-11-01)
 
