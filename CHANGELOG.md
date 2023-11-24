@@ -1,3 +1,8 @@
+**2.9** (2023-11-24)
+
+Feature change:
+* Orbital sorting is done based on occupation first
+
 **2.8.4** (2023-10-13)
 
 Bug fix:

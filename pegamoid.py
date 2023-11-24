@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022–2023'
 __license__ = 'GPL v3.0'
-__version__ = '2.8.4'
+__version__ = '2.9'
 
 import sys
 try:
@@ -2321,6 +2321,13 @@ def list_pad(a, n, item=None):
 
 #===============================================================================
 
+# Snap occupation numbers close to an integer (for sorting purposes)
+def snap(x):
+  f, _ = np.modf(x)
+  return x if np.abs(f) > 1e-6 else np.rint(x)
+
+#===============================================================================
+
 # Convert a Fortran-formatted number to float
 # replace d/D with e, add e if missing
 fortfixexp = re.compile(r'([\d.])[dD]?(((?<=[dD])[+-]?|[+-])\d)')
@@ -2543,7 +2550,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>Shift+PgUp</b>/<b>Shift+PgDown</b>: Switch to previous/next root</p>
                    <p><b>Ctrl+PgUp</b>/<b>Ctrl+PgDown</b>: Switch to previous/next irrep</p>
                    <p><b>A</b>/<b>B</b>/<b>E</b>: Switch to alpha/hole, beta/particle or natural orbitals, respectively</p>
-                   <p><b>Shift+S</b>: Toggle sorting of orbital list by energy &amp; occupation</p>
+                   <p><b>Shift+S</b>: Toggle sorting of orbital list by occupation &amp; energy</p>
                    <p><b>Ctrl+L</b>: Show/hide full list of orbitals</p>
                    <p><b>F</b>: Change orbital type to frozen</p>
                    <p><b>I</b>: Change orbital type to inactive</p>
@@ -3246,8 +3253,8 @@ class MainWindow(QMainWindow):
     self.orbitalButton.setWhatsThis('This shows all the orbitals available in the file, belonging to the selected irrep and spin if applicable. If no irrep is selected ("All") and if the file is not a precomputed grid, the electron density, the spin density and the Laplacian of the electron density may also be available. Selecting an orbital displays it in the 3D view above.<br>Keys: <b>PgUp</b>, <b>PgDown</b>')
     self.spinButton.setToolTip('Select spin for the orbital list')
     self.spinButton.setWhatsThis('Select alpha or beta orbitals. This list is only visible if the file contains spin-orbitals.<br>Keys: <b>A</b>, <b>B</b>')
-    self.sortedBox.setToolTip('Sort orbitals by energy & occupation')
-    self.sortedBox.setWhatsThis('Sort the list of orbitals according to the energy and occupation values. The index still refers to the original order.<br>Key: <b>Shift+S</b>')
+    self.sortedBox.setToolTip('Sort orbitals by occupation & energy')
+    self.sortedBox.setWhatsThis('Sort the list of orbitals according to the occupation and energy values. The index still refers to the original order.<br>Key: <b>Shift+S</b>')
     self.listButton.setToolTip('Show/hide full list of orbitals')
     self.listButton.setWhatsThis('Open or close a window showing the list of all orbitals (no restrictions), where custom notes can be added.<br>Key: <b>Shift+L</b>')
     activeFrame.setWhatsThis('RAS1, RAS2 and RAS3 orbitals count as "active"')
@@ -4695,7 +4702,7 @@ class MainWindow(QMainWindow):
       return
     if (self.irrep == 'All'):
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if (not o.get('hide'))}
-      orbidx = {i+1:[-np.inf if np.isnan(o['ene']) else o['ene'], np.copysign(1, o['occup']), -o['occup']]
+      orbidx = {i+1:[-snap(o['occup']), -np.inf if np.isnan(o['ene']) else o['ene'], np.copysign(1, o['occup'])]
                      for i,o in enumerate(self.MO) if (not o.get('hide'))}
       if ((not self.isGrid) and any([(o['occup'] != 0.0) for o in self.MO])):
         is_it_spin = (self.dens == 'State') and any([(o['occup'] < -1e-4) for o in self.MO])
@@ -4722,7 +4729,7 @@ class MainWindow(QMainWindow):
           orblist[0] = 'Density'
     else:
       orblist = {i+1:self.orb_to_list(i+1, o) for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
-      orbidx = {i+1:[-np.inf if np.isnan(o['ene']) else o['ene'], np.copysign(1, o['occup']), -o['occup'], o['sym']]
+      orbidx = {i+1:[-snap(o['occup']), -np.inf if np.isnan(o['ene']) else o['ene'], np.copysign(1, o['occup']), o['sym']]
                      for i,o in enumerate(self.MO) if ((o['sym'] == self.irrep) and not o.get('hide'))}
     if (self.sortedBox.isChecked()):
       for k in orblist.keys():
