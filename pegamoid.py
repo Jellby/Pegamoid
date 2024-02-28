@@ -2278,6 +2278,20 @@ def qt_to_bool(string):
 
 #===============================================================================
 
+# Wrapper to set VTK opacity, with a couple of workarounds
+def set_opacity_wrapper(obj, val):
+  if os.environ.get('PEGAMOID_DISABLE_OPACITY', None):
+    # When opacity does not work correctly, set to 1 (except when intended to be 0)
+    if val < 1e-6:
+      obj.GetProperty().SetOpacity(1)
+    else:
+      obj.GetProperty().SetOpacity(1)
+  else:
+    # Set it always lower than 1, to make sure textures with transparency work correctly
+    obj.GetProperty().SetOpacity(min(1-1e-6, val))
+
+#===============================================================================
+
 # Return a list, each element containing at most n items each with format f
 def wrap_list(data, n, f, sep=''):
   text = []
@@ -3284,7 +3298,10 @@ class MainWindow(QMainWindow):
     self.isovalueSlider.setWhatsThis('Change the value for which the isosurfaces are computed. The scale of the slider is inverse logarithmic, moving it to the right makes the value smaller and the surfaces typically "larger". Both positive and negative surfaces are controlled with the slider. To show the isosurface for a value of 0 enable "Nodes" below.<br>Keys: <b>(Shift+)+</b>, <b>(Shift+)-</b>')
     self.isovalueBox.setToolTip('Set value for the isosurfaces')
     self.isovalueBox.setWhatsThis('Value for which the isosurfaces are computed. Lower values make the surfaces typically "larger". Both positive and negative surfaces are affected by this value. To show the isosurface for a value of 0 enable "Nodes" below.')
-    self.opacitySlider.setToolTip('Set opacity of the isosurfaces')
+    if os.environ.get('PEGAMOID_DISABLE_OPACITY', None):
+      self.opacitySlider.setToolTip('Set opacity of the isosurfaces (disabled)')
+    else:
+      self.opacitySlider.setToolTip('Set opacity of the isosurfaces')
     self.opacitySlider.setWhatsThis('Change the opacity of the isosurfaces. Lower opacity makes the surface more transparent.<br>Keys: <b>(Shift+)O</b> (oh), <b>(Shift+)T</b>')
     self.opacityBox.setToolTip('Set opacity of the isosurfaces')
     self.opacityBox.setWhatsThis('Opacity of the isosurfaces. Lower opacity makes the surface more transparent.')
@@ -3945,7 +3962,10 @@ class MainWindow(QMainWindow):
   def _surface_changed(self, new):
     enabled = new is not None
     self.isovalueGroup.setEnabled(enabled)
-    self.opacityGroup.setEnabled(enabled)
+    if os.environ.get('PEGAMOID_DISABLE_OPACITY', None):
+      self.opacityGroup.setEnabled(False)
+    else:
+      self.opacityGroup.setEnabled(enabled)
     self.surfaceBox.setEnabled(enabled)
     self.signButton.setEnabled(enabled)
     self.saveCubeAction.setEnabled(enabled)
@@ -4340,7 +4360,7 @@ class MainWindow(QMainWindow):
       fix_box(self.opacityBox, '{0:.2f}'.format(new))
     if (self.surface is None):
       return
-    self.surface.GetProperty().SetOpacity(min(1-1e-6, new))
+    set_opacity_wrapper(self.surface, new)
     self.vtk_update()
 
   @property
@@ -4684,6 +4704,8 @@ class MainWindow(QMainWindow):
       f = self.otherfile
       self.otherfile = None
       self.filename = f
+    # Enable warning after the first file has been loaded
+    self.textureDock._transparency_warning = True
 
   # Return a string with orbital information for the drop-down list
   def orb_to_list(self, n, orb):
@@ -4899,7 +4921,7 @@ class MainWindow(QMainWindow):
     self.mol.SetMapper(mm)
     self.mol_nb = vtk.vtkActor()
     self.mol_nb.SetMapper(mm_nb)
-    self.mol_nb.GetProperty().SetOpacity(0.3)
+    set_opacity_wrapper(self.mol_nb, 0.3)
     self.set_representation(self.moleculeButton.currentIndex())
     # Add actor for names
     l = vtk.vtkLabeledDataMapper()
@@ -5034,7 +5056,7 @@ class MainWindow(QMainWindow):
     self.box = vtk.vtkActor()
     self.box.SetMapper(m)
     self.box.GetProperty().SetColor(1, 1, 1)
-    self.box.GetProperty().SetOpacity(0.5)
+    set_opacity_wrapper(self.box, 0.5)
     self.build_axes()
     self.toggle_box()
     self.build_surface()
@@ -5353,7 +5375,7 @@ class MainWindow(QMainWindow):
       m.SetLookupTable(self.lut)
       self.surface.SetMapper(m)
       self.surface.GetProperty().SetColor(self.textureDock.zerocolor)
-      self.surface.GetProperty().SetOpacity(min(1-1e-6, self.opacity))
+      set_opacity_wrapper(self.surface, self.opacity)
       self.surface.GetProperty().SetAmbient(self.textureDock.ambient)
       self.surface.GetProperty().SetDiffuse(self.textureDock.diffuse)
       self.surface.GetProperty().SetSpecular(self.textureDock.specular)
@@ -5383,7 +5405,7 @@ class MainWindow(QMainWindow):
       self.nodes = vtk.vtkActor()
       self.nodes.SetMapper(mn)
       self.nodes.GetProperty().SetColor(1, 1, 1)
-      self.nodes.GetProperty().SetOpacity(0.5)
+      set_opacity_wrapper(self.nodes, 0.5)
       # Streamlines
       g = vtk.vtkGradientFilter()
       g.SetInputConnection(self.xyz.GetOutputPort())
@@ -5420,7 +5442,7 @@ class MainWindow(QMainWindow):
       slm.SetScalarRange(1e-5, 2)
       self.gradient = vtk.vtkActor()
       self.gradient.SetMapper(slm)
-      self.gradient.GetProperty().SetOpacity(0.1)
+      set_opacity_wrapper(self.gradient, 0.1)
       self.gradient.GetProperty().SetLineWidth(3)
     if (self.orbital == -2):
       # Remove outer points from Laplacian
@@ -6281,6 +6303,15 @@ class MainWindow(QMainWindow):
   def show_about(self):
     python_version = sys.version
     vtk_version = vtk.vtkVersion.GetVTKVersion()
+    env = []
+    for var in ['PEGAMOID_NO_QGL', 'PEGAMOID_MAXSCRATCH', 'PEGAMOID_DISABLE_OPACITY']:
+      val = os.environ.get(var, None)
+      if val:
+        env.append('{0}={1}'.format(var, val))
+    if env:
+      env = '<p>' + '<br/>'.join(env) + '<\/p>'
+    else:
+      env = ''
     QMessageBox.about(self, 'About {0}'.format(__name__),
                       u'''<h2>{0} v{1}</h2>
                       <p>An orbital viewer ideal for OpenMolcas.<br>
@@ -6292,9 +6323,13 @@ class MainWindow(QMainWindow):
                       <p><b>python</b>: {4}<br>
                       <b>Qt API</b>: {5}<br>
                       <b>VTK</b>: {6}</p>
-                      <p>Settings stored in: {7}</p>
-                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version, self.settings.fileName())
+                      {7}
+                      <p>Settings stored in: {8}</p>
+                      '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version, env, self.settings.fileName())
                       )
+  #if os.environ.get('PEGAMOID_NO_QGL', None):
+  #if os.environ.get('PEGAMOID_DISABLE_OPACITY', None):
+  #  self.scratchsize = {'max':parse_size(os.environ.get('PEGAMOID_MAXSCRATCH')), 'rec':None}
 
   def show_screenshot(self):
     if (self.screenshot is None):
@@ -6754,6 +6789,7 @@ class TextureDock(QDockWidget):
     self._zerocolor = (0, 0, 0)
     self._poscolor = (0, 0, 0)
     self._specularcolor = (0, 0, 0)
+    self._transparency_warning = False
     self.init_UI()
     self.pos = False
 
@@ -7277,6 +7313,8 @@ class TextureDock(QDockWidget):
   def _transparency_changed(self, new, old):
     if (new == old):
       return
+    if (new > 0):
+      self.show_transparency_warning()
     slider_value = round(self.transparencySlider.minimum() + new * (self.transparencySlider.maximum() + self.transparencySlider.minimum()))
     self.transparencySlider.blockSignals(True)
     self.transparencySlider.setValue(slider_value)
@@ -7411,9 +7449,24 @@ class TextureDock(QDockWidget):
         pass
     self.parent().vtk_update()
 
+  def show_transparency_warning(self):
+    if (os.environ.get('PEGAMOID_DISABLE_OPACITY', None) and self._transparency_warning):
+      cb = QCheckBox('Do not show this again (in this session)')
+      msg = QMessageBox()
+      msg.setIcon(QMessageBox.Warning)
+      msg.setText('Opacity is disabled, and textures with transparency will probably not display correctly.')
+      msg.setWindowTitle('Opacity disabled')
+      msg.setStandardButtons(QMessageBox.Ok)
+      msg.setCheckBox(cb)
+      msg.exec_()
+      if msg.checkBox().isChecked():
+        self._transparency_warning = False
+      del msg
+
   def preset(self, preset):
     ready = self.parent().ready
     self.parent().ready = False
+    old = self.transparency if self.transparency is not None else 0
     if (preset == 'matte'):
       self.ambient      = 0.0
       self.diffuse      = 1.0
@@ -7456,6 +7509,9 @@ class TextureDock(QDockWidget):
       self.power        = 1.0
       self.transparency = 1.0
       self.fresnel      = 0.05
+    # Show warning also if transparency did not change
+    if (old > 0) and (self.transparency == old):
+      self.show_transparency_warning()
     self.parent().ready = ready
     self.parent().vtk_update()
 
