@@ -2542,6 +2542,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>Shift+R</b>: Reset camera to default position</p>
                    <p><b>Shift+M</b>: Toggle visibility of atoms without basis functions</p>
                    <p><b>{0}</b>: Load file</p>
+                   <p><b>Ctrl+R</b>: Overwrite file</p>
                    <p><b>Ctrl+H</b>: Save HDF5 file</p>
                    <p><b>Ctrl+I</b>: Save InpOrb file</p>
                    <p><b>Ctrl+C</b>: Save cube file</p>
@@ -3488,6 +3489,7 @@ class MainWindow(QMainWindow):
 
     # shortcuts
     self.loadAction.setShortcut(QKeySequence(QKeySequence.Open)) # Ctrl+O
+    self.overwriteAction.setShortcut('Ctrl+R')
     self.saveHDF5Action.setShortcut('Ctrl+H')
     self.saveInpOrbAction.setShortcut('Ctrl+I')
     self.saveCubeAction.setShortcut('Ctrl+C')
