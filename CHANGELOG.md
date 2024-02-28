@@ -1,3 +1,12 @@
+**2.10** (2024-02-28)
+
+New features:
+* Keyboard shortcut (Ctrl+R) for overwriting current file
+* Show orbital type and title next to filename
+
+Workaround:
+* Allow disabling opacity for compatibility in some systems
+
 **2.9** (2023-11-24)
 
 Feature change:

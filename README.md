@@ -213,6 +213,13 @@ usually solved by switching to PyQt 4 or installing QtOpenGL support (in the
 "About" dialog, check if the "Qt API" line says "with QtOpenGL"). To disable
 QtOpenGL detection, define the environment variable ``PEGAMOID_NO_QGL=1``.
 
+Another reported issue is that the orbital/density isosurfaces completely
+disappear, while the "molecule" (nuclei and bonds) are normally displayed. This
+is probably a driver problem. As a workaround, defining the environment
+variable ``PEGAMOID_DISABLE_OPACITY=1`` will completely disable the opacity
+slider and hopefully allow the isosurfaces to be shown. However, the rendering
+of textures with transparency may be affected by artifacts.
+
 Issues with the "Transform" and "Texture" windows not appearing have also been
 reported in some PyQt 4 versions. It is unclear at the moment what is the
 reason for this.
