@@ -215,6 +215,7 @@ class Orbitals(object):
     self.type = ftype
     self.eps = np.finfo(float).eps
     self.wf = 'SCF'
+    self.title = ''
     if (self.type == 'hdf5'):
       self.inporb = 'gen'
       self.h5file = self.file
@@ -229,6 +230,9 @@ class Orbitals(object):
   # Read basis set from an HDF5 file
   def read_h5_basis(self):
     with h5py.File(self.file, 'r') as f:
+      otype = f.attrs.get('ORBITAL_TYPE', b'').decode('ascii')
+      mod = f.attrs.get('MOLCAS_MODULE', b'').decode('ascii')
+      self.title = ': '.join([i for i in [mod, otype] if i])
       sym = f.attrs['NSYM']
       self.N_bas = f.attrs['NBAS']
       self.irrep = [i.decode('ascii').strip() for i in f.attrs['IRREP_LABELS']]
@@ -306,8 +310,8 @@ class Orbitals(object):
       for b in bf_id:
         key = (b['c'], b['l'], b['s'], b['tl'])
         counts[key] = counts.get(key, 0)+1
-      for f,n in counts.items():
-        l = f[1]
+      for ff,n in counts.items():
+        l = ff[1]
         if (((l >= 0) and (n != 2*l+1)) or ((l < 0) and (n != (-l+1)*(-l+2)/2))):
           error = 'Inconsistent basis function IDs. The file could have been created by a buggy or unsupported OpenMolcas version'
           raise Exception(error)
@@ -1202,7 +1206,8 @@ class Orbitals(object):
       while ((not line.startswith('#INFO')) and (line != '')):
         line = f.readline()
       sections['INFO'] = True
-      line = f.readline()
+      line = str(f.readline().decode('ascii')).strip()
+      self.title = line.lstrip('*')
       uhf, nsym, _ = (int(i) for i in f.readline().split())
       N_bas = np.array([int(i) for i in f.readline().split()])
       nMO = np.array([int(i) for i in f.readline().split()])
@@ -1711,7 +1716,7 @@ class Orbitals(object):
   # See:
   # Transformation between Cartesian and pure spherical harmonic Gaussians
   # doi: 10.1002/qua.560540202
-  # (note that there appears to be a error in v(4,0), the coefficient 1/4
+  # (note that there appears to be an error in v(4,0), the coefficient 1/4
   #  should probably be 3/4*sqrt(3/35) )
   def _c_sph(self, l, m, lx, ly, lz):
     assert (lx + ly + lz == l) and (lx >= 0) and (ly >= 0) and (lz >= 0)
@@ -1761,8 +1766,8 @@ class Orbitals(object):
       for a in ['NSYM', 'NBAS', 'NPRIM', 'IRREP_LABELS', 'NATOMS_ALL', 'NATOMS_UNIQUE']:
         if (a in fi.attrs):
           attrs[a] = fi.attrs[a]
-      for d in ['CENTER_LABELS', 'CENTER_CHARGES', 'CENTER_COORDINATES', 'BASIS_FUNCTION_IDS',
-                'DESYM_CENTER_LABELS', 'DESYM_CENTER_CHARGES', 'DESYM_CENTER_COORDINATES', 'DESYM_BASIS_FUNCTION_IDS', 'DESYM_MATRIX',
+      for d in ['CENTER_LABELS', 'CENTER_ATNUMS', 'CENTER_CHARGES', 'CENTER_COORDINATES', 'BASIS_FUNCTION_IDS',
+                'DESYM_CENTER_LABELS', 'DESYM_CENTER_ATNUMS', 'DESYM_CENTER_CHARGES', 'DESYM_CENTER_COORDINATES', 'DESYM_BASIS_FUNCTION_IDS', 'DESYM_MATRIX',
                 'PRIMITIVES', 'PRIMITIVE_IDS']:
         if (d in fi):
           dsets[d] = [fi[d][:], dict(fi[d].attrs).items()]
@@ -1925,7 +1930,7 @@ class Grid(object):
   def read_cube_header(self):
     self.irrep = ['z']
     with open(self.file, 'rb') as f:
-      f.readline()
+      self.title = str(f.readline().decode('ascii')).strip()
       # Read title and grid origin
       title = str(f.readline().decode('ascii')).strip()
       n, x, y, z = f.readline().split()
@@ -1984,7 +1989,7 @@ class Grid(object):
   def read_grid_header(self):
     with open(self.file, 'rb') as f:
       f.readline()
-      f.readline()
+      self.title = str(f.readline().decode('ascii')).strip()
       # Read the geometry
       num = int(f.readline().split()[1])
       self.centers = []
@@ -3237,8 +3242,8 @@ class MainWindow(QMainWindow):
     self.keysAction.setToolTip('Show list of hotkeys')
     self.widgetHelpAction.setToolTip('Show more help about some particular interface item')
     self.aboutAction.setToolTip('Show information about {0} and environment'.format(__name__))
-    self.filenameLabel.setToolTip('Currently loaded filename')
-    self.filenameLabel.setWhatsThis('The name and path of the file that is currently being displayed.')
+    self.filenameLabel.setToolTip('Currently loaded filename and title')
+    self.filenameLabel.setWhatsThis('The name and path of the file that is currently being displayed, and title and orbital type if present.')
     self.fileButton.setToolTip('Load a file in any supported format')
     self.fileButton.setWhatsThis('Select a file to load, the format is auto-detected.')
     self.collapseButton.setToolTip('Collapse or expand the options panel')
@@ -4671,6 +4676,8 @@ class MainWindow(QMainWindow):
     self._fileReadThread.quit()
     self._fileReadThread.wait()
     self.orbitals = self._fileReadThread.orbitals
+    if self.orbitals.title:
+      self.filenameLabel.setText(self.filenameLabel.text() + f' [{self.orbitals.title}]')
     if (self.otherfile):
       f = self.otherfile
       self.otherfile = None
