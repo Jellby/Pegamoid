@@ -1018,7 +1018,7 @@ class Orbitals(object):
                     basis[1] = []
                   basis[1].append([0, []])
                   for i in range(nprim):
-                    e, c1, c2 = (fortran_float(i) for i in f.readline().split()[0:2])
+                    e, c1, c2 = (fortran_float(i) for i in f.readline().split()[0:3])
                     basis[0][-1][1].append([e, c1])
                     basis[1][-1][1].append([e, c2])
                   bf_id.append([n, len(basis[0]), 0, 0])
@@ -1206,7 +1206,7 @@ class Orbitals(object):
       while ((not line.startswith('#INFO')) and (line != '')):
         line = f.readline()
       sections['INFO'] = True
-      line = str(f.readline().decode('ascii')).strip()
+      line = str(f.readline()).strip()
       self.title = line.lstrip('*')
       uhf, nsym, _ = (int(i) for i in f.readline().split())
       N_bas = np.array([int(i) for i in f.readline().split()])
@@ -6309,7 +6309,7 @@ class MainWindow(QMainWindow):
       if val:
         env.append('{0}={1}'.format(var, val))
     if env:
-      env = '<p>' + '<br/>'.join(env) + '<\/p>'
+      env = '<p>' + '<br/>'.join(env) + '</p>'
     else:
       env = ''
     QMessageBox.about(self, 'About {0}'.format(__name__),
@@ -6327,9 +6327,6 @@ class MainWindow(QMainWindow):
                       <p>Settings stored in: {8}</p>
                       '''.format(__name__, __version__, __copyright__, __author__, python_version, QtVersion, vtk_version, env, self.settings.fileName())
                       )
-  #if os.environ.get('PEGAMOID_NO_QGL', None):
-  #if os.environ.get('PEGAMOID_DISABLE_OPACITY', None):
-  #  self.scratchsize = {'max':parse_size(os.environ.get('PEGAMOID_MAXSCRATCH')), 'rec':None}
 
   def show_screenshot(self):
     if (self.screenshot is None):
