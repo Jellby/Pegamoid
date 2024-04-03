@@ -2555,6 +2555,7 @@ class ScrollMessageBox(QDialog):
                    <p><b>R</b>: Fit the view to the scene</p>
                    <p><b>Shift+R</b>: Reset camera to default position</p>
                    <p><b>Shift+M</b>: Toggle visibility of atoms without basis functions</p>
+                   <p><b>Shift+A</b>: Toggle antialiasing to reduce image pixelation</p>
                    <p><b>{0}</b>: Load file</p>
                    <p><b>Ctrl+R</b>: Overwrite file</p>
                    <p><b>Ctrl+H</b>: Save HDF5 file</p>
@@ -2938,6 +2939,7 @@ class MainWindow(QMainWindow):
 
     self.settings = QSettings('Pegamoid', 'Pegamoid')
     self.restore_settings()
+    self.ren.SetBackground(*background_color['?'])
 
     # QApplication.desktop is deprecated/removed
     try:
@@ -3104,6 +3106,8 @@ class MainWindow(QMainWindow):
     self.hideMMAction = self.viewMenu.addAction('&Hide atoms without basis')
     self.hideMMAction.setCheckable(True)
     self.BGColorAction = self.viewMenu.addAction('&Background color...')
+    self.antialiasAction = self.viewMenu.addAction('&Antialiasing')
+    self.antialiasAction.setCheckable(True)
     self.helpMenu = MenuTT('&Help')
     self.mainMenu.addMenu(self.helpMenu)
     self.keysAction = self.helpMenu.addAction('&Keys')
@@ -3254,6 +3258,7 @@ class MainWindow(QMainWindow):
     self.resetCameraAction.setToolTip('Reset the camera to the default view')
     self.hideMMAction.setToolTip('Toggle hiding atoms without basis functions (e.g. MM atoms)')
     self.BGColorAction.setToolTip('Configure the background color')
+    self.antialiasAction.setToolTip('Toggle antialiasing (reduce pixelation)')
     self.keysAction.setToolTip('Show list of hotkeys')
     self.widgetHelpAction.setToolTip('Show more help about some particular interface item')
     self.aboutAction.setToolTip('Show information about {0} and environment'.format(__name__))
@@ -3520,6 +3525,7 @@ class MainWindow(QMainWindow):
     self.resetCameraAction.setShortcut(QKeySequence('Shift+R'))
     self.hideMMAction.setShortcut(QKeySequence('Shift+M'))
     self.BGColorAction.setShortcut(QKeySequence('Shift+B'))
+    self.antialiasAction.setShortcut(QKeySequence('Shift+A'))
     self.collapseButton.setShortcut(QKeySequence('Ctrl+_'))
     self.listButton.setShortcut('Ctrl+L')
     self.prevDensShortcut = QShortcut(QKeySequence('Alt+PgUp'), self)
@@ -3611,6 +3617,7 @@ class MainWindow(QMainWindow):
     self.resetCameraAction.triggered.connect(partial(self.reset_camera, True))
     self.hideMMAction.triggered.connect(self.toggleMM)
     self.BGColorAction.triggered.connect(self.config_bgcolor)
+    self.antialiasAction.triggered.connect(self.toggleAA)
     self.fileButton.clicked.connect(self.load_file)
     self.collapseButton.toggled.connect(self.collapse_options)
     self.densityTypeButton.currentIndexChanged.connect(self.densityTypeButton_changed)
@@ -3699,8 +3706,6 @@ class MainWindow(QMainWindow):
     self.ren.AddLight(light1)
     self.ren.AddLight(light2)
     self.ren.AddLight(light3)
-
-    self.ren.SetBackground(*background_color['?'])
 
     # fonts
     try:
@@ -4474,6 +4479,7 @@ class MainWindow(QMainWindow):
     self.settings.setValue('collapsed_options', self.collapseButton.isChecked())
     self.settings.setValue('auto_align', self.autoAlignAction.isChecked())
     self.settings.setValue('orthographic', self.orthographicAction.isChecked())
+    self.settings.setValue('antialiasing', self.antialiasAction.isChecked())
     self.settings.setValue('use_scratch', self.use_scratch)
     self.settings.setValue('scratch_size', str(self.scratchsize['max']))
     self.settings.setValue('molecule_type', self.moleculeButton.currentText())
@@ -4519,6 +4525,8 @@ class MainWindow(QMainWindow):
     self.autoAlignAction.setChecked(qt_to_bool(self.settings.value('auto_align', 'false')))
     self.orthographicAction.setChecked(qt_to_bool(self.settings.value('orthographic', 'false')))
     self.orthographic(self.orthographicAction.isChecked())
+    self.antialiasAction.setChecked(qt_to_bool(self.settings.value('antialiasing', 'false')))
+    self.toggleAA(self.antialiasAction.isChecked())
     self.use_scratch = qt_to_bool(self.settings.value('use_scratch', 'true'))
     self.scratchsize['max'] = qt_to_py(self.settings.value('scratch_size', '1073741824'), int) # 1GiB
     maxscratch = parse_size(os.environ.get('PEGAMOID_MAXSCRATCH'))
@@ -6391,6 +6399,10 @@ class MainWindow(QMainWindow):
       self.mol_nb.VisibilityOn()
     self.vtk_update()
 
+  def toggleAA(self, value):
+    self.ren.SetUseFXAA(value)
+    self.vtk_update()
+
   def vtk_update(self):
     if (self.ready):
       self.ren.ResetCameraClippingRange()
@@ -6834,6 +6846,7 @@ class TextureDock(QDockWidget):
     self.representationLabel = QLabel('Representation:')
     self.representationButton = QComboBox()
     self.representationButton.addItems([u'Points', u'Wireframe', u'Surface'])
+    self.representationButton.model().item(0).setEnabled(False) # 'Points' doesn't work with custom shader
     self.sizeLabel = QLabel('Point/line size:')
     self.sizeBox = QSpinBox()
     self.sizeBox.setMinimum(0)
