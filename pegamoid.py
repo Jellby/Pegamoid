@@ -2554,8 +2554,10 @@ class ScrollMessageBox(QDialog):
                    <p><b>P</b>: Toggle orthographic projection</p>
                    <p><b>R</b>: Fit the view to the scene</p>
                    <p><b>Shift+R</b>: Reset camera to default position</p>
+                   <p><b>Shift+I</b>: Configure scene lights</p>
                    <p><b>Shift+M</b>: Toggle visibility of atoms without basis functions</p>
                    <p><b>Shift+A</b>: Toggle antialiasing to reduce image pixelation</p>
+                   <p><b>Shift+B</b>: Configure background colors</p>
                    <p><b>{0}</b>: Load file</p>
                    <p><b>Ctrl+R</b>: Overwrite file</p>
                    <p><b>Ctrl+H</b>: Save HDF5 file</p>
@@ -2854,76 +2856,160 @@ try:
 except AttributeError:
   # VTK < 9.0
   ShaderClass = vtk.vtkOpenGLPolyDataMapper
+
+
 class AOIShader(ShaderClass):
   def __init__(self, *args, **kwargs):
     self.texture = kwargs.pop('texture', None)
     super().__init__(*args, **kwargs)
+    self.DiffusePower = 1.0
+    self.SpecularMult = 1.0
     self.Transparency = 0.0
     self.Fresnel = 0.0
+    self.ModelShift = 0.0
     self.AddShaderReplacement(vtk.vtkShader.Fragment,
-      '//VTK::Color::Dec\n', True,
-      '//VTK::Color::Dec\n'
-      '  uniform float fresnelPowerUniform;\n'
-      '  uniform float transparencyUniform;\n'
-      '  float x, p, aoi_opacity;\n',
+      '//VTK::Color::Dec', True, # Before doing standard replacements
+      '''\
+//VTK::Color::Dec
+#define PI2 1.57079632679
+uniform float diffusePowerUniform;
+uniform float specularMultUniform;
+uniform float fresnelPowerUniform;
+uniform float transparencyUniform;
+uniform float modelShiftUniform;
+float p = clamp(abs(fresnelPowerUniform), 0.0, 2.0);
+
+float rgb2luma(in vec3 Color) {
+  return dot(Color, vec3(0.299, 0.587, 0.114));
+}
+
+float transparency(in vec3 vNorm, in vec3 vCam) {
+  if (transparencyUniform < 1e-20) {
+    return 0.0;
+  } else {
+    float x, aoiop;
+    float cosAngle = clamp(dot(vNorm, vCam), 0.0, 1.0);
+    if (abs(cosAngle) < 0.75) {
+      x = clamp(abs(acos(cosAngle)/PI2), 0.0, 1.0);
+    } else {
+      // sine is more accurate for small angles
+      float sinAngle = clamp(length(cross(vNorm, vCam)), 0.0, 1.0);
+      x = clamp(abs(asin(sinAngle)/PI2), 0.0, 1.0);
+    }
+    if (p < 1e-20) {
+      aoiop = 0.0;
+    } else if (p > 1.0) {
+      if (fresnelPowerUniform < 0.0) {;
+        aoiop = (x - 1.0) / ((p - 1.0) * x - 1.0);
+      } else {
+        aoiop = x / ((p - 1.0) * x - (p - 2.0));
+      }
+    } else {
+      if (fresnelPowerUniform < 0.0) {;
+        aoiop = p * (x - 1.0) / ((p - 1.0) * x - p);
+      } else {
+        aoiop = p * x / ((p - 1.0) * x + 1.0);
+      }
+    }
+    return clamp(transparencyUniform * (1.0 - aoiop), 0.0, 1.0);
+  }
+}
+''',
       False
     )
     self.AddShaderReplacement(vtk.vtkShader.Fragment,
-      '//VTK::Normal::Impl\n', True,
-      '//VTK::Normal::Impl\n'
-      '  #define PI2 1.57079632679\n'
-      '  #define SQ2 0.70710678119\n'
-      '  p = min(2.0, max(0.0, abs(fresnelPowerUniform)));\n'
-      '  if (transparencyUniform < 1e-20) {\n'
-      '    aoi_opacity = 1.0;\n'
-      '  } else {\n'
-      '    if (abs(normalVCVSOutput.z) > SQ2) {\n'
-      '      x = normalVCVSOutput.x*normalVCVSOutput.x+normalVCVSOutput.y*normalVCVSOutput.y;\n'
-      '      x = min(1.0, max(0.0, abs(asin(sqrt(x))/PI2)));\n'
-      '    } else {\n'
-      '      x = min(1.0, max(0.0, abs(acos(normalVCVSOutput.z)/PI2)));\n'
-      '    }\n'
-      '    if (p < 1e-20) {\n'
-      '      aoi_opacity = 0.0;\n'
-      '    } else if (p > 1.0) {\n'
-      '      if (fresnelPowerUniform < 0.0) {;\n'
-      '        aoi_opacity = (x-1.0)/((p-1.0)*x-1.0);\n'
-      '      } else {\n'
-      '        aoi_opacity = x/((p-1.0)*x-(p-2.0));\n'
-      '      }\n'
-      '    } else {\n'
-      '      if (fresnelPowerUniform < 0.0) {;\n'
-      '        aoi_opacity = p*(x-1.0)/((p-1.0)*x-p);\n'
-      '      } else {\n'
-      '        aoi_opacity = p*x/((p-1.0)*x+1.0);\n'
-      '      }\n'
-      '    }\n'
-      '    aoi_opacity = 1.0+transparencyUniform*(aoi_opacity-1.0);\n'
-      '    aoi_opacity = min(1.0, max(0.0, aoi_opacity));\n'
-      '  }\n',
+      '//VTK::Light::Dec', True, # Before doing standard replacements
+      '''\
+//VTK::Light::Dec
+
+vec3 slerp(in vec3 Vec1, in vec3 Vec2, in float t) {
+  float cosAngle = clamp(dot(Vec1, Vec2), 0.0, 1.0);
+  if (abs(t) < 1e-4) return Vec1;
+  if (abs(1.0 - t) < 1e-4) return Vec2;
+  if (1.0 - abs(cosAngle) < 1e-4) {
+    if (t < 0.5) {
+      return Vec1;
+    } else {
+      return Vec2;
+    }
+  }
+  float Omega = acos(cosAngle);
+  vec3 vOut = sin((1.0 - t) * Omega) * Vec1 + sin(t * Omega) * Vec2;
+  return normalize(vOut);
+}
+
+vec2 light_components(in vec3 vNorm, in vec3 vLight, in vec3 vCam, in vec3 cLight) {
+  const float f = -0.5/1.2;
+  vec2 cOut;
+  float cosAngle;
+  // Diffuse component
+  cosAngle = clamp(dot(vNorm, vLight), 0.0, 1.0);
+  cOut.x = pow(cosAngle, clamp(diffusePowerUniform, 1.0e-6, 1.0));
+  // Specular component, interpolated according to model
+  vec3 vInt = slerp(vCam, vNorm, modelShiftUniform);
+  cosAngle = clamp(dot(reflect(-vLight, vNorm), vInt), 0.0, 1.0);
+  cOut.y = pow(cosAngle, specularPowerUniform) + f * modelShiftUniform * pow(cosAngle, 0.25*specularPowerUniform);
+  return cOut * rgb2luma(cLight); // color ignored, only luminosity matters
+}
+''',
       False
     )
     self.AddShaderReplacement(vtk.vtkShader.Fragment,
-      '//VTK::Light::Impl\n', True,
-      '//VTK::Light::Impl\n'
-      'if (transparencyUniform >= 1e-20) {\n'
-      '  gl_FragData[0] = vec4(ambientColor + diffuse + specular, aoi_opacity);\n'
-      '  gl_FragData[0] += (1-aoi_opacity)*vec4(specular, dot(specular, vec3(0.299, 0.587, 0.114)));\n'
-      '  gl_FragData[0].a *= opacity;\n'
-      '}\n',
+      '//VTK::Light::Impl', True, # Before doing standard replacements (which are prevented)
+      '''\
+//VTK::Light_Replaced::Impl
+  vec3 vCamera = normalize(-vertexVC.xyz);
+  vec2 fact = light_components(normalVCVSOutput, -lightDirectionVC0, vCamera, lightColor0)
+            + light_components(normalVCVSOutput, -lightDirectionVC1, vCamera, lightColor1)
+            + light_components(normalVCVSOutput, -lightDirectionVC2, vCamera, lightColor2);
+  vec3 diffuse = fact.x * diffuseColor;
+  vec3 specular = fact.y * specularColor * specularMultUniform;
+  vec3 color = ambientColor + diffuse + specular;
+  float alpha = 1.0;
+  // Opacity component, interpolated according to model
+  if (transparencyUniform >= 1e-20) {
+    float aoi_alpha;
+    float ibv_alpha;
+    if (modelShiftUniform < 1.0) {
+      aoi_alpha = 1.0 - transparency(normalVCVSOutput, vCamera);
+    }
+    if (modelShiftUniform > 0.0) {
+      float diff = 1.0 - fact.x * diffuseIntensity;
+      ibv_alpha = (1.0 - transparencyUniform * diff) / clamp(abs(dot(normalVCVSOutput, vCamera)), 0.1, 1.0);
+      ibv_alpha = clamp(ibv_alpha, 0.0, 1.0);
+      if (!gl_FrontFacing) ibv_alpha = 5e-2;
+    }
+    if (modelShiftUniform == 1.0) {
+      alpha = ibv_alpha;
+    } else if (modelShiftUniform == 0.0) {
+      alpha = aoi_alpha;
+    } else {
+      alpha = mix(aoi_alpha, ibv_alpha, modelShiftUniform);
+    }
+    color += (1.0 - modelShiftUniform) * (1.0 - alpha) * specular;
+    alpha += (1.0 - modelShiftUniform) * clamp(rgb2luma(specular), 0.0, 1.0);
+  }
+  fragOutput0 = vec4(color, alpha * opacityUniform);
+''',
       False
     )
 
   @vtk.calldata_type(vtk.VTK_OBJECT)
   def update_shader(self, caller, event, program):
     try:
+      self.DiffusePower = self.texture.dpower
+      self.SpecularMult = max(self.texture.specular, 1.0)
       self.Transparency = self.texture.transparency
       self.Fresnel = self.texture.fresnel
+      self.ModelShift = self.texture.shift
     except:
       pass
     if (program is not None):
+      program.SetUniformf('diffusePowerUniform', self.DiffusePower)
+      program.SetUniformf('specularMultUniform', self.SpecularMult)
       program.SetUniformf('transparencyUniform', self.Transparency)
       program.SetUniformf('fresnelPowerUniform', self.Fresnel)
+      program.SetUniformf('modelShiftUniform', self.ModelShift)
 
 
 class MainWindow(QMainWindow):
@@ -3103,6 +3189,7 @@ class MainWindow(QMainWindow):
     self.orthographicAction.setCheckable(True)
     self.fitViewAction = self.viewMenu.addAction('&Fit view')
     self.resetCameraAction = self.viewMenu.addAction('&Reset camera')
+    self.LightsAction = self.viewMenu.addAction('&Lights...')
     self.hideMMAction = self.viewMenu.addAction('&Hide atoms without basis')
     self.hideMMAction.setCheckable(True)
     self.BGColorAction = self.viewMenu.addAction('&Background color...')
@@ -3256,6 +3343,7 @@ class MainWindow(QMainWindow):
     self.orthographicAction.setToolTip('Toggle the use of an orthographic projection (perspective if disabled)')
     self.fitViewAction.setToolTip('Fit the currently displayed objects in the view')
     self.resetCameraAction.setToolTip('Reset the camera to the default view')
+    self.LightsAction.setToolTip('Configure the scene lights')
     self.hideMMAction.setToolTip('Toggle hiding atoms without basis functions (e.g. MM atoms)')
     self.BGColorAction.setToolTip('Configure the background color')
     self.antialiasAction.setToolTip('Toggle antialiasing (reduce pixelation)')
@@ -3523,6 +3611,7 @@ class MainWindow(QMainWindow):
     self.orthographicAction.setShortcut(QKeySequence('P'))
     self.fitViewAction.setShortcut(QKeySequence('R'))
     self.resetCameraAction.setShortcut(QKeySequence('Shift+R'))
+    self.LightsAction.setShortcut(QKeySequence('Shift+I'))
     self.hideMMAction.setShortcut(QKeySequence('Shift+M'))
     self.BGColorAction.setShortcut(QKeySequence('Shift+B'))
     self.antialiasAction.setShortcut(QKeySequence('Shift+A'))
@@ -3615,6 +3704,7 @@ class MainWindow(QMainWindow):
     self.orthographicAction.triggered.connect(self.orthographic)
     self.fitViewAction.triggered.connect(self.reset_camera)
     self.resetCameraAction.triggered.connect(partial(self.reset_camera, True))
+    self.LightsAction.triggered.connect(self.config_lights)
     self.hideMMAction.triggered.connect(self.toggleMM)
     self.BGColorAction.triggered.connect(self.config_bgcolor)
     self.antialiasAction.triggered.connect(self.toggleAA)
@@ -4492,8 +4582,10 @@ class MainWindow(QMainWindow):
     self.settings.beginGroup('Texture')
     self.settings.setValue('ambient', self.textureDock.ambient)
     self.settings.setValue('diffuse', self.textureDock.diffuse)
+    self.settings.setValue('dpower', self.textureDock.dpower)
     self.settings.setValue('specular', self.textureDock.specular)
     self.settings.setValue('power', self.textureDock.power)
+    self.settings.setValue('shift', self.textureDock.shift)
     self.settings.setValue('transparency', self.textureDock.transparency)
     self.settings.setValue('fresnel', self.textureDock.fresnel)
     self.settings.setValue('interpolation', self.textureDock.interpolationButton.currentText())
@@ -4513,6 +4605,12 @@ class MainWindow(QMainWindow):
     self.settings.setValue('bgScolor', ' '.join([str(i) for i in background_color['S']]))
     self.settings.setValue('bgDcolor', ' '.join([str(i) for i in background_color['D']]))
     self.settings.setValue('bgtype', self.bgcolorbytype)
+    light = self.ren.GetLights().GetItemAsObject(0)
+    self.settings.setValue('light1', ' '.join([str(i) for i in [*light.GetPosition(), light.GetIntensity()]]))
+    light = self.ren.GetLights().GetItemAsObject(1)
+    self.settings.setValue('light2', ' '.join([str(i) for i in [*light.GetPosition(), light.GetIntensity()]]))
+    light = self.ren.GetLights().GetItemAsObject(2)
+    self.settings.setValue('light3', ' '.join([str(i) for i in [*light.GetPosition(), light.GetIntensity()]]))
     if (self.screenshot):
       self.settings.beginGroup('Screenshots')
       self.settings.setValue('transparent', self.screenshot.transparentBox.isChecked())
@@ -4546,8 +4644,10 @@ class MainWindow(QMainWindow):
     self.settings.beginGroup('Texture')
     self.textureDock.ambient = qt_to_py(self.settings.value('ambient', '0.0'), float)
     self.textureDock.diffuse = qt_to_py(self.settings.value('diffuse', '0.7'), float)
+    self.textureDock.dpower = qt_to_py(self.settings.value('dpower', '1.0'), float)
     self.textureDock.specular = qt_to_py(self.settings.value('specular', '0.7'), float)
     self.textureDock.power = qt_to_py(self.settings.value('power', '3.0'), float)
+    self.textureDock.shift = qt_to_py(self.settings.value('shift', '0.0'), float)
     self.textureDock.transparency = qt_to_py(self.settings.value('transparency', '0.0'), float)
     self.textureDock.fresnel = qt_to_py(self.settings.value('fresnel', '0.0'), float)
     index = self.textureDock.interpolationButton.findText(qt_to_py(self.settings.value('interpolation', ''), str))
@@ -4595,6 +4695,24 @@ class MainWindow(QMainWindow):
     if (bgDcolor != 'None'):
       background_color['D'] = tuple(map(float, bgDcolor.split()))
     self.bgcolorbytype = qt_to_bool(self.settings.value('bgtype', 'true'))
+    light1 = qt_to_py(self.settings.value('light1'), str)
+    if (light1 != 'None'):
+      values = tuple(map(float, light1.split()))
+      light = self.ren.GetLights().GetItemAsObject(0)
+      light.SetPosition(values[0:3])
+      light.SetIntensity(values[3])
+    light2 = qt_to_py(self.settings.value('light2'), str)
+    if (light2 != 'None'):
+      values = tuple(map(float, light2.split()))
+      light = self.ren.GetLights().GetItemAsObject(1)
+      light.SetPosition(values[0:3])
+      light.SetIntensity(values[3])
+    light3 = qt_to_py(self.settings.value('light3'), str)
+    if (light3 != 'None'):
+      values = tuple(map(float, light3.split()))
+      light = self.ren.GetLights().GetItemAsObject(2)
+      light.SetPosition(values[0:3])
+      light.SetIntensity(values[3])
     size = self.settings.value('size')
     if (size):
       try:
@@ -4618,6 +4736,13 @@ class MainWindow(QMainWindow):
     e = np.deg2rad(elevation)
     a = np.deg2rad(azimuth)
     return [np.cos(e)*np.sin(a), np.sin(e), np.cos(e)*np.cos(a)]
+
+  def light_invpos(self, x, y, z):
+    v = np.array([x, y, z])
+    v /= np.linalg.norm(v)
+    e = np.rad2deg(np.arcsin(v[1]))
+    a = np.rad2deg(np.arctan2(v[0], v[2]))
+    return (e, a)
 
   def clear(self):
     self.filename = None
@@ -5290,6 +5415,28 @@ class MainWindow(QMainWindow):
     background_color['?'] = dialog.mainColorButton.color.getRgbF()[0:3]
     dialog.accept()
     self.typeButtonGroup_changed()
+
+  def config_lights(self):
+    dialog = LightsDialog(self)
+    dialog.exec_()
+
+  def set_lights(self, dialog):
+    try:
+      light = self.ren.GetLights().GetItemAsObject(0)
+      (e, a) = (float(dialog.light1e.text()), float(dialog.light1a.text()))
+      light.SetPosition(self.light_pos(e, a))
+      light.SetIntensity(float(dialog.light1w.text()))
+      light = self.ren.GetLights().GetItemAsObject(1)
+      (e, a) = (float(dialog.light2e.text()), float(dialog.light2a.text()))
+      light.SetPosition(self.light_pos(e, a))
+      light.SetIntensity(float(dialog.light2w.text()))
+      light = self.ren.GetLights().GetItemAsObject(2)
+      (e, a) = (float(dialog.light3e.text()), float(dialog.light3a.text()))
+      light.SetPosition(self.light_pos(e, a))
+      light.SetIntensity(float(dialog.light3w.text()))
+    except:
+      pass
+    dialog.accept()
 
   def build_surface(self):
     if (self.xyz is None):
@@ -6787,8 +6934,10 @@ class TextureDock(QDockWidget):
     super().__init__(*args, **kwargs)
     self._ambient = None
     self._diffuse = None
+    self._dpower = None
     self._specular = None
     self._power = None
+    self._shift = None
     self._transparency = None
     self._fresnel = None
     self._interpolation = None
@@ -6814,12 +6963,17 @@ class TextureDock(QDockWidget):
     self.diffuseBox = QLineEdit()
     self.diffuseBox.setFixedWidth(60)
     self.diffuseLabel.setBuddy(self.diffuseBox)
+    self.dpowerLabel = QLabel('Diffuse power:')
+    self.dpowerSlider = QSlider(Qt.Horizontal)
+    self.dpowerBox = QLineEdit()
+    self.dpowerBox.setFixedWidth(60)
+    self.dpowerLabel.setBuddy(self.dpowerBox)
     self.specularLabel = QLabel('Specular:')
     self.specularSlider = QSlider(Qt.Horizontal)
     self.specularBox = QLineEdit()
     self.specularBox.setFixedWidth(60)
     self.specularLabel.setBuddy(self.specularBox)
-    self.powerLabel = QLabel('Power:')
+    self.powerLabel = QLabel('Specular power:')
     self.powerSlider = QSlider(Qt.Horizontal)
     self.powerBox = QLineEdit()
     self.powerBox.setFixedWidth(60)
@@ -6833,6 +6987,11 @@ class TextureDock(QDockWidget):
     self.fresnelSlider = QSlider(Qt.Horizontal)
     self.fresnelBox = QLineEdit()
     self.fresnelBox.setFixedWidth(60)
+    self.shiftLabel = QLabel('Model shift:')
+    self.shiftSlider = QSlider(Qt.Horizontal)
+    self.shiftBox = QLineEdit()
+    self.shiftBox.setFixedWidth(60)
+    self.shiftLabel.setBuddy(self.shiftBox)
     self.presetsLabel = QLabel('Presets:')
     self.matteButton = QPushButton('Matte')
     self.metalButton = QPushButton('Metal')
@@ -6840,6 +6999,9 @@ class TextureDock(QDockWidget):
     self.plasticButton = QPushButton('Plastic')
     self.cloudButton = QPushButton('Cloud')
     self.ghostButton = QPushButton('Ghost')
+    self.IBV1Button = QPushButton('IboView 1')
+    self.IBV2Button = QPushButton('IboView 2')
+    self.IBV3Button = QPushButton('IboView 3')
     self.interpolationLabel = QLabel('Interpolation:')
     self.interpolationButton = QComboBox()
     self.interpolationButton.addItems([u'Flat', u'Gouraud', u'Phong'])
@@ -6873,18 +7035,24 @@ class TextureDock(QDockWidget):
     grid.addWidget(self.diffuseLabel, 1, 0)
     grid.addWidget(self.diffuseSlider, 1, 1)
     grid.addWidget(self.diffuseBox, 1, 2)
-    grid.addWidget(self.specularLabel, 2, 0)
-    grid.addWidget(self.specularSlider, 2, 1)
-    grid.addWidget(self.specularBox, 2, 2)
-    grid.addWidget(self.powerLabel, 3, 0)
-    grid.addWidget(self.powerSlider, 3, 1)
-    grid.addWidget(self.powerBox, 3, 2)
-    grid.addWidget(self.transparencyLabel, 4, 0)
-    grid.addWidget(self.transparencySlider, 4, 1)
-    grid.addWidget(self.transparencyBox, 4, 2)
-    grid.addWidget(self.fresnelLabel, 5, 0)
-    grid.addWidget(self.fresnelSlider, 5, 1)
-    grid.addWidget(self.fresnelBox, 5, 2)
+    grid.addWidget(self.dpowerLabel, 2, 0)
+    grid.addWidget(self.dpowerSlider, 2, 1)
+    grid.addWidget(self.dpowerBox, 2, 2)
+    grid.addWidget(self.specularLabel, 3, 0)
+    grid.addWidget(self.specularSlider, 3, 1)
+    grid.addWidget(self.specularBox, 3, 2)
+    grid.addWidget(self.powerLabel, 4, 0)
+    grid.addWidget(self.powerSlider, 4, 1)
+    grid.addWidget(self.powerBox, 4, 2)
+    grid.addWidget(self.transparencyLabel, 5, 0)
+    grid.addWidget(self.transparencySlider, 5, 1)
+    grid.addWidget(self.transparencyBox, 5, 2)
+    grid.addWidget(self.fresnelLabel, 6, 0)
+    grid.addWidget(self.fresnelSlider, 6, 1)
+    grid.addWidget(self.fresnelBox, 6, 2)
+    grid.addWidget(self.shiftLabel, 7, 0)
+    grid.addWidget(self.shiftSlider, 7, 1)
+    grid.addWidget(self.shiftBox, 7, 2)
 
     hbox1 = QGridLayout()
     hbox1.addWidget(self.presetsLabel, 0, 0)
@@ -6894,6 +7062,9 @@ class TextureDock(QDockWidget):
     hbox1.addWidget(self.plasticButton, 1, 1)
     hbox1.addWidget(self.cloudButton, 1, 2)
     hbox1.addWidget(self.ghostButton, 1, 3)
+    hbox1.addWidget(self.IBV1Button, 2, 1)
+    hbox1.addWidget(self.IBV2Button, 2, 2)
+    hbox1.addWidget(self.IBV3Button, 2, 3)
     hbox1.setColumnStretch(0, 0)
     hbox1.setColumnStretch(1, 1)
     hbox1.setColumnStretch(2, 1)
@@ -6951,12 +7122,16 @@ class TextureDock(QDockWidget):
 
     self.setWidget(_widget)
 
+    self._max_spec = 5
+
     self.ambientSlider.setRange(0, 100)
     self.diffuseSlider.setRange(0, 100)
-    self.specularSlider.setRange(0, 100)
+    self.dpowerSlider.setRange(0, 100)
+    self.specularSlider.setRange(0, self._max_spec*100)
     self.powerSlider.setRange(0, 1000)
     self.transparencySlider.setRange(0, 100)
     self.fresnelSlider.setRange(0, 200)
+    self.shiftSlider.setRange(0, 100)
 
     self.ambientSlider.setToolTip('Amount of "ambient" illumination, independent of lighting')
     self.ambientSlider.setWhatsThis('This gives the amount of the surface color that will show up regardless of its orientation with respect to the light sources.')
@@ -6964,6 +7139,9 @@ class TextureDock(QDockWidget):
     self.diffuseSlider.setToolTip('Amount of "diffuse" illumination, basic light and shadows')
     self.diffuseSlider.setWhatsThis('This gives the amount of surface color due to diffuse light reflection, it is brighter where the surface faces the light sources.')
     self.diffuseBox.setToolTip(self.diffuseSlider.toolTip())
+    self.dpowerSlider.setToolTip('Size of the colored areas: the higher, the smaller')
+    self.dpowerSlider.setWhatsThis('This controls the size of the diffuse color areas: the higher the power the smaller and brighter the areas.')
+    self.dpowerBox.setToolTip(self.powerSlider.toolTip())
     self.specularSlider.setToolTip('Amount of "specular" illumination, which gives the highlights')
     self.specularSlider.setWhatsThis('This gives the amount of specular color that shows in the highlights.')
     self.specularBox.setToolTip(self.specularSlider.toolTip())
@@ -6976,6 +7154,9 @@ class TextureDock(QDockWidget):
     self.fresnelSlider.setToolTip('Amount of Fresnel (angle-dependent) transparency')
     self.fresnelSlider.setWhatsThis('This controls the angle-dependent transparency, positive values make the "edges" more opaque, negative values make the "center" more opaque.')
     self.fresnelBox.setToolTip(self.fresnelSlider.toolTip())
+    self.shiftSlider.setToolTip('Model interpolation between 0 (Pegamoid) and 1 (IboView)')
+    self.shiftSlider.setWhatsThis('This controls the type of texturing model between, 0 is the standar Pegamoid model, 1 simulates IboView\'s behvior.')
+    self.shiftBox.setToolTip(self.shiftSlider.toolTip())
     self.matteButton.setToolTip('A matte texture with no highlights')
     self.matteButton.setWhatsThis('Loads the default matte texture.')
     self.metalButton.setToolTip('A sort of metallic texture')
@@ -6988,6 +7169,12 @@ class TextureDock(QDockWidget):
     self.cloudButton.setWhatsThis('Loads the cloud texture.')
     self.ghostButton.setToolTip('An almost transparent texture, with edges')
     self.ghostButton.setWhatsThis('Loads the ghost texture.')
+    self.IBV1Button.setToolTip('IboView\'s "not very shiny" preset')
+    self.IBV1Button.setWhatsThis('Loads the IboView1 texture.')
+    self.IBV2Button.setToolTip('IboView\'s "reasonably shiny" preset')
+    self.IBV2Button.setWhatsThis('Loads the IboView2 texture.')
+    self.IBV3Button.setToolTip('IboView\'s "sooooo shiny" preset')
+    self.IBV3Button.setWhatsThis('Loads the IboView3 texture.')
     self.interpolationButton.setToolTip('Choose interpolation method for the surface normals')
     self.interpolationButton.setWhatsThis('Selects between different types on interpolation for the surface normal: flat (no interpolation), Gouraud and Phong (both give the same smooth result).')
     self.representationButton.setToolTip('Choose the type of representation for the isosurface')
@@ -7019,6 +7206,9 @@ class TextureDock(QDockWidget):
     self.diffuseSlider.valueChanged.connect(self.diffuseSlider_changed)
     self.diffuseBox.textChanged.connect(partial(self.diffuseBox_changed, False))
     self.diffuseBox.editingFinished.connect(partial(self.diffuseBox_changed, True))
+    self.dpowerSlider.valueChanged.connect(self.dpowerSlider_changed)
+    self.dpowerBox.textChanged.connect(partial(self.dpowerBox_changed, False))
+    self.dpowerBox.editingFinished.connect(partial(self.dpowerBox_changed, True))
     self.specularSlider.valueChanged.connect(self.specularSlider_changed)
     self.specularBox.textChanged.connect(partial(self.specularBox_changed, False))
     self.specularBox.editingFinished.connect(partial(self.specularBox_changed, True))
@@ -7031,12 +7221,18 @@ class TextureDock(QDockWidget):
     self.fresnelSlider.valueChanged.connect(self.fresnelSlider_changed)
     self.fresnelBox.textChanged.connect(partial(self.fresnelBox_changed, False))
     self.fresnelBox.editingFinished.connect(partial(self.fresnelBox_changed, True))
+    self.shiftSlider.valueChanged.connect(self.shiftSlider_changed)
+    self.shiftBox.textChanged.connect(partial(self.shiftBox_changed, False))
+    self.shiftBox.editingFinished.connect(partial(self.shiftBox_changed, True))
     self.matteButton.clicked.connect(partial(self.preset, 'matte'))
     self.metalButton.clicked.connect(partial(self.preset, 'metal'))
     self.cartoonButton.clicked.connect(partial(self.preset, 'cartoon'))
     self.plasticButton.clicked.connect(partial(self.preset, 'plastic'))
     self.cloudButton.clicked.connect(partial(self.preset, 'cloud'))
     self.ghostButton.clicked.connect(partial(self.preset, 'ghost'))
+    self.IBV1Button.clicked.connect(partial(self.preset, 'IboView1'))
+    self.IBV2Button.clicked.connect(partial(self.preset, 'IboView2'))
+    self.IBV3Button.clicked.connect(partial(self.preset, 'IboView3'))
     self.interpolationButton.currentIndexChanged.connect(self.interpolation_changed)
     self.representationButton.currentIndexChanged.connect(self.representation_changed)
     self.sizeBox.valueChanged.connect(self.sizeBox_changed)
@@ -7082,6 +7278,16 @@ class TextureDock(QDockWidget):
     self._diffuse_changed(value, old)
 
   @property
+  def dpower(self):
+    return self._dpower
+
+  @dpower.setter
+  def dpower(self, value):
+    old = self._dpower
+    self._dpower = value
+    self._dpower_changed(value, old)
+
+  @property
   def specular(self):
     return self._specular
 
@@ -7120,6 +7326,16 @@ class TextureDock(QDockWidget):
     old = self._fresnel
     self._fresnel = value
     self._fresnel_changed(value, old)
+
+  @property
+  def shift(self):
+    return self._shift
+
+  @shift.setter
+  def shift(self, value):
+    old = self._shift
+    self._shift = value
+    self._shift_changed(value, old)
 
   @property
   def interpolation(self):
@@ -7257,10 +7473,38 @@ class TextureDock(QDockWidget):
     if (fix):
       fix_box(self.diffuseBox, '{0:.2f}'.format(self.diffuse))
 
+  def _dpower_changed(self, new, old):
+    if (new == old):
+      return
+    slider_value = round(self.dpowerSlider.minimum() + new * (self.dpowerSlider.maximum() + self.dpowerSlider.minimum()))
+    self.dpowerSlider.blockSignals(True)
+    self.dpowerSlider.setValue(slider_value)
+    self.dpowerSlider.blockSignals(False)
+    if (not self.dpowerBox.hasFocus()):
+      fix_box(self.dpowerBox, '{0:.2f}'.format(new))
+    if (self.parent().surface is None):
+      return
+    self.parent().vtk_update()
+
+  def dpowerSlider_changed(self, value):
+    new = (value - self.dpowerSlider.minimum())/(self.dpowerSlider.maximum() - self.dpowerSlider.minimum())
+    self.dpower = float(new)
+
+  def dpowerBox_changed(self, fix=False):
+    try:
+      value = float(self.dpowerBox.text())
+      assert 0.0 <= value <= 1.0
+      if (not fix):
+        self.dpower = value
+    except:
+      pass
+    if (fix):
+      fix_box(self.dpowerBox, '{0:.2f}'.format(self.dpower))
+
   def _specular_changed(self, new, old):
     if (new == old):
       return
-    slider_value = round(self.specularSlider.minimum() + new * (self.specularSlider.maximum() + self.specularSlider.minimum()))
+    slider_value = round(self.specularSlider.minimum() + new/self._max_spec * (self.specularSlider.maximum() + self.specularSlider.minimum()))
     self.specularSlider.blockSignals(True)
     self.specularSlider.setValue(slider_value)
     self.specularSlider.blockSignals(False)
@@ -7272,13 +7516,13 @@ class TextureDock(QDockWidget):
     self.parent().vtk_update()
 
   def specularSlider_changed(self, value):
-    new = (value - self.specularSlider.minimum())/(self.specularSlider.maximum() - self.specularSlider.minimum())
+    new = self._max_spec * (value - self.specularSlider.minimum())/(self.specularSlider.maximum() - self.specularSlider.minimum())
     self.specular = new
 
   def specularBox_changed(self, fix=False):
     try:
       value = float(self.specularBox.text())
-      assert 0.0 <= value <= 1.0
+      assert 0.0 <= value <= self._max_spec*1.0
       if (not fix):
         self.specular = value
     except:
@@ -7378,6 +7622,34 @@ class TextureDock(QDockWidget):
       pass
     if (fix):
       fix_box(self.fresnelBox, '{0:.2f}'.format(self._fresnel))
+
+  def _shift_changed(self, new, old):
+    if (new == old):
+      return
+    slider_value = round(self.shiftSlider.minimum() + new * (self.shiftSlider.maximum() + self.shiftSlider.minimum()))
+    self.shiftSlider.blockSignals(True)
+    self.shiftSlider.setValue(slider_value)
+    self.shiftSlider.blockSignals(False)
+    if (not self.shiftBox.hasFocus()):
+      fix_box(self.shiftBox, '{0:.2f}'.format(new))
+    if (self.parent().surface is None):
+      return
+    self.parent().vtk_update()
+
+  def shiftSlider_changed(self, value):
+    new = (value - self.shiftSlider.minimum())/(self.shiftSlider.maximum() - self.shiftSlider.minimum())
+    self.shift = new
+
+  def shiftBox_changed(self, fix=False):
+    try:
+      value = float(self.shiftBox.text())
+      assert 0.0 <= value <= 1.0
+      if (not fix):
+        self.shift = value
+    except:
+      pass
+    if (fix):
+      fix_box(self.shiftBox, '{0:.2f}'.format(self.shift))
 
   def _interpolation_changed(self, new, old):
     if (new == old):
@@ -7480,45 +7752,84 @@ class TextureDock(QDockWidget):
     if (preset == 'matte'):
       self.ambient      = 0.0
       self.diffuse      = 1.0
+      self.dpower       = 1.0
       self.specular     = 0.0
       self.power        = 1.0
       self.transparency = 0.0
       self.fresnel      = 0.0
+      self.shift        = 0.0
     elif (preset == 'metal'):
       self.ambient      = 0.0
       self.diffuse      = 0.7
+      self.dpower       = 1.0
       self.specular     = 0.5
       self.power        = 3.0
       self.transparency = 0.0
       self.fresnel      = 0.0
+      self.shift        = 0.0
     elif (preset == 'cartoon'):
       self.ambient      = 0.7
       self.diffuse      = 0.0
+      self.dpower       = 1.0
       self.specular     = 0.2
       self.power        = 0.03
       self.transparency = 0.0
       self.fresnel      = 0.0
+      self.shift        = 0.0
     elif (preset == 'plastic'):
       self.ambient      = 0.1
       self.diffuse      = 0.9
+      self.dpower       = 1.0
       self.specular     = 0.7
       self.power        = 50.0
       self.transparency = 0.6
       self.fresnel      = 1.7
+      self.shift        = 0.0
     elif (preset == 'cloud'):
       self.ambient      = 0.6
       self.diffuse      = 0.0
+      self.dpower       = 1.0
       self.specular     = 0.5
       self.power        = 3.0
       self.transparency = 1.0
       self.fresnel      = -0.3
+      self.shift        = 0.0
     elif (preset == 'ghost'):
       self.ambient      = 1.0
       self.diffuse      = 0.5
+      self.dpower       = 1.0
       self.specular     = 0.1
       self.power        = 1.0
       self.transparency = 1.0
       self.fresnel      = 0.05
+      self.shift        = 0.0
+    elif (preset == 'IboView1'):
+      self.ambient      = 0.0
+      self.diffuse      = 0.54
+      self.dpower       = 0.26
+      self.specular     = 0.4*1.2
+      self.power        = 64.0
+      self.transparency = 1.0
+      self.fresnel      = 1.5
+      self.shift        = 1.0
+    elif (preset == 'IboView2'):
+      self.ambient      = 0.0
+      self.diffuse      = 0.7
+      self.dpower       = 0.8
+      self.specular     = 0.7*1.2
+      self.power        = 64.0
+      self.transparency = 1.0
+      self.fresnel      = 1.5
+      self.shift        = 1.0
+    elif (preset == 'IboView3'):
+      self.ambient      = 0.0
+      self.diffuse      = 0.42
+      self.dpower       = 0.2
+      self.specular     = 2.9*1.2
+      self.power        = 64.0
+      self.transparency = 1.0
+      self.fresnel      = 1.5
+      self.shift        = 1.0
     # Show warning also if transparency did not change
     if (old > 0) and (self.transparency == old):
       self.show_transparency_warning()
@@ -7693,6 +8004,136 @@ class BGColorDialog(QDialog):
     self.R3ColorButton.set_color(def_background_color['3'])
     self.SColorButton.set_color(def_background_color['S'])
     self.DColorButton.set_color(def_background_color['D'])
+
+
+class LightsDialog(QDialog):
+
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.init_UI()
+
+  def init_UI(self):
+    self.setWindowTitle('Configure scene lights')
+    self.eLabel = QLabel('elevation')
+    self.aLabel = QLabel('azimuth')
+    self.wLabel = QLabel('intensity')
+    self.light1Label = QLabel('Light 1')
+    self.light1e = QLineEdit()
+    self.light1e.setFixedWidth(100)
+    self.light1a = QLineEdit()
+    self.light1a.setFixedWidth(100)
+    self.light1w = QLineEdit()
+    self.light1w.setFixedWidth(100)
+    self.light2Label = QLabel('Light 2')
+    self.light2e = QLineEdit()
+    self.light2e.setFixedWidth(100)
+    self.light2a = QLineEdit()
+    self.light2a.setFixedWidth(100)
+    self.light2w = QLineEdit()
+    self.light2w.setFixedWidth(100)
+    self.light3Label = QLabel('Light 3')
+    self.light3e = QLineEdit()
+    self.light3e.setFixedWidth(100)
+    self.light3a = QLineEdit()
+    self.light3a.setFixedWidth(100)
+    self.light3w = QLineEdit()
+    self.light3w.setFixedWidth(100)
+
+    bbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    self.preset1Button = QPushButton('&Preset 1')
+    self.preset2Button = QPushButton('&Preset 2')
+    grid = QGridLayout()
+    grid.addWidget(self.eLabel,0,1,Qt.AlignCenter)
+    grid.addWidget(self.aLabel,0,2,Qt.AlignCenter)
+    grid.addWidget(self.wLabel,0,3,Qt.AlignCenter)
+    grid.addWidget(self.light1Label,1,0)
+    grid.addWidget(self.light1e,1,1)
+    grid.addWidget(self.light1a,1,2)
+    grid.addWidget(self.light1w,1,3)
+    grid.addWidget(self.light2Label,2,0)
+    grid.addWidget(self.light2e,2,1)
+    grid.addWidget(self.light2a,2,2)
+    grid.addWidget(self.light2w,2,3)
+    grid.addWidget(self.light3Label,3,0)
+    grid.addWidget(self.light3e,3,1)
+    grid.addWidget(self.light3a,3,2)
+    grid.addWidget(self.light3w,3,3)
+    hbox = QHBoxLayout()
+    hbox.addWidget(self.preset1Button)
+    hbox.addWidget(self.preset2Button)
+    hbox.addStretch()
+    vbox = QVBoxLayout()
+    vbox.addLayout(grid)
+    vbox.addStretch(1)
+    vbox.addLayout(hbox)
+    vbox.addWidget(bbox)
+    self.setLayout(vbox)
+
+    self.light1e.setToolTip('Elevation for the first light')
+    self.light1e.setWhatsThis('Elevation (angle above the horizontal) for the first light, in degrees')
+    self.light1a.setToolTip('Azimuth for the first light')
+    self.light1a.setWhatsThis('Azimuth (0 is "behind" the camera) for the first light, in degrees')
+    self.light1w.setToolTip('Intensity for the first light')
+    self.light1w.setWhatsThis('Intensity or strength of the first light')
+    self.light2e.setToolTip('Elevation for the second light')
+    self.light2e.setWhatsThis('Elevation (angle above the horizontal) for the second light, in degrees')
+    self.light2a.setToolTip('Azimuth for the second light')
+    self.light2a.setWhatsThis('Azimuth (0 is "behind" the camera) for the second light, in degrees')
+    self.light2w.setToolTip('Intensity for the second light')
+    self.light2w.setWhatsThis('Intensity or strength of the second light')
+    self.light3e.setToolTip('Elevation for the third light')
+    self.light3e.setWhatsThis('Elevation (angle above the horizontal) for the third light, in degrees')
+    self.light3a.setToolTip('Azimuth for the third light')
+    self.light3a.setWhatsThis('Azimuth (0 is "behind" the camera) for the third light, in degrees')
+    self.light3w.setToolTip('Intensity for the third light')
+    self.light3w.setWhatsThis('Intensity or strength of the third light')
+    self.preset1Button.setToolTip('Restore first preset')
+    self.preset1Button.setWhatsThis('Restore the first preset of lights')
+    self.preset2Button.setToolTip('Restore second preset')
+    self.preset2Button.setWhatsThis('Restore the second preset of lights')
+
+    bbox.accepted.connect(partial(self.parent().set_lights, self))
+    bbox.rejected.connect(self.close)
+    self.preset1Button.clicked.connect(partial(self.set_defaults, 1))
+    self.preset2Button.clicked.connect(partial(self.set_defaults, 2))
+
+    light = self.parent().ren.GetLights().GetItemAsObject(0)
+    (e, a) = self.parent().light_invpos(*light.GetPosition())
+    self.light1e.setText('{:.4f}'.format(e))
+    self.light1a.setText('{:.4f}'.format(a))
+    self.light1w.setText('{:.4f}'.format(light.GetIntensity()))
+    light = self.parent().ren.GetLights().GetItemAsObject(1)
+    (e, a) = self.parent().light_invpos(*light.GetPosition())
+    self.light2e.setText('{:.4f}'.format(e))
+    self.light2a.setText('{:.4f}'.format(a))
+    self.light2w.setText('{:.4f}'.format(light.GetIntensity()))
+    light = self.parent().ren.GetLights().GetItemAsObject(2)
+    (e, a) = self.parent().light_invpos(*light.GetPosition())
+    self.light3e.setText('{:.4f}'.format(e))
+    self.light3a.setText('{:.4f}'.format(a))
+    self.light3w.setText('{:.4f}'.format(light.GetIntensity()))
+
+  def set_defaults(self, preset):
+    if preset == 1:
+      self.light1e.setText('{:.4f}'.format(45))
+      self.light1a.setText('{:.4f}'.format(45))
+      self.light1w.setText('{:.4f}'.format(1.0))
+      self.light2e.setText('{:.4f}'.format(-30))
+      self.light2a.setText('{:.4f}'.format(-60))
+      self.light2w.setText('{:.4f}'.format(0.6))
+      self.light3e.setText('{:.4f}'.format(-30))
+      self.light3a.setText('{:.4f}'.format(60))
+      self.light3w.setText('{:.4f}'.format(0.5))
+    elif preset == 2:
+      self.light1e.setText('{:.4f}'.format(30))
+      self.light1a.setText('{:.4f}'.format(35.264390))
+      self.light1w.setText('{:.4f}'.format(1.0))
+      self.light2e.setText('{:.4f}'.format(-14.477512))
+      self.light2a.setText('{:.4f}'.format(26.565061))
+      self.light2w.setText('{:.4f}'.format(0.6))
+      self.light3e.setText('{:.4f}'.format(-14.477512))
+      self.light3a.setText('{:.4f}'.format(-26.565061))
+      self.light3w.setText('{:.4f}'.format(0.5))
 
 
 app = QApplication(sys.argv)
