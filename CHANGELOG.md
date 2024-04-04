@@ -1,3 +1,14 @@
+**2.10** (2024-04-04)
+
+New features:
+* Antialiasing function to reduce pixelation
+* Allow configuring the scene lights
+* Support textures like IboView, three presets added (use use the second lights preset)
+
+Bug fixes:
+* Reading sp functions in Molden files
+* Restoring saved "main" background color
+
 **2.10** (2024-02-28)
 
 New features:
