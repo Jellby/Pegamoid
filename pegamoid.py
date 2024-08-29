@@ -61,6 +61,7 @@ from vtk.util import numpy_support
 
 import h5py
 import numpy as np
+import math
 from fractions import Fraction
 
 import os.path
@@ -1082,9 +1083,9 @@ class Orbitals(object):
           lz = b['m']+b['l']-ly*(ly+1)//2
           lx = b['l']-ly
           ly -= lz
-          lx = self._binom(2*lx, lx)*np.math.factorial(lx)//2**lx
-          ly = self._binom(2*ly, ly)*np.math.factorial(ly)//2**ly
-          lz = self._binom(2*lz, lz)*np.math.factorial(lz)//2**lz
+          lx = self._binom(2*lx, lx)*math.factorial(lx)//2**lx
+          ly = self._binom(2*ly, ly)*math.factorial(ly)//2**ly
+          lz = self._binom(2*lz, lz)*math.factorial(lz)//2**lz
           self.fact[i] = 1.0/np.sqrt(float(lx*ly*lz))
       # And get the indices for sorting the basis functions by center, l, m, shell
       self.bf_sort = np.argsort(bf_id, order=('c', 'l', 'm', 's'))
@@ -1706,8 +1707,8 @@ class Orbitals(object):
   def _binom(self, n, k):
     mk = max(k,n-k)
     try:
-      binom = Fraction(np.math.factorial(n), np.math.factorial(mk))
-      binom *= Fraction(1, np.math.factorial(n-mk))
+      binom = Fraction(math.factorial(n), math.factorial(mk))
+      binom *= Fraction(1, math.factorial(n-mk))
       assert (binom.denominator == 1)
     except ValueError:
       binom = Fraction(0, 1)
@@ -1734,7 +1735,7 @@ class Orbitals(object):
       return Fraction(0, 1)
     c = 0
     for i in range((l-am)//2+1):
-      c += self._binom(l, i) * self._binom(i, j) * Fraction(np.math.factorial(2*l-2*i), np.math.factorial(l-am-2*i)) * (-1)**i
+      c += self._binom(l, i) * self._binom(i, j) * Fraction(math.factorial(2*l-2*i), math.factorial(l-am-2*i)) * (-1)**i
     if (c == 0):
       return Fraction(0, 1)
     c_sph = c
@@ -1756,9 +1757,9 @@ class Orbitals(object):
       lm = 1
     else:
       lm = 2
-    c = Fraction(np.math.factorial(l-am), np.math.factorial(l+am))
-    c *= Fraction(lm, np.math.factorial(l))
-    c *= Fraction(1, np.math.factorial(2*l))
+    c = Fraction(math.factorial(l-am), math.factorial(l+am))
+    c *= Fraction(lm, math.factorial(l))
+    c *= Fraction(1, math.factorial(2*l))
     c_sph *= c
     return c_sph
 
