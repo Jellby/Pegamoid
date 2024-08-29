@@ -10,7 +10,9 @@ __copyright__ = u'Copyright © 2018–2020,2022–2024'
 __license__ = 'GPL v3.0'
 __version__ = '2.11'
 
+import traceback
 import sys
+tb = ''
 try:
   from qtpy.QtCore import Qt, QObject, QThread, QEvent, QSettings
   from qtpy.QtWidgets import *
@@ -24,17 +26,21 @@ try:
     print('Unfortunately, VTK does not support PySide2 yet')
     sys.exit(1)
 except:
+  tb += traceback.format_exc()
   try:
     from PyQt5.QtCore import Qt, QObject, QThread, QEvent, QSettings, PYQT_VERSION_STR, QT_VERSION_STR
     from PyQt5.QtWidgets import *
     from PyQt5.QtGui import QPixmap, QIcon, QKeySequence, QColor, QPalette, QScreen, QCursor
     QtVersion = 'PyQt5 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
   except ImportError:
+    tb += traceback.format_exc()
     try:
       from PyQt4.QtCore import Qt, QObject, QThread, QEvent, QSettings, PYQT_VERSION_STR, QT_VERSION_STR
       from PyQt4.QtGui import *
       QtVersion = 'PyQt4 {0} (Qt {1})'.format(PYQT_VERSION_STR, QT_VERSION_STR)
     except ImportError:
+      tb += traceback.format_exc()
+      print(tb)
       print('{0} needs python Qt bindings.'.format(__name__))
       print('Please install at least one of: PyQt4, PyQt5, PySide')
       sys.exit(1)
@@ -61,7 +67,6 @@ import os.path
 import codecs
 import re
 import struct
-import traceback
 import time
 from copy import deepcopy
 from socket import gethostname
