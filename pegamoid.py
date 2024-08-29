@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022–2024'
 __license__ = 'GPL v3.0'
-__version__ = '2.11'
+__version__ = '2.12'
 
 import traceback
 import sys

@@ -1,4 +1,10 @@
-**2.10** (2024-04-04)
+**2.12** (2024-08-29)
+
+Bug fixes:
+* Print traceback in case of Qt loading error
+* Support for numpy lacking numpy.math
+
+**2.11** (2024-04-04)
 
 New features:
 * Antialiasing function to reduce pixelation
