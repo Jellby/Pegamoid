@@ -189,7 +189,7 @@ def_background_color = {
 }
 background_color = def_background_color.copy()
 
-angstrom = 1.88972612462 # = 1 / 0.529177210904
+angstrom = 1.88972612590 # = 1 / 0.529177210544
 
 # Atomic radii are only available up to Z=109 in VTK, apparently
 maxZ = 109
