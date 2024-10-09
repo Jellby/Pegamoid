@@ -23,16 +23,17 @@
 
 &SCF
 
-> Export MOLCAS_INPORB_VERSION = 1.1
+> export MOLCAS_INPORB_VERSION = 1.1
 
 &LOCALIZATION
+  File = $Project.scf.h5
   Occupied
 &LOCALIZATION
-  File = ./$Project.LocOrb
+  File = $Project.local.h5
   Virtual
 
 &RASSCF
-  File = ./$Project.LocOrb
+  File = $Project.local.h5
   Alter = 5
     1  26 23
     1  27 24
@@ -40,15 +41,15 @@
     1  34 30
     1  36 32
   NActElec = 10
-  Inactive = 24
+  Charge   = 0
   RAS2     = 8
 
 &RASSCF
-  File = ./$Project.rasscf.h5
-  NActElec = 14 1 1
-  Inactive = 22
-  RAS1     = 2
-  RAS2     = 5
-  RAS3     = 3
-  CIRoot   = 4 4 1
+  File = $Project.rasscf.h5
+  NActElec  = 14 1 1
+  Charge    = 0
+  RAS1      = 2
+  RAS2      = 5
+  RAS3      = 3
+  StAverage = 4
   TDM

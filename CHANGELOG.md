@@ -1,3 +1,9 @@
+**2.12.1** (2024-10-09)
+
+Updates:
+* Value of Bohr radius from CODATA-2022
+* Sample files created with latest OpenMolcas version
+
 **2.12** (2024-08-29)
 
 Bug fixes:

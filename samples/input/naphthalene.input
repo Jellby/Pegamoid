@@ -28,94 +28,94 @@
 &SEWARD
 
 &RASSCF
-  Spin     = 1
-  Symmetry = 1
-  NActEl   = 10
-  Inactive = 9 7 7 6 0 0 0 0
-  RAS2     = 0 0 0 0 3 2 3 2
-  CIRoot   = 1 1 1
+  Spin      = 1
+  Symmetry  = 1
+  NActElec  = 10
+  Inactive  = 9 7 7 6 0 0 0 0
+  RAS2      = 0 0 0 0 3 2 3 2
+  StAverage = 1
 
-> COPY $Project.rasscf.h5 JOB001
-
-&RASSCF
-  Spin     = 1
-  Symmetry = 1
-  NActEl   = 10
-  Inactive = 9 7 7 6 0 0 0 0
-  RAS2     = 0 0 0 0 3 2 3 2
-  CIRoot   = 3 3 1
-
-> COPY $Project.rasscf.h5 JOB002
+> copy $Project.rasscf.h5 JOB001
 
 &RASSCF
-  Spin     = 1
-  Symmetry = 2
-  NActEl   = 10
-  Inactive = 9 7 7 6 0 0 0 0
-  RAS2     = 0 0 0 0 3 2 3 2
-  CIRoot   = 2 2 1
+  Spin      = 1
+  Symmetry  = 1
+  NActElec  = 10
+  Inactive  = 9 7 7 6 0 0 0 0
+  RAS2      = 0 0 0 0 3 2 3 2
+  StAverage = 3
 
-> COPY $Project.rasscf.h5 JOB003
-
-&RASSCF
-  Spin     = 1
-  Symmetry = 3
-  NActEl   = 10
-  Inactive = 9 7 7 6 0 0 0 0
-  RAS2     = 0 0 0 0 3 2 3 2
-  CIRoot   = 2 2 1
-
-> COPY $Project.rasscf.h5 JOB004
+> copy $Project.rasscf.h5 JOB002
 
 &RASSCF
-  Spin     = 1
-  Symmetry = 4
-  NActEl   = 10
-  Inactive = 9 7 7 6 0 0 0 0
-  RAS2     = 0 0 0 0 3 2 3 2
-  CIRoot   = 2 2 1
+  Spin      = 1
+  Symmetry  = 2
+  NActElec  = 10
+  Inactive  = 9 7 7 6 0 0 0 0
+  RAS2      = 0 0 0 0 3 2 3 2
+  StAverage = 2
 
-> COPY $Project.rasscf.h5 JOB005
-
-&RASSCF
-  Spin     = 3
-  Symmetry = 1
-  NActEl   = 10
-  Inactive = 9 7 7 6 0 0 0 0
-  RAS2     = 0 0 0 0 3 2 3 2
-  CIRoot   = 2 2 1
-
-> COPY $Project.rasscf.h5 JOB006
+> copy $Project.rasscf.h5 JOB003
 
 &RASSCF
-  Spin     = 3
-  Symmetry = 2
-  NActEl   = 10
-  Inactive = 9 7 7 6 0 0 0 0
-  RAS2     = 0 0 0 0 3 2 3 2
-  CIRoot   = 2 2 1
+  Spin      = 1
+  Symmetry  = 3
+  NActElec  = 10
+  Inactive  = 9 7 7 6 0 0 0 0
+  RAS2      = 0 0 0 0 3 2 3 2
+  StAverage = 2
 
-> COPY $Project.rasscf.h5 JOB007
-
-&RASSCF
-  Spin     = 3
-  Symmetry = 3
-  NActEl   = 10
-  Inactive = 9 7 7 6 0 0 0 0
-  RAS2     = 0 0 0 0 3 2 3 2
-  CIRoot   = 2 2 1
-
-> COPY $Project.rasscf.h5 JOB008
+> copy $Project.rasscf.h5 JOB004
 
 &RASSCF
-  Spin     = 3
-  Symmetry = 4
-  NActEl   = 10
-  Inactive = 9 7 7 6 0 0 0 0
-  RAS2     = 0 0 0 0 3 2 3 2
-  CIRoot   = 2 2 1
+  Spin      = 1
+  Symmetry  = 4
+  NActElec  = 10
+  Inactive  = 9 7 7 6 0 0 0 0
+  RAS2      = 0 0 0 0 3 2 3 2
+  StAverage = 2
 
-> COPY $Project.rasscf.h5 JOB009
+> copy $Project.rasscf.h5 JOB005
+
+&RASSCF
+  Spin      = 3
+  Symmetry  = 1
+  NActElec  = 10
+  Inactive  = 9 7 7 6 0 0 0 0
+  RAS2      = 0 0 0 0 3 2 3 2
+  StAverage = 2
+
+> copy $Project.rasscf.h5 JOB006
+
+&RASSCF
+  Spin      = 3
+  Symmetry  = 2
+  NActElec  = 10
+  Inactive  = 9 7 7 6 0 0 0 0
+  RAS2      = 0 0 0 0 3 2 3 2
+  StAverage = 2
+
+> copy $Project.rasscf.h5 JOB007
+
+&RASSCF
+  Spin      = 3
+  Symmetry  = 3
+  NActElec  = 10
+  Inactive  = 9 7 7 6 0 0 0 0
+  RAS2      = 0 0 0 0 3 2 3 2
+  StAverage = 2
+
+> copy $Project.rasscf.h5 JOB008
+
+&RASSCF
+  Spin      = 3
+  Symmetry  = 4
+  NActElec  = 10
+  Inactive  = 9 7 7 6 0 0 0 0
+  RAS2      = 0 0 0 0 3 2 3 2
+  StAverage = 2
+
+> copy $Project.rasscf.h5 JOB009
 
 &RASSI
   NrOfJobIphs = 9  1 2 2 2 2 2 2 2 2
@@ -128,5 +128,5 @@
     1 2
     1 2
     1 2
-  TRD1
+  TDM
   SubSet = 1

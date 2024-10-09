@@ -19,7 +19,7 @@
 
 &SEWARD
 
-> Export MOLCAS_MOLDEN=ON
+> export MOLCAS_MOLDEN=ON
 
 &SCF
   UHF

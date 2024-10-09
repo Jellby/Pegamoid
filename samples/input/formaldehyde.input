@@ -15,30 +15,30 @@
 &SCF
 
 &RASSCF
-  Spin   = 1
-  NActEl = 6 0 0
-  Inact  = 4 1
-  RAS2   = 2 3
-  CIRoot = 2 2 1
-  Thrs   = 1e-10 1e-6 1e-6
+  Spin      = 1
+  NActElec  = 6
+  Inactive  = 4 1
+  RAS2      = 2 3
+  StAverage = 2
+  Thrs      = 1e-10 1e-6 1e-6
 
-> COPY $Project.JobIph JOB001
+> copy $Project.rasscf.h5 JOB001
 
 &RASSCF
-  Spin   = 3
-  NActEl = 6 0 0
-  Inact  = 4 1
-  RAS2   = 2 3
-  CIRoot = 2 2 1
-  Thrs   = 1e-10 1e-6 1e-6
+  Spin      = 3
+  NActElec  = 6
+  Inactive  = 4 1
+  RAS2      = 2 3
+  StAverage = 2 2 1
+  Thrs      = 1e-10 1e-6 1e-6
 
-> COPY $Project.JobIph JOB002
+> copy $Project.rasscf.h5 JOB002
 
 &RASSI
   NrOfJobIphs = 2 all
-  TRD1
+  TDM
 
 &WFA
   H5file = $Project.rassi.h5
 
-> SAVE $Project.rassi.h5 $MOLCAS_OUTPUT
+> save $Project.rassi.h5 $MOLCAS_OUTPUT

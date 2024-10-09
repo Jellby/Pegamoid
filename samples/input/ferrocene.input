@@ -27,14 +27,14 @@
     2   5  7
     2   6  8
     4  12 14
-  NActElec = 18  2  0
-  Inactive = 12  6  8 13
-  RAS1     =  2  0  1  2
-  RAS2     =  4  4  1  1
-  CIRoot   =  2  2  1
+  NActElec  = 18  2  0
+  Inactive  = 12  6  8 13
+  RAS1      =  2  0  1  2
+  RAS2      =  4  4  1  1
+  StAverage =  2
 
 &CASPT2
   File = $Project.rasscf.h5
   Multistate = All
-  Density
+  *Density   (this keyword is buggy)
   Properties
