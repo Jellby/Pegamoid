@@ -99,9 +99,9 @@ Tips for OpenMolcas
 Use the `TDM` keyword in a RASSCF calculation to include transition densities
 in the HDF5 file.
 
-Use the `TRD1` keyword in a RASSI calculation to include state and transition
-densities in the HDF5 file. Use the `SUBSET` keyword to reduce the number of
-transition densities stored.
+Use the `TDM` (or `TRD1`) keyword in a RASSI calculation to include state and
+transition densities in the HDF5 file. Use the `SUBSET` keyword to reduce the
+number of transition densities stored.
 
 Use the `WFA` module for more detailed analysis.
 
