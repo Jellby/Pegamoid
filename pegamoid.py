@@ -6887,7 +6887,7 @@ class TransformDock(QDockWidget):
     orbitals = self.parent().orbitals
     xyz = np.array([c['xyz'] for c in orbitals.centers if (not isEmpty(c.get('basis', [0])))]) - orbitals.geomcenter
     if (xyz.shape[0] > 1):
-      ev, vec = np.linalg.eig(np.cov(xyz.T))
+      ev, vec = np.linalg.eigh(np.cov(xyz.T))
       vec = vec[:,np.argsort(ev)[::-1]]
       if (np.linalg.det(vec) < 0):
         vec[:,2] *= -1
