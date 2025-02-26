@@ -1,3 +1,9 @@
+**2.12.2** (2025-02-26)
+
+Bug fixes:
+* Support for numpy 2.0 deprecation
+* Ensure the aligned box is orthogonal (it was not in some degenerate cases)
+
 **2.12.1** (2024-10-09)
 
 Updates:
