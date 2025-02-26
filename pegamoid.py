@@ -1813,12 +1813,12 @@ class Orbitals(object):
         for i,o in enumerate(self.MO_a):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o['occup'] > 0.5) else 'S'
-        fo.create_dataset('MO_ALPHA_TYPEINDICES', data=np.array(tp, dtype=np.string_))
+        fo.create_dataset('MO_ALPHA_TYPEINDICES', data=np.array(tp, dtype=np.bytes_))
         tp = [o.get('newtype', o['type'])for o in self.MO_b]
         for i,o in enumerate(self.MO_b):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o['occup'] > 0.5) else 'S'
-        fo.create_dataset('MO_BETA_TYPEINDICES', data=np.array(tp, dtype=np.string_))
+        fo.create_dataset('MO_BETA_TYPEINDICES', data=np.array(tp, dtype=np.bytes_))
       if (len(self.MO) > 0):
         cff = []
         for i,j in nMO:
@@ -1831,9 +1831,9 @@ class Orbitals(object):
         for i,o in enumerate(self.MO):
           if (tp[i] == '?'):
             tp[i] = 'I' if (o['occup'] > 1.0) else 'S'
-        fo.create_dataset('MO_TYPEINDICES', data=np.array(tp, dtype=np.string_))
+        fo.create_dataset('MO_TYPEINDICES', data=np.array(tp, dtype=np.bytes_))
       if (self.notes is not None):
-        fo.create_dataset('Pegamoid_notes', data=np.array(self.notes, dtype=np.string_))
+        fo.create_dataset('Pegamoid_notes', data=np.array(self.notes, dtype=np.bytes_))
 
   # Creates an InpOrb file from scratch
   def create_inporb(self, filename, MO=None):
@@ -2289,7 +2289,7 @@ def set_opacity_wrapper(obj, val):
   if os.environ.get('PEGAMOID_DISABLE_OPACITY', None):
     # When opacity does not work correctly, set to 1 (except when intended to be 0)
     if val < 1e-6:
-      obj.GetProperty().SetOpacity(1)
+      obj.GetProperty().SetOpacity(0)
     else:
       obj.GetProperty().SetOpacity(1)
   else:
@@ -6481,7 +6481,7 @@ class MainWindow(QMainWindow):
                       after loading an HDF5 file, it can also read files in <i>InpOrb</i> format.<br>
                       It can modify orbital types and save the result in <i>HDF5</i> and <i>InpOrb</i> formats, or save the volume data in <i>cube</i> format.</p>
                       <p>Use and redistribute under the terms of the GNU General Public License.</p>
-                      <p><b>python</b>: {4}<br>
+                      <p><b>Python</b>: {4}<br>
                       <b>Qt API</b>: {5}<br>
                       <b>VTK</b>: {6}</p>
                       {7}
