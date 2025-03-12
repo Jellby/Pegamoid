@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022–2025'
 __license__ = 'GPL v3.0'
-__version__ = '2.12.2'
+__version__ = '2.12.3'
 
 import traceback
 import sys
@@ -1939,9 +1939,15 @@ class Grid(object):
       self.title = str(f.readline().decode('ascii')).strip()
       # Read title and grid origin
       title = str(f.readline().decode('ascii')).strip()
-      n, x, y, z = f.readline().split()
+      nums = f.readline().split()
+      n, x, y, z = nums[0:4]
       num = int(n)
       translate = np.array([fortran_float(x), fortran_float(y), fortran_float(z)])
+      # number of components (e.g. 4 for density+gradient)
+      if len(nums) > 4:
+        ncomp = int(nums[4])
+      else:
+        ncomp = 1
       # Read grid sizes and transformation matrix
       n, x, y, z = f.readline().split()
       ngridx = int(n)
@@ -1982,8 +1988,11 @@ class Grid(object):
           data.extend(str(f.readline().decode('ascii')).split())
         self.MO = [{'label':'{0}: {1}'.format(i, title), 'ene':0.0, 'occup':0.0, 'type':'?', 'sym':'z'} for i in data]
       else:
-        self.nMO = 1
-        self.MO = [{'label':title, 'ene':0.0, 'occup':0.0, 'type':'?', 'sym':'z'}]
+        self.nMO = ncomp
+        if ncomp == 1:
+          self.MO = [{'label':title, 'ene':0.0, 'occup':0.0, 'type':'?', 'sym':'z'}]
+        else:
+          self.MO = [{'label':f'{title} (comp. {i+1})', 'ene':0.0, 'occup':0.0, 'type':'?', 'sym':'z'} for i in range(ncomp)]
       self.MO_a = []
       self.MO_b = []
       # Number of values in the innermost loop (ngridz * nMO)

@@ -1,3 +1,8 @@
+**2.12.3** (2025-03-12)
+
+New feature:
+* Support cube files with a number of components
+
 **2.12.2** (2025-02-26)
 
 Bug fixes:
