@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022–2025'
 __license__ = 'GPL v3.0'
-__version__ = '2.12.3'
+__version__ = '2.12.4'
 
 import traceback
 import sys
@@ -1925,6 +1925,7 @@ class Grid(object):
     self.file = gridfile
     self.type = ftype
     self.wf = None
+    self.title = ''
     if (ftype == 'cube'):
       self.read_cube_header()
     elif (ftype == 'luscus'):
@@ -2531,7 +2532,8 @@ class ComputeVolume(Worker):
       self.data = self.parent().orbitals.dens(x, y, z, self.cache, precomp=precomp,
                                               mask=mask, spin=a_and_b, trans=trans, callback=print_func, interrupt=self.parent().interrupt)
     elif (orb == -2):
-      ngrid = self.parent().xyz.GetInput().GetDimensions()
+      ngrid = [0, 0, 0]
+      self.parent().xyz.GetInput().GetDimensions(ngrid)
       data = self.parent().orbitals.dens(x, y, z, self.cache, precomp=precomp,
                                          mask=mask, callback=print_func, interrupt=self.parent().interrupt).reshape(ngrid[::-1])
       # Get the actual lengths of the possibly transformed axes
@@ -5212,7 +5214,8 @@ class MainWindow(QMainWindow):
   def build_axes(self):
     bounds = self.box.GetBounds()
     grid = self.xyz.GetOutput()
-    ngrid = grid.GetDimensions()
+    ngrid = [0, 0, 0]
+    grid.GetDimensions(ngrid)
     o = np.zeros(3)
     ox = np.zeros(3)
     oy = np.zeros(3)
@@ -5401,7 +5404,8 @@ class MainWindow(QMainWindow):
       if (self.xyz is None):
         return
       try:
-        ngrid = self.xyz.GetInput().GetDimensions()
+        ngrid = [0, 0, 0]
+        self.xyz.GetInput().GetDimensions(ngrid)
         self.update_cache(ngrid)
       except:
         raise
@@ -6195,7 +6199,8 @@ class MainWindow(QMainWindow):
       return
     try:
       data = self.xyz.GetInput()
-      ngrid = data.GetDimensions()
+      ngrid = [0, 0, 0]
+      data.GetDimensions(ngrid)
       grid = data.GetSpacing()
       orig = list(data.GetOrigin())
       transform = self.xyz.GetTransform().GetMatrix()
