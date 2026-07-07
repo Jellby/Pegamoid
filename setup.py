@@ -8,7 +8,7 @@ with open("README.md", "r") as f:
     # Remove screenshots
     long_description = re.sub('Screenshots\n-*\n*(<.*> *\n*)*', '', f.read())
 
-setup(name='Pegamoid',
+setup(name='pegamoid',
       version='2.13.0',
       description='Orbital viewer for OpenMolcas',
       author=u'Ignacio Fdez. Galván',
