@@ -1,3 +1,11 @@
+**2.13.0** (2026-07-07)
+
+Performance improvoment:
+* Reading `rassi.h5` files with many/large TDMs should now be much faster
+
+Workaround:
+* Avoid crash on Wayland
+
 **2.12.4** (2025-10-01)
 
 Bug fix:

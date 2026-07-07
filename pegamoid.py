@@ -8,7 +8,7 @@ __name__ = 'Pegamoid'
 __author__ = u'Ignacio Fdez. Galván'
 __copyright__ = u'Copyright © 2018–2020,2022–2025'
 __license__ = 'GPL v3.0'
-__version__ = '2.12.4'
+__version__ = '2.13.0'
 
 import traceback
 import sys
@@ -205,6 +205,19 @@ symmult = np.array([
   [6, 7, 4, 5, 2, 3, 0, 1],
   [7, 6, 5, 4, 3, 2, 1, 0],
 ])
+
+#===============================================================================
+
+# Get a reasonable step size for chunked data
+def get_step(data, name):
+  if data.chunks is not None:
+    if (np.any(data.chunks[:-1] != data.shape[:-1])):
+      error = f'Unsupported chunking for {name}'
+      raise Exception(error)
+    step = 10*data.chunks[-1]
+  else:
+    step = 1000
+  return step
 
 #===============================================================================
 # Class for orbitals defined in term of basis functions, which can be computed
@@ -502,15 +515,30 @@ class Orbitals(object):
         # find out which transitions are actually nonzero (stored)
         self.have_tdm = np.zeros((len(ene), len(ene)), dtype=bool)
         tdm = f['SFS_TRANSITION_DENSITIES']
+        step = get_step(tdm, 'TDMs')
+        for k_start in range(0,tdm.shape[2],step):
+          k_end = min(k_start+step,tdm.shape[2])
+          sub_block = tdm[:,:,k_start:k_end]
+          for j in range(len(ene)):
+            for i in range(j):
+              if self.have_tdm[i,j]:
+                continue
+              if np.any(np.abs(sub_block[i,j,:]) > 1e-8):
+                self.have_tdm[i,j] = True
+                self.have_tdm[j,i] = True
         if ('SFS_TRANSITION_SPIN_DENSITIES' in f):
           tsdm = f['SFS_TRANSITION_SPIN_DENSITIES']
-        else:
-          tsdm = np.zeros_like(self.have_tdm)
-        for j in range(len(ene)):
-          for i in range(j):
-            if ((not np.allclose(tdm[i,j], 0)) or (not np.allclose(tsdm[i,j], 0))):
-              self.have_tdm[i,j] = True
-              self.have_tdm[j,i] = True
+          step = get_step(tsdm, 'TSDMs')
+          for k_start in range(0,tsdm.shape[2],step):
+            k_end = min(k_start+step,tsdm.shape[2])
+            sub_block = tsdm[:,:,k_start:k_end]
+            for j in range(len(ene)):
+              for i in range(j):
+                if self.have_tdm[i,j]:
+                  continue
+                if np.any(np.abs(sub_block[i,j,:]) > 1e-8):
+                  self.have_tdm[i,j] = True
+                  self.have_tdm[j,i] = True
         if (not np.any(self.have_tdm)):
           self.tdm = False
       else:
@@ -581,13 +609,23 @@ class Orbitals(object):
           algo = 'eigsort'
           n = len(self.roots)-1
           with h5py.File(self.file, 'r') as f:
-            dm = f['SFS_TRANSITION_DENSITIES'][0,0,:]
+            tdm = f['SFS_TRANSITION_DENSITIES']
+            step = get_step(tdm, 'TDMs')
+            dm = np.zeros(tdm.shape[2])
+            for k_start in range(0,tdm.shape[2],step):
+              k_end = min(k_start+step,tdm.shape[2])
+              sub_block = tdm[:,:,k_start:k_end]
+              for i in range(n):
+                dm[k_start:k_end] += sub_block[i,i,:]
             if (self.sdm):
-              sdm = f['SFS_TRANSITION_SPIN_DENSITIES'][0,0,:]
-            for i in range(1, n):
-              dm += f['SFS_TRANSITION_DENSITIES'][i,i,:]
-              if (self.sdm):
-                sdm += f['SFS_TRANSITION_SPIN_DENSITIES'][i,i,:]
+              tsdm = f['SFS_TRANSITION_SPIN_DENSITIES']
+              step = get_step(tsdm, 'TSDMs')
+              sdm = np.zeros(tsdm.shape[2])
+              for k_start in range(0,tsdm.shape[2],step):
+                k_end = min(k_start+step,tdm.shape[2])
+                sub_block = tsdm[:,:,k_start:k_end]
+                for i in range(n):
+                  sdm[k_start:k_end] += sub_block[i,i,:]
           dm /= n
           if (self.sdm):
             sdm /= n
