@@ -8156,6 +8156,10 @@ class LightsDialog(QDialog):
       self.light3w.setText('{:.4f}'.format(0.5))
 
 
+# VTK & Qt not supported on Wayland yet...
+if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
+  os.environ['QT_QPA_PLATFORM'] = 'xcb'
+
 app = QApplication(sys.argv)
 win = MainWindow()
 f1 = None
